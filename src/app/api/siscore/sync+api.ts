@@ -1,3 +1,4 @@
+import { dispararWorkflowSincronizacaoSiscore, getGitHubActionsConfig } from '@/server/github-actions';
 import { executarImportacaoSiscoreDoUsuario, SiscoreSyncScope } from '@/server/run-siscore-import';
 import { lerCredencialSiscoreUsuario } from '@/server/siscore-credential-store';
 import { lerSessaoDoRequest } from '@/server/session-cookie';
@@ -30,6 +31,26 @@ export async function POST(request: Request) {
           details: ['Faca login novamente no site para atualizar a senha usada na sincronizacao.'],
         },
         { status: 409 }
+      );
+    }
+
+    const githubActions = getGitHubActionsConfig();
+    if (githubActions.enabled) {
+      const dispatch = await dispararWorkflowSincronizacaoSiscore({
+        usuario: session.usuario,
+        scope,
+      });
+
+      return Response.json(
+        {
+          ok: true,
+          queued: true,
+          usuario: session.usuario,
+          scope,
+          message: 'Sincronizacao enviada ao GitHub Actions.',
+          workflowUrl: dispatch.url,
+        },
+        { status: 202 }
       );
     }
 

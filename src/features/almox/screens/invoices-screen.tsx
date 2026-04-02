@@ -310,7 +310,7 @@ async function loadNotaFiscalItens(noteIds: string[]) {
 }
 
 export default function InvoicesScreen() {
-  const { syncBase, syncError, syncingBase } = useAlmoxData();
+  const { syncBase, syncError, syncNotice, syncingBase } = useAlmoxData();
   const [notes, setNotes] = useState<NotaFiscalResumo[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [noteItems, setNoteItems] = useState<NotaFiscalItemVisual[]>([]);
@@ -571,6 +571,14 @@ export default function InvoicesScreen() {
           title="Falha ao sincronizar com o SISCORE"
           description={syncError}
           tone="danger"
+        />
+      ) : null}
+
+      {syncNotice ? (
+        <InfoBanner
+          title="Sincronizacao da base"
+          description={syncNotice}
+          tone="info"
         />
       ) : null}
 

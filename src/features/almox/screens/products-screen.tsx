@@ -57,7 +57,7 @@ export default function ProductsScreen() {
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncingBase, syncBase, usingCachedData } = useAlmoxData();
+  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
 
   const deferredSearch = useDeferredValue(search);
   const hospitals = dataset.hospitals;
@@ -171,6 +171,14 @@ export default function ProductsScreen() {
           title="Falha ao sincronizar com o SISCORE"
           description={syncError}
           tone="danger"
+        />
+      ) : null}
+
+      {syncNotice ? (
+        <InfoBanner
+          title="Sincronizacao da base"
+          description={syncNotice}
+          tone="info"
         />
       ) : null}
 

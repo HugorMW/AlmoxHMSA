@@ -24,7 +24,7 @@ import { formatDecimal } from "@/features/almox/utils";
 export default function OrdersScreen() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncingBase, syncBase, usingCachedData } =
+  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } =
     useAlmoxData();
   const items = dataset.orderItems;
   const sortedItems = useMemo(
@@ -113,6 +113,14 @@ export default function OrdersScreen() {
           title="Falha ao sincronizar com o SISCORE"
           description={syncError}
           tone="danger"
+        />
+      ) : null}
+
+      {syncNotice ? (
+        <InfoBanner
+          title="Sincronizacao da base"
+          description={syncNotice}
+          tone="info"
         />
       ) : null}
 

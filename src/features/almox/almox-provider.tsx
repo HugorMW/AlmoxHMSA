@@ -24,6 +24,7 @@ type AlmoxDataContextValue = {
   refreshing: boolean;
   syncingBase: boolean;
   syncError: string | null;
+  syncNotice: string | null;
   usingCachedData: boolean;
   error: string | null;
   categoryFilter: FiltroCategoriaMaterial;
@@ -153,6 +154,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [refreshing, setRefreshing] = useState(false);
   const [syncingBase, setSyncingBase] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [usingCachedData, setUsingCachedData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<FiltroCategoriaMaterial>('todos');
@@ -248,31 +250,37 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-async function syncBase() {
+  async function syncBase() {
     if (!mountedRef.current) {
       return;
     }
 
     setSyncingBase(true);
     setSyncError(null);
+    setSyncNotice(null);
 
     try {
-      const scopes = ['material_hospitalar', 'material_farmacologico', 'notas_fiscais'] as const;
+      const response = await fetch('/api/siscore/sync', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ scope: 'all' }),
+      });
 
-      for (const scope of scopes) {
-        const response = await fetch('/api/siscore/sync', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ scope }),
-        });
+      const data = await parseSyncResponse(response);
 
-        await parseSyncResponse(response);
+      if (data?.queued) {
+        const workflowUrl =
+          typeof data?.workflowUrl === 'string' && data.workflowUrl.trim().length > 0 ? ` ${data.workflowUrl}` : '';
+        setSyncNotice(
+          `Sincronizacao enviada ao GitHub Actions. A base sera atualizada em background e pode levar alguns minutos.${workflowUrl}`
+        );
+      } else {
+        await refresh();
+        setSyncNotice('Base sincronizada com sucesso a partir do SISCORE.');
       }
-
-      await refresh();
     } catch (syncLoadError) {
       if (!mountedRef.current) {
         return;
@@ -403,6 +411,7 @@ async function syncBase() {
         refreshing,
         syncingBase,
         syncError,
+        syncNotice,
         usingCachedData,
         error,
         categoryFilter,

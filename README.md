@@ -48,17 +48,23 @@ Cliente web:
 Servidor/API routes:
 
 - `APP_SESSION_SECRET`
+- `SUPABASE_SERVICE_ROLE_KEY`
 - `SISCORE_CREDENTIALS_KEY`
 - `SISCORE_BASE_URL`
 - `SISCORE_EXPORTACAO_URL`
 - `SISCORE_EXPORTACAO_URL_FARMACOLOGICO`
 - `SISCORE_EXPORTACAO_URL_NOTAS_FISCAIS`
+- `GITHUB_ACTIONS_REPOSITORY`
+- `GITHUB_ACTIONS_SYNC_WORKFLOW`
+- `GITHUB_ACTIONS_SYNC_REF`
+- `GITHUB_ACTIONS_TRIGGER_TOKEN`
 
 Observação:
 
-- `SUPABASE_DB_URL` é necessária se o site publicado for disparar a sincronização do SISCORE via API route.
+- `SUPABASE_DB_URL` continua sendo necessária para o importador CLI e para o GitHub Actions.
 - `SISCORE_USUARIO` e `SISCORE_SENHA` podem ficar vazios no site publicado quando a senha estiver sendo salva de forma cifrada após o login.
 - `SISCORE_CREDENTIALS_KEY` deve ser uma chave forte e exclusiva para cifrar as credenciais salvas no Supabase.
+- `GITHUB_ACTIONS_TRIGGER_TOKEN` deve ser um token do GitHub com permissão para disparar workflows no repositório.
 
 ### Comandos
 
@@ -102,10 +108,28 @@ Fluxo atual:
 1. usuario faz login no site
 2. backend valida no SISCORE
 3. senha e salva cifrada no Supabase
-4. ao clicar em `Atualizar base`, a API route usa o usuario da sessao para localizar essa credencial e executar a importacao
+4. ao clicar em `Atualizar base`, a API route usa o usuario da sessao para localizar essa credencial e disparar o GitHub Actions de sincronizacao
 
 Para isso funcionar em producao, configure:
 
 - `SUPABASE_DB_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
 - `APP_SESSION_SECRET`
+- `SISCORE_CREDENTIALS_KEY`
+
+## Sincronizacao via GitHub Actions
+
+Quando `GITHUB_ACTIONS_REPOSITORY` e `GITHUB_ACTIONS_TRIGGER_TOKEN` estao definidos no ambiente do site publicado, o botao `Atualizar base` deixa de processar a importacao dentro do EAS Hosting e passa a apenas enfileirar a sincronizacao no GitHub Actions.
+
+Workflow incluido:
+
+- `.github/workflows/siscore-sync.yml`
+
+Secrets necessarios no repositório do GitHub:
+
+- `SUPABASE_DB_URL`
+- `SISCORE_BASE_URL`
+- `SISCORE_EXPORTACAO_URL`
+- `SISCORE_EXPORTACAO_URL_FARMACOLOGICO`
+- `SISCORE_EXPORTACAO_URL_NOTAS_FISCAIS`
 - `SISCORE_CREDENTIALS_KEY`

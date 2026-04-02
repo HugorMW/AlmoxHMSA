@@ -1,0 +1,60 @@
+name: SISCORE Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      siscore_usuario:
+        description: Usuario do SISCORE com credencial cifrada salva no banco
+        required: true
+        type: string
+      scope:
+        description: Escopo solicitado pelo app
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - material_hospitalar
+          - material_farmacologico
+          - notas_fiscais
+      triggered_by:
+        description: Usuario que disparou a sincronizacao
+        required: false
+        type: string
+
+concurrency:
+  group: siscore-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: AlmoxHMSA/package-lock.json
+
+      - name: Install dependencies
+        working-directory: AlmoxHMSA
+        run: npm ci
+
+      - name: Run SISCORE import
+        working-directory: AlmoxHMSA
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SISCORE_BASE_URL: ${{ secrets.SISCORE_BASE_URL }}
+          SISCORE_EXPORTACAO_URL: ${{ secrets.SISCORE_EXPORTACAO_URL }}
+          SISCORE_EXPORTACAO_URL_FARMACOLOGICO: ${{ secrets.SISCORE_EXPORTACAO_URL_FARMACOLOGICO }}
+          SISCORE_EXPORTACAO_URL_NOTAS_FISCAIS: ${{ secrets.SISCORE_EXPORTACAO_URL_NOTAS_FISCAIS }}
+          SISCORE_CREDENTIALS_KEY: ${{ secrets.SISCORE_CREDENTIALS_KEY }}
+          SISCORE_CREDENTIALS_USUARIO: ${{ inputs.siscore_usuario }}
+          SISCORE_SYNC_SCOPE: ${{ inputs.scope }}
+          SISCORE_SYNC_TRIGGERED_BY: ${{ inputs.triggered_by }}
+        run: npm run siscore:import

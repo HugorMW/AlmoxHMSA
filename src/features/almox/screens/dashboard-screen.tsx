@@ -25,7 +25,7 @@ type PanelKey = 'transfer' | 'idle' | 'rupture';
 export default function DashboardScreen() {
   const [activeHospital, setActiveHospital] = useState<Hospital>('HMSA');
   const [activePanel, setActivePanel] = useState<PanelKey | null>('transfer');
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncingBase, syncBase, usingCachedData } = useAlmoxData();
+  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
   const showMaterialLabel = categoryFilter === 'todos';
 
   const dashboard = dataset.dashboardByHospital[activeHospital];
@@ -106,6 +106,14 @@ export default function DashboardScreen() {
           title="Falha ao sincronizar com o SISCORE"
           description={syncError}
           tone="danger"
+        />
+      ) : null}
+
+      {syncNotice ? (
+        <InfoBanner
+          title="Sincronizacao da base"
+          description={syncNotice}
+          tone="info"
         />
       ) : null}
 

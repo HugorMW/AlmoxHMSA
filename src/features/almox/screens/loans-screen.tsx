@@ -24,7 +24,7 @@ type LoanTab = 'need' | 'lend';
 export default function LoansScreen() {
   const [activeTab, setActiveTab] = useState<LoanTab>('need');
   const [search, setSearch] = useState('');
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncingBase, syncBase, usingCachedData } = useAlmoxData();
+  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
   const deferredSearch = useDeferredValue(search);
 
   const needItems = dataset.loansNeeded.filter((item) =>
@@ -65,6 +65,14 @@ export default function LoansScreen() {
           title="Falha ao sincronizar com o SISCORE"
           description={syncError}
           tone="danger"
+        />
+      ) : null}
+
+      {syncNotice ? (
+        <InfoBanner
+          title="Sincronizacao da base"
+          description={syncNotice}
+          tone="info"
         />
       ) : null}
 
