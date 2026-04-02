@@ -13,7 +13,13 @@ import {
   obterConfiguracoesExportacao,
 } from '@/server/siscore-sync-core';
 
-export async function executarImportacaoSiscoreDoUsuario(usuario: string) {
+export type SiscoreSyncScope =
+  | 'all'
+  | 'material_hospitalar'
+  | 'material_farmacologico'
+  | 'notas_fiscais';
+
+export async function executarImportacaoSiscoreDoUsuario(usuario: string, scope: SiscoreSyncScope = 'all') {
   const credencial = await lerCredencialSiscoreUsuario(usuario);
 
   if (!credencial) {
@@ -41,8 +47,12 @@ export async function executarImportacaoSiscoreDoUsuario(usuario: string) {
   const supabase = getSupabaseAdmin() as any;
   const sucessos: Array<{ categoria: string; loteId: string; quantidade: number }> = [];
   const falhas: Array<{ categoria: string; message: string }> = [];
+  const configuracoesSelecionadas =
+    scope === 'all'
+      ? configuracoesExportacao
+      : configuracoesExportacao.filter((config) => config.categoria_material === scope);
 
-  for (const configuracao of configuracoesExportacao) {
+  for (const configuracao of configuracoesSelecionadas) {
     try {
       const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
         baseUrl: siscoreBaseUrl,
@@ -77,37 +87,39 @@ export async function executarImportacaoSiscoreDoUsuario(usuario: string) {
     }
   }
 
-  try {
-    const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
-      baseUrl: siscoreBaseUrl,
-      exportacaoUrl: configuracaoNotasFiscais.exportacaoUrl,
-      cookieJar,
-    });
+  if (scope === 'all' || scope === 'notas_fiscais') {
+    try {
+      const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
+        baseUrl: siscoreBaseUrl,
+        exportacaoUrl: configuracaoNotasFiscais.exportacaoUrl,
+        cookieJar,
+      });
 
-    const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS);
-    const rows = normalizarLinhasNotasFiscais(rawRows);
-    const notasFiscais = agruparNotasFiscais(rows);
+      const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS);
+      const rows = normalizarLinhasNotasFiscais(rawRows);
+      const notasFiscais = agruparNotasFiscais(rows);
 
-    const { data, error } = await supabase.rpc('importar_notas_fiscais_siscore', {
-      p_notas: notasFiscais,
-      p_nome_arquivo: nomeArquivo,
-      p_exportacao_url: configuracaoNotasFiscais.exportacaoUrl,
-    });
+      const { data, error } = await supabase.rpc('importar_notas_fiscais_siscore', {
+        p_notas: notasFiscais,
+        p_nome_arquivo: nomeArquivo,
+        p_exportacao_url: configuracaoNotasFiscais.exportacaoUrl,
+      });
 
-    if (error) {
-      throw new Error(error.message);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      sucessos.push({
+        categoria: configuracaoNotasFiscais.descricao,
+        loteId: String(data?.loteId ?? ''),
+        quantidade: Number(data?.quantidadeLinhas ?? 0),
+      });
+    } catch (error) {
+      falhas.push({
+        categoria: configuracaoNotasFiscais.descricao,
+        message: error instanceof Error ? error.message : 'Falha interna na importacao.',
+      });
     }
-
-    sucessos.push({
-      categoria: configuracaoNotasFiscais.descricao,
-      loteId: String(data?.loteId ?? ''),
-      quantidade: Number(data?.quantidadeLinhas ?? 0),
-    });
-  } catch (error) {
-    falhas.push({
-      categoria: configuracaoNotasFiscais.descricao,
-      message: error instanceof Error ? error.message : 'Falha interna na importacao.',
-    });
   }
 
   if (falhas.length) {

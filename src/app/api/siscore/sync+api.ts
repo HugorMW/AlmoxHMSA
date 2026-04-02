@@ -1,6 +1,15 @@
-import { executarImportacaoSiscoreDoUsuario } from '@/server/run-siscore-import';
+import { executarImportacaoSiscoreDoUsuario, SiscoreSyncScope } from '@/server/run-siscore-import';
 import { lerCredencialSiscoreUsuario } from '@/server/siscore-credential-store';
 import { lerSessaoDoRequest } from '@/server/session-cookie';
+
+function parseScope(value: unknown): SiscoreSyncScope {
+  return value === 'material_hospitalar' ||
+    value === 'material_farmacologico' ||
+    value === 'notas_fiscais' ||
+    value === 'all'
+    ? value
+    : 'all';
+}
 
 export async function POST(request: Request) {
   const session = lerSessaoDoRequest(request);
@@ -10,6 +19,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    const body = await request.json().catch(() => null);
+    const scope = parseScope(body?.scope);
     const credencial = await lerCredencialSiscoreUsuario(session.usuario);
 
     if (!credencial) {
@@ -22,11 +33,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await executarImportacaoSiscoreDoUsuario(session.usuario);
+    const result = await executarImportacaoSiscoreDoUsuario(session.usuario, scope);
 
     return Response.json({
       ok: true,
       usuario: session.usuario,
+      scope,
       result,
     });
   } catch (error) {

@@ -96,7 +96,23 @@ function formatLoadError(error: unknown) {
 }
 
 async function parseSyncResponse(response: Response) {
-  const data = await response.json().catch(() => ({}));
+  const rawText = await response.text().catch(() => '');
+  let data: any = {};
+
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = {};
+    }
+  }
+
+  if (!response.ok && response.status === 504) {
+    throw new Error(
+      'A sincronizacao demorou mais do que a hospedagem permite em uma unica requisicao.\nTente novamente ou aguarde alguns instantes.'
+    );
+  }
+
   const errorMessage =
     typeof data?.error === 'string'
       ? data.error
@@ -232,7 +248,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function syncBase() {
+async function syncBase() {
     if (!mountedRef.current) {
       return;
     }
@@ -241,12 +257,21 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     setSyncError(null);
 
     try {
-      const response = await fetch('/api/siscore/sync', {
-        method: 'POST',
-        credentials: 'include',
-      });
+      const scopes = ['material_hospitalar', 'material_farmacologico', 'notas_fiscais'] as const;
 
-      await parseSyncResponse(response);
+      for (const scope of scopes) {
+        const response = await fetch('/api/siscore/sync', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ scope }),
+        });
+
+        await parseSyncResponse(response);
+      }
+
       await refresh();
     } catch (syncLoadError) {
       if (!mountedRef.current) {
