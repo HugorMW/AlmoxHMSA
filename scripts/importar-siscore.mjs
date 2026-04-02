@@ -11,7 +11,7 @@ import {
   registrarUsoCredencialSiscoreNoBanco,
 } from './shared/siscore-db-credentials.mjs';
 
-const COLUNAS_OBRIGATORIAS_ESTOQUE = [
+export const COLUNAS_OBRIGATORIAS_ESTOQUE = [
   'cd_produto',
   'ds_produto',
   'ds_unidade',
@@ -27,7 +27,7 @@ const COLUNAS_OBRIGATORIAS_ESTOQUE = [
   'eat',
 ];
 
-const COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS = [
+export const COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS = [
   'unidade',
   'nm_fornecedor',
   'data_entrada',
@@ -199,7 +199,7 @@ function limparValorUrlExportacao(value) {
   return normalized;
 }
 
-function obterConfiguracoesExportacao(env) {
+export function obterConfiguracoesExportacao(env) {
   return CATEGORIAS_IMPORTACAO
     .map((config) => ({
       ...config,
@@ -208,7 +208,7 @@ function obterConfiguracoesExportacao(env) {
     .filter((config) => config.exportacaoUrl);
 }
 
-function obterConfiguracaoNotasFiscais(env) {
+export function obterConfiguracaoNotasFiscais(env) {
   return {
     descricao: 'NOTAS FISCAIS HMSA',
     exportacaoUrl:
@@ -285,7 +285,7 @@ function cookieHeader(cookieJar) {
   return [...cookieJar.entries()].map(([key, value]) => `${key}=${value}`).join('; ');
 }
 
-async function autenticarSiscore({ baseUrl, usuario, senha }) {
+export async function autenticarSiscore({ baseUrl, usuario, senha }) {
   const cookieJar = new Map();
 
   const loginPage = await fetch(baseUrl, {
@@ -348,7 +348,7 @@ async function autenticarSiscore({ baseUrl, usuario, senha }) {
   return cookieJar;
 }
 
-async function baixarPlanilhaSiscore({ baseUrl, exportacaoUrl, cookieJar }) {
+export async function baixarPlanilhaSiscore({ baseUrl, exportacaoUrl, cookieJar }) {
   const exportUrl = new URL(exportacaoUrl, baseUrl).toString();
   const response = await fetch(exportUrl, {
     headers: {
@@ -372,7 +372,7 @@ async function baixarPlanilhaSiscore({ baseUrl, exportacaoUrl, cookieJar }) {
   return { buffer, nomeArquivo };
 }
 
-function lerLinhasDaPlanilha(buffer, colunasObrigatorias) {
+export function lerLinhasDaPlanilha(buffer, colunasObrigatorias) {
   const workbook = xlsx.read(buffer, { type: 'buffer' });
   const firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) {
@@ -411,7 +411,7 @@ function chunk(array, size = 500) {
   return output;
 }
 
-function normalizarLinhasEstoque(rows, categoriaMaterial) {
+export function normalizarLinhasEstoque(rows, categoriaMaterial) {
   const normalized = rows.map((row) => {
     const codigoProdutoReferenciaBruto = String(row.cd_pro_fat ?? '').trim();
     const codigoProdutoReferencia = valorEhNaoLocalizado(codigoProdutoReferenciaBruto)
@@ -741,7 +741,7 @@ function hashConteudo(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function normalizarLinhasNotasFiscais(rows) {
+export function normalizarLinhasNotasFiscais(rows) {
   return rows
     .map((row, index) => ({
       linha_origem: index + 2,
@@ -768,7 +768,7 @@ function normalizarLinhasNotasFiscais(rows) {
     );
 }
 
-function agruparNotasFiscais(rows) {
+export function agruparNotasFiscais(rows) {
   const groups = new Map();
 
   for (const row of rows) {
