@@ -1,8 +1,19 @@
 import { lerCredencialSiscoreUsuario, registrarUsoCredencialSiscoreUsuario } from '@/server/siscore-credential-store';
 import { getSupabaseAdmin } from '@/server/supabase-admin';
+import {
+  agruparNotasFiscais,
+  autenticarSiscore,
+  baixarPlanilhaSiscore,
+  COLUNAS_OBRIGATORIAS_ESTOQUE,
+  COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS,
+  lerLinhasDaPlanilha,
+  normalizarLinhasEstoque,
+  normalizarLinhasNotasFiscais,
+  obterConfiguracaoNotasFiscais,
+  obterConfiguracoesExportacao,
+} from '@/server/siscore-sync-core';
 
 export async function executarImportacaoSiscoreDoUsuario(usuario: string) {
-  const importer: any = await import('../../scripts/importar-siscore.mjs');
   const credencial = await lerCredencialSiscoreUsuario(usuario);
 
   if (!credencial) {
@@ -10,8 +21,8 @@ export async function executarImportacaoSiscoreDoUsuario(usuario: string) {
   }
 
   const siscoreBaseUrl = String(process.env.SISCORE_BASE_URL ?? '').trim();
-  const configuracoesExportacao = importer.obterConfiguracoesExportacao(process.env);
-  const configuracaoNotasFiscais = importer.obterConfiguracaoNotasFiscais(process.env);
+  const configuracoesExportacao = obterConfiguracoesExportacao(process.env);
+  const configuracaoNotasFiscais = obterConfiguracaoNotasFiscais(process.env);
 
   if (!siscoreBaseUrl || !configuracoesExportacao.length) {
     throw new Error(
@@ -19,7 +30,7 @@ export async function executarImportacaoSiscoreDoUsuario(usuario: string) {
     );
   }
 
-  const cookieJar = await importer.autenticarSiscore({
+  const cookieJar = await autenticarSiscore({
     baseUrl: siscoreBaseUrl,
     usuario: credencial.usuario,
     senha: credencial.senha,
@@ -33,14 +44,14 @@ export async function executarImportacaoSiscoreDoUsuario(usuario: string) {
 
   for (const configuracao of configuracoesExportacao) {
     try {
-      const { buffer, nomeArquivo } = await importer.baixarPlanilhaSiscore({
+      const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
         baseUrl: siscoreBaseUrl,
         exportacaoUrl: configuracao.exportacaoUrl,
         cookieJar,
       });
 
-      const rawRows = importer.lerLinhasDaPlanilha(buffer, importer.COLUNAS_OBRIGATORIAS_ESTOQUE);
-      const rows = importer.normalizarLinhasEstoque(rawRows, configuracao.categoria_material);
+      const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_ESTOQUE);
+      const rows = normalizarLinhasEstoque(rawRows, configuracao.categoria_material);
 
       const { data, error } = await supabase.rpc('importar_estoque_siscore', {
         p_rows: rows,
@@ -67,15 +78,15 @@ export async function executarImportacaoSiscoreDoUsuario(usuario: string) {
   }
 
   try {
-    const { buffer, nomeArquivo } = await importer.baixarPlanilhaSiscore({
+    const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
       baseUrl: siscoreBaseUrl,
       exportacaoUrl: configuracaoNotasFiscais.exportacaoUrl,
       cookieJar,
     });
 
-    const rawRows = importer.lerLinhasDaPlanilha(buffer, importer.COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS);
-    const rows = importer.normalizarLinhasNotasFiscais(rawRows);
-    const notasFiscais = importer.agruparNotasFiscais(rows);
+    const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS);
+    const rows = normalizarLinhasNotasFiscais(rawRows);
+    const notasFiscais = agruparNotasFiscais(rows);
 
     const { data, error } = await supabase.rpc('importar_notas_fiscais_siscore', {
       p_notas: notasFiscais,
