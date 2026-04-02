@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { Client } from 'pg';
+import { getSupabaseAdmin } from '@/server/supabase-admin';
 
 type CredencialPersistida = {
   siscore_usuario: string;
@@ -13,16 +13,6 @@ type CredencialPersistida = {
 
 function normalizarUsuarioSiscore(usuario: string) {
   return usuario.trim().toLowerCase();
-}
-
-function getConnectionString() {
-  const connectionString = process.env.SUPABASE_DB_URL;
-
-  if (!connectionString) {
-    throw new Error('SUPABASE_DB_URL nao foi definida para acessar as credenciais do SISCORE.');
-  }
-
-  return connectionString;
 }
 
 function getCredentialSecret() {
@@ -69,21 +59,6 @@ function decryptPassword(credencial: Pick<CredencialPersistida, 'senha_cifrada' 
   return decrypted.toString('utf8');
 }
 
-async function withClient<T>(handler: (client: any) => Promise<T>) {
-  const client = new Client({
-    connectionString: getConnectionString(),
-    ssl: { rejectUnauthorized: false },
-  });
-
-  await client.connect();
-
-  try {
-    return await handler(client);
-  } finally {
-    await client.end();
-  }
-}
-
 export async function salvarCredencialSiscoreUsuario({
   usuario,
   senha,
@@ -99,36 +74,18 @@ export async function salvarCredencialSiscoreUsuario({
   }
 
   const encrypted = encryptPassword(senha);
-
-  await withClient(async (client) => {
-    await client.query(
-      `
-        insert into almox.siscore_credencial_usuario (
-          siscore_usuario,
-          siscore_usuario_chave,
-          senha_cifrada,
-          iv,
-          auth_tag,
-          ultima_validacao_em
-        )
-        values ($1, $2, $3, $4, $5, now())
-        on conflict (siscore_usuario_chave) do update
-          set siscore_usuario = excluded.siscore_usuario,
-              senha_cifrada = excluded.senha_cifrada,
-              iv = excluded.iv,
-              auth_tag = excluded.auth_tag,
-              ultima_validacao_em = now(),
-              atualizado_em = now()
-      `,
-      [
-        usuarioLimpo,
-        usuarioChave,
-        encrypted.senha_cifrada,
-        encrypted.iv,
-        encrypted.auth_tag,
-      ]
-    );
+  const supabase = getSupabaseAdmin() as any;
+  const { error } = await supabase.rpc('salvar_credencial_siscore_usuario', {
+    p_siscore_usuario: usuarioLimpo,
+    p_siscore_usuario_chave: usuarioChave,
+    p_senha_cifrada: encrypted.senha_cifrada,
+    p_iv: encrypted.iv,
+    p_auth_tag: encrypted.auth_tag,
   });
+
+  if (error) {
+    throw new Error(`Supabase RPC salvar_credencial_siscore_usuario falhou: ${error.message}`);
+  }
 }
 
 export async function lerCredencialSiscoreUsuario(usuario: string) {
@@ -137,36 +94,27 @@ export async function lerCredencialSiscoreUsuario(usuario: string) {
     return null;
   }
 
-  return withClient(async (client) => {
-    const result = await client.query(
-      `
-        select
-          siscore_usuario,
-          senha_cifrada,
-          iv,
-          auth_tag,
-          ultima_validacao_em,
-          ultimo_uso_em
-        from almox.siscore_credencial_usuario
-        where siscore_usuario_chave = $1
-        limit 1
-      `,
-      [usuarioChave]
-    );
-
-    if (!result.rowCount) {
-      return null;
-    }
-
-    const credencial = result.rows[0] as CredencialPersistida;
-
-    return {
-      usuario: credencial.siscore_usuario,
-      senha: decryptPassword(credencial),
-      ultimaValidacaoEm: credencial.ultima_validacao_em,
-      ultimoUsoEm: credencial.ultimo_uso_em,
-    };
+  const supabase = getSupabaseAdmin() as any;
+  const { data, error } = await supabase.rpc('ler_credencial_siscore_usuario', {
+    p_siscore_usuario_chave: usuarioChave,
   });
+
+  if (error) {
+    throw new Error(`Supabase RPC ler_credencial_siscore_usuario falhou: ${error.message}`);
+  }
+
+  const credencial = Array.isArray(data) ? (data[0] as CredencialPersistida | undefined) : undefined;
+
+  if (!credencial) {
+    return null;
+  }
+
+  return {
+    usuario: credencial.siscore_usuario,
+    senha: decryptPassword(credencial),
+    ultimaValidacaoEm: credencial.ultima_validacao_em,
+    ultimoUsoEm: credencial.ultimo_uso_em,
+  };
 }
 
 export async function registrarUsoCredencialSiscoreUsuario(usuario: string) {
@@ -175,15 +123,12 @@ export async function registrarUsoCredencialSiscoreUsuario(usuario: string) {
     return;
   }
 
-  await withClient(async (client) => {
-    await client.query(
-      `
-        update almox.siscore_credencial_usuario
-        set ultimo_uso_em = now(),
-            atualizado_em = now()
-        where siscore_usuario_chave = $1
-      `,
-      [usuarioChave]
-    );
+  const supabase = getSupabaseAdmin() as any;
+  const { error } = await supabase.rpc('registrar_uso_credencial_siscore_usuario', {
+    p_siscore_usuario_chave: usuarioChave,
   });
+
+  if (error) {
+    throw new Error(`Supabase RPC registrar_uso_credencial_siscore_usuario falhou: ${error.message}`);
+  }
 }
