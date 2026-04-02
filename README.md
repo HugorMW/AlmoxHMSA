@@ -1,56 +1,97 @@
-# Welcome to your Expo app 👋
+# Almox HMSA
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicação web em Expo Router com:
 
-## Get started
+- interface operacional do almoxarifado
+- autenticação via SISCORE
+- rotas de API server-side
+- leitura de dados no Supabase
 
-1. Install dependencies
+## Desenvolvimento local
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+1. Instale as dependências:
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+2. Crie o `.env.local` a partir de `.env.local.example`.
 
-### Other setup steps
+3. Rode o projeto:
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+npx expo start --web
+```
 
-## Learn more
+## Deploy web
 
-To learn more about developing your project with Expo, look at the following resources:
+Este projeto usa `expo.web.output = "server"` e rotas `+api`, então o caminho recomendado é **EAS Hosting**.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Pré-requisitos
 
-## Join the community
+1. Ter conta no Expo
+2. Fazer login no CLI:
 
-Join our community of developers creating universal apps.
+```bash
+npx eas-cli login
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+3. Configurar as variáveis de ambiente no Expo Dashboard ou via CLI
+
+### Variáveis importantes para produção
+
+Cliente web:
+
+- `EXPO_PUBLIC_SUPABASE_URL`
+- `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+
+Servidor/API routes:
+
+- `APP_SESSION_SECRET`
+- `SISCORE_CREDENTIALS_KEY`
+- `SISCORE_BASE_URL`
+- `SISCORE_EXPORTACAO_URL`
+- `SISCORE_EXPORTACAO_URL_FARMACOLOGICO`
+- `SISCORE_EXPORTACAO_URL_NOTAS_FISCAIS`
+
+Observação:
+
+- `SUPABASE_DB_URL` é necessária se o site publicado for disparar a sincronização do SISCORE via API route.
+- `SISCORE_USUARIO` e `SISCORE_SENHA` podem ficar vazios no site publicado quando a senha estiver sendo salva de forma cifrada após o login.
+- `SISCORE_CREDENTIALS_KEY` deve ser uma chave forte e exclusiva para cifrar as credenciais salvas no Supabase.
+
+### Comandos
+
+Preview:
+
+```bash
+npm run web:deploy
+```
+
+Produção:
+
+```bash
+npm run web:deploy:prod
+```
+
+Os scripts fazem:
+
+1. `expo export --platform web`
+2. `eas deploy`
+
+## Credencial do SISCORE
+
+O login do site valida o usuario e a senha no SISCORE e salva a senha cifrada no Supabase para uso posterior na sincronizacao manual da base.
+
+Fluxo atual:
+
+1. usuario faz login no site
+2. backend valida no SISCORE
+3. senha e salva cifrada no Supabase
+4. ao clicar em `Atualizar base`, a API route usa o usuario da sessao para localizar essa credencial e executar a importacao
+
+Para isso funcionar em producao, configure:
+
+- `SUPABASE_DB_URL`
+- `APP_SESSION_SECRET`
+- `SISCORE_CREDENTIALS_KEY`
