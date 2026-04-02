@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "AlmoxHMSA",
-    "slug": "AlmoxHMSA",
+    "slug": "almoxhmsa",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -39,6 +39,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a2b97cdb-345b-4053-a1af-16dc577b2137"
+      }
+    },
+    "owner": "hugormw"
   }
 }

@@ -1,9 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import pg from 'pg';
-
-const { Client } = pg;
+import { Client } from 'pg';
 
 const rootDir = process.cwd();
 const envPath = path.join(rootDir, '.env.local');

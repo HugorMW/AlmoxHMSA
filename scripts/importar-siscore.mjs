@@ -3,15 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, URL, URLSearchParams } from 'node:url';
 
-import pg from 'pg';
+import { Client } from 'pg';
 import xlsx from 'xlsx';
 
 import {
   lerCredencialSiscoreDoBanco,
   registrarUsoCredencialSiscoreNoBanco,
 } from './shared/siscore-db-credentials.mjs';
-
-const { Client } = pg;
 
 const COLUNAS_OBRIGATORIAS_ESTOQUE = [
   'cd_produto',

@@ -47,6 +47,11 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof Error) {
+      console.error('[auth/login] Falha ao salvar credencial SISCORE apos login valido.', {
+        message: error.message,
+        stack: error.stack,
+      });
+
       return Response.json(
         {
           error: 'O login foi validado no SISCORE, mas nao foi possivel salvar a credencial para atualizacao futura da base.',
@@ -55,6 +60,8 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    console.error('[auth/login] Falha interna nao identificada ao finalizar login do SISCORE.', error);
 
     return Response.json(
       {

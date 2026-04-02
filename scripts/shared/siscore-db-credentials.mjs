@@ -1,8 +1,6 @@
 import crypto from 'node:crypto';
 
-import pg from 'pg';
-
-const { Client } = pg;
+import { Client } from 'pg';
 
 function normalizarUsuarioSiscore(usuario) {
   return String(usuario ?? '').trim().toLowerCase();

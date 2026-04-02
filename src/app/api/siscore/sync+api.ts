@@ -30,6 +30,12 @@ export async function POST(request: Request) {
       result,
     });
   } catch (error) {
+    console.error('[siscore/sync] Falha ao sincronizar base do SISCORE.', {
+      usuario: session.usuario,
+      message: error instanceof Error ? error.message : 'Falha interna na sincronizacao.',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
     return Response.json(
       {
         error: 'Nao foi possivel sincronizar a base do SISCORE agora.',
