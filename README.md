@@ -79,6 +79,20 @@ Os scripts fazem:
 1. `expo export --platform web`
 2. `eas deploy`
 
+## Deploy automático pelo GitHub
+
+O projeto já está preparado com EAS Workflows em:
+
+- [.eas/workflows/deploy-web.yml](c:/Users/hugor/Projetos/SiteAlmoxHMSA/v1/AlmoxHMSA/.eas/workflows/deploy-web.yml)
+
+Fluxo:
+
+1. push na branch `master`
+2. EAS Workflows roda no GitHub conectado ao projeto
+3. o site é publicado em produção automaticamente
+
+Se preferir um primeiro teste controlado, faça um deploy manual primeiro. Depois disso, basta continuar publicando no GitHub que o deploy de produção passa a seguir o fluxo automático.
+
 ## Credencial do SISCORE
 
 O login do site valida o usuario e a senha no SISCORE e salva a senha cifrada no Supabase para uso posterior na sincronizacao manual da base.
