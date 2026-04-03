@@ -53,6 +53,7 @@ jobs:
           SISCORE_EXPORTACAO_URL_NOTAS_FISCAIS: ${{ secrets.SISCORE_EXPORTACAO_URL_NOTAS_FISCAIS }}
           SISCORE_CREDENTIALS_KEY: ${{ secrets.SISCORE_CREDENTIALS_KEY }}
           SISCORE_CREDENTIALS_USUARIO: ${{ inputs.siscore_usuario }}
+          SISCORE_NOTAS_FISCAIS_MODO: rpc
           SISCORE_SYNC_SCOPE: ${{ inputs.scope }}
           SISCORE_SYNC_TRIGGERED_BY: ${{ inputs.triggered_by }}
         run: npm run siscore:import

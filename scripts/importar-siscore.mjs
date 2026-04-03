@@ -1158,7 +1158,12 @@ async function marcarNotasFiscaisRemovidas(client, { loteId, noteIds }) {
   return result.rowCount ?? 0;
 }
 
-async function persistirNotasFiscais({ connectionString, notasFiscais, nomeArquivo, exportacaoUrl }) {
+function obterModoPersistenciaNotas(env) {
+  const modo = String(env.SISCORE_NOTAS_FISCAIS_MODO ?? '').trim().toLowerCase();
+  return modo === 'rpc' ? 'rpc' : 'legacy';
+}
+
+async function persistirNotasFiscaisLegado({ connectionString, notasFiscais, nomeArquivo, exportacaoUrl }) {
   const client = new Client({
     connectionString,
     ssl: { rejectUnauthorized: false },
@@ -1244,6 +1249,62 @@ async function persistirNotasFiscais({ connectionString, notasFiscais, nomeArqui
   }
 }
 
+async function persistirNotasFiscaisViaRpc({ connectionString, notasFiscais, nomeArquivo, exportacaoUrl }) {
+  const client = new Client({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+  });
+
+  await client.connect();
+
+  try {
+    const result = await client.query(
+      `
+        select public.importar_notas_fiscais_siscore($1::jsonb, $2, $3) as resumo
+      `,
+      [JSON.stringify(notasFiscais), nomeArquivo, exportacaoUrl]
+    );
+
+    const resumoBruto = result.rows[0]?.resumo;
+    const resumo =
+      typeof resumoBruto === 'string'
+        ? JSON.parse(resumoBruto)
+        : resumoBruto;
+
+    if (!resumo || typeof resumo !== 'object') {
+      throw new Error('A RPC de notas fiscais nao retornou um resumo valido.');
+    }
+
+    return resumo;
+  } finally {
+    await client.end();
+  }
+}
+
+async function persistirNotasFiscais({
+  connectionString,
+  notasFiscais,
+  nomeArquivo,
+  exportacaoUrl,
+  modoPersistencia,
+}) {
+  if (modoPersistencia === 'rpc') {
+    return persistirNotasFiscaisViaRpc({
+      connectionString,
+      notasFiscais,
+      nomeArquivo,
+      exportacaoUrl,
+    });
+  }
+
+  return persistirNotasFiscaisLegado({
+    connectionString,
+    notasFiscais,
+    nomeArquivo,
+    exportacaoUrl,
+  });
+}
+
 export async function runSiscoreImport(options = {}) {
   const rootDir = options.rootDir ?? process.cwd();
   const env = {
@@ -1261,6 +1322,7 @@ export async function runSiscoreImport(options = {}) {
   let siscoreSenha = String(env.SISCORE_SENHA ?? '').trim();
   const configuracoesExportacao = obterConfiguracoesExportacao(env);
   const configuracaoNotasFiscais = obterConfiguracaoNotasFiscais(env);
+  const modoPersistenciaNotas = obterModoPersistenciaNotas(env);
 
   if (!connectionString) {
     throw new Error('SUPABASE_DB_URL nao foi definida em .env.local.');
@@ -1345,13 +1407,24 @@ export async function runSiscoreImport(options = {}) {
     const rows = normalizarLinhasNotasFiscais(rawRows);
     const notasFiscais = agruparNotasFiscais(rows);
 
-    console.log(`Persistindo ${notasFiscais.length} nota(s) fiscais do HMSA no Supabase...`);
+    console.log(
+      `Persistindo ${notasFiscais.length} nota(s) fiscais do HMSA no Supabase via ${
+        modoPersistenciaNotas === 'rpc' ? 'RPC em lote' : 'modo legado'
+      }...`
+    );
+    const inicioPersistenciaNotas = Date.now();
     const resumo = await persistirNotasFiscais({
       connectionString,
       notasFiscais,
       nomeArquivo,
       exportacaoUrl: configuracaoNotasFiscais.exportacaoUrl,
+      modoPersistencia: modoPersistenciaNotas,
     });
+    console.log(
+      `Persistencia de notas fiscais finalizada em ${((Date.now() - inicioPersistenciaNotas) / 1000).toFixed(1)}s via ${
+        modoPersistenciaNotas === 'rpc' ? 'RPC em lote' : 'modo legado'
+      }.`
+    );
 
     sucessos.push({
       categoria: configuracaoNotasFiscais.descricao,
