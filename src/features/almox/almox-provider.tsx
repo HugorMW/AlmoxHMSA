@@ -34,6 +34,12 @@ type SyncTrackedJob = {
   workflowArquivo: string;
   workflowRunUrl: string | null;
   mensagemErro: string | null;
+  metadados?: Record<string, unknown>;
+};
+
+type SyncSuccessMetadata = {
+  categoria?: string;
+  skipped?: boolean;
 };
 
 type AlmoxDataContextValue = {
@@ -41,6 +47,7 @@ type AlmoxDataContextValue = {
   loading: boolean;
   refreshing: boolean;
   syncingBase: boolean;
+  lastRefreshAt: string | null;
   syncError: string | null;
   syncNotice: string | null;
   usingCachedData: boolean;
@@ -157,6 +164,16 @@ function isSyncTrackedJob(value: unknown): value is SyncTrackedJob {
   );
 }
 
+function lerSucessosDoJob(job: SyncTrackedJob): SyncSuccessMetadata[] {
+  const sucessos = job.metadados?.sucessos;
+  return Array.isArray(sucessos) ? sucessos.filter((item): item is SyncSuccessMetadata => typeof item === 'object' && item !== null) : [];
+}
+
+function jobFoiIntegralmenteIgnorado(job: SyncTrackedJob) {
+  const sucessos = lerSucessosDoJob(job);
+  return sucessos.length > 0 && sucessos.every((sucesso) => sucesso.skipped === true);
+}
+
 async function parseSyncResponse(response: Response) {
   const rawText = await response.text().catch(() => '');
   let data: any = {};
@@ -217,6 +234,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [usingCachedData, setUsingCachedData] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<FiltroCategoriaMaterial>('todos');
   const [pendingSync, setPendingSync] = useState<PendingSyncState | null>(null);
@@ -294,6 +312,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       });
       setError(null);
       setUsingCachedData(false);
+      setLastRefreshAt(new Date().toISOString());
       hasLoadedRef.current = true;
       writeSessionFlag(ALMOX_SESSION_KEY);
     } catch (loadError) {
@@ -459,6 +478,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         setBlacklistItems(cached.value.blacklistItems);
       });
       setUsingCachedData(true);
+      setLastRefreshAt(new Date(cached.savedAt).toISOString());
       setLoading(false);
     }
 
@@ -527,9 +547,14 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
           }
 
           setSyncError(null);
+          const jobsIgnorados = jobs.filter(jobFoiIntegralmenteIgnorado).map(getSyncJobLabel);
+          const mensagemSucessoBase =
+            jobsIgnorados.length === jobs.length && jobs.length > 0
+              ? 'Sincronizacao concluida sem mudancas nos dados importados.'
+              : 'Base sincronizada com sucesso.';
           setSyncNotice(
             jobs.length > 0
-              ? `Base sincronizada com sucesso. ${descreverJobsSincronizacao(jobs)}.`
+              ? `${mensagemSucessoBase} ${descreverJobsSincronizacao(jobs)}.`
               : 'Base sincronizada com sucesso a partir do SISCORE.'
           );
           if (typeof window !== 'undefined') {
@@ -595,6 +620,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         loading,
         refreshing,
         syncingBase,
+        lastRefreshAt,
         syncError,
         syncNotice,
         usingCachedData,

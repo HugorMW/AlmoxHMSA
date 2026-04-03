@@ -25,7 +25,7 @@ type PanelKey = 'transfer' | 'idle' | 'rupture';
 export default function DashboardScreen() {
   const [activeHospital, setActiveHospital] = useState<Hospital>('HMSA');
   const [activePanel, setActivePanel] = useState<PanelKey | null>('transfer');
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
+  const { dataset, categoryFilter, error, loading, refreshing, lastRefreshAt, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
   const showMaterialLabel = categoryFilter === 'todos';
 
   const dashboard = dataset.dashboardByHospital[activeHospital];
@@ -36,7 +36,12 @@ export default function DashboardScreen() {
     ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dashboard.last_sync))
     : loading
       ? 'carregando base'
-      : 'sem sincronização';
+      : 'sem importação com mudança';
+  const formattedRefresh = lastRefreshAt
+    ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lastRefreshAt))
+    : loading
+      ? 'carregando leitura'
+      : 'sem leitura recente';
 
   const intelligenceCards = [
     {
@@ -81,7 +86,7 @@ export default function DashboardScreen() {
     <ScreenScrollView>
       <PageHeader
         title="Dashboard"
-        subtitle={`Base operacional conectada ao Supabase. Última sincronização: ${formattedSync}.`}
+        subtitle={`Base operacional conectada ao Supabase. Última importação com mudança: ${formattedSync}. Última leitura do app: ${formattedRefresh}.`}
         aside={
           <ActionButton
             label={syncingBase ? 'Sincronizando...' : 'Atualizar base'}
