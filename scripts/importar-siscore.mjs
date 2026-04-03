@@ -702,7 +702,12 @@ async function inserirEstoqueImportado(client, loteId, rows, unidadeMap, produto
   }
 }
 
-async function persistirEstoque({ connectionString, rows, nomeArquivo, categoriaMaterial, exportacaoUrl }) {
+function obterModoPersistenciaEstoque(env) {
+  const modo = String(env.SISCORE_ESTOQUE_MODO ?? '').trim().toLowerCase();
+  return modo === 'rpc' ? 'rpc' : 'legacy';
+}
+
+async function persistirEstoqueLegado({ connectionString, rows, nomeArquivo, categoriaMaterial, exportacaoUrl }) {
   const client = new Client({
     connectionString,
     ssl: { rejectUnauthorized: false },
@@ -730,6 +735,60 @@ async function persistirEstoque({ connectionString, rows, nomeArquivo, categoria
   } finally {
     await client.end();
   }
+}
+
+async function persistirEstoqueViaRpc({ connectionString, rows, nomeArquivo, categoriaMaterial, exportacaoUrl }) {
+  const client = new Client({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+  });
+
+  await client.connect();
+
+  try {
+    const result = await client.query(
+      `
+        select public.importar_estoque_siscore($1::jsonb, $2, $3, $4) as lote_id
+      `,
+      [JSON.stringify(rows), nomeArquivo, categoriaMaterial, exportacaoUrl]
+    );
+
+    const loteId = result.rows[0]?.lote_id;
+    if (!loteId) {
+      throw new Error(`A RPC de estoque nao retornou lote para ${categoriaMaterial}.`);
+    }
+
+    return loteId;
+  } finally {
+    await client.end();
+  }
+}
+
+async function persistirEstoque({
+  connectionString,
+  rows,
+  nomeArquivo,
+  categoriaMaterial,
+  exportacaoUrl,
+  modoPersistencia,
+}) {
+  if (modoPersistencia === 'rpc') {
+    return persistirEstoqueViaRpc({
+      connectionString,
+      rows,
+      nomeArquivo,
+      categoriaMaterial,
+      exportacaoUrl,
+    });
+  }
+
+  return persistirEstoqueLegado({
+    connectionString,
+    rows,
+    nomeArquivo,
+    categoriaMaterial,
+    exportacaoUrl,
+  });
 }
 
 function unidadeEhHmsa(value) {
@@ -1322,6 +1381,7 @@ export async function runSiscoreImport(options = {}) {
   let siscoreSenha = String(env.SISCORE_SENHA ?? '').trim();
   const configuracoesExportacao = obterConfiguracoesExportacao(env);
   const configuracaoNotasFiscais = obterConfiguracaoNotasFiscais(env);
+  const modoPersistenciaEstoque = obterModoPersistenciaEstoque(env);
   const modoPersistenciaNotas = obterModoPersistenciaNotas(env);
 
   if (!connectionString) {
@@ -1374,14 +1434,26 @@ export async function runSiscoreImport(options = {}) {
       const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_ESTOQUE);
       const rows = normalizarLinhasEstoque(rawRows, configuracao.categoria_material);
 
-      console.log(`Persistindo ${rows.length} linha(s) de ${configuracao.descricao} no Supabase...`);
+      console.log(
+        `Persistindo ${rows.length} linha(s) de ${configuracao.descricao} no Supabase via ${
+          modoPersistenciaEstoque === 'rpc' ? 'RPC em lote' : 'modo legado'
+        }...`
+      );
+      const inicioPersistenciaEstoque = Date.now();
       const loteId = await persistirEstoque({
         connectionString,
         rows,
         nomeArquivo,
         categoriaMaterial: configuracao.categoria_material,
         exportacaoUrl: configuracao.exportacaoUrl,
+        modoPersistencia: modoPersistenciaEstoque,
       });
+      console.log(
+        `Persistencia de ${configuracao.descricao} finalizada em ${(
+          (Date.now() - inicioPersistenciaEstoque) /
+          1000
+        ).toFixed(1)}s via ${modoPersistenciaEstoque === 'rpc' ? 'RPC em lote' : 'modo legado'}.`
+      );
 
       sucessos.push({ categoria: configuracao.descricao, loteId, quantidade: rows.length });
       console.log(`Importacao concluida com sucesso para ${configuracao.descricao}. Lote: ${loteId}`);
