@@ -85,6 +85,29 @@ export function removeCachedValue(key: string) {
   }
 }
 
+export function removeCachedValuesByPrefix(prefix: string) {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return;
+  }
+
+  try {
+    const keysToRemove: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key && key.startsWith(prefix)) {
+        keysToRemove.push(key);
+      }
+    }
+
+    for (const key of keysToRemove) {
+      storage.removeItem(key);
+    }
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 export function readSessionFlag(key: string) {
   const storage = getSessionStorage();
   if (!storage) {

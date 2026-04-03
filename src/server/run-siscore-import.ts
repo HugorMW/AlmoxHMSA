@@ -15,6 +15,7 @@ import {
 
 export type SiscoreSyncScope =
   | 'all'
+  | 'estoque'
   | 'material_hospitalar'
   | 'material_farmacologico'
   | 'notas_fiscais';
@@ -48,7 +49,7 @@ export async function executarImportacaoSiscoreDoUsuario(usuario: string, scope:
   const sucessos: Array<{ categoria: string; loteId: string; quantidade: number }> = [];
   const falhas: Array<{ categoria: string; message: string }> = [];
   const configuracoesSelecionadas =
-    scope === 'all'
+    scope === 'all' || scope === 'estoque'
       ? configuracoesExportacao
       : configuracoesExportacao.filter((config) => config.categoria_material === scope);
 

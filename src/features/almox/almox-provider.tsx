@@ -9,14 +9,32 @@ import {
   getEmailConfig,
   hydrateDataset,
 } from './data';
-import { readCachedValue, readSessionFlag, writeCachedValue, writeSessionFlag } from './cache';
+import { readCachedValue, readSessionFlag, removeCachedValue, writeCachedValue, writeSessionFlag } from './cache';
 import { BlacklistItem, CategoriaMaterial, EmailConfig, FiltroCategoriaMaterial } from './types';
 
 const PAGE_SIZE = 1000;
 const ALMOX_CACHE_KEY = 'almox:base:v1';
 const ALMOX_SESSION_KEY = 'almox:base:session:v1';
 const ALMOX_CACHE_TTL_MS = 5 * 60 * 1000;
+const SYNC_STATUS_POLL_INTERVAL_MS = 10 * 1000;
+const SYNC_STATUS_MAX_WAIT_MS = 2.5 * 60 * 1000;
 const emailConfig = getEmailConfig();
+export const ALMOX_SYNC_COMPLETED_EVENT = 'almox:sync-completed';
+
+type PendingSyncState = {
+  trackingId: string;
+  startedAt: number;
+  deadlineAt: number;
+};
+
+type SyncTrackedJob = {
+  jobTipo: 'estoque' | 'notas_fiscais';
+  scope: 'all' | 'estoque' | 'material_hospitalar' | 'material_farmacologico' | 'notas_fiscais';
+  status: 'queued' | 'running' | 'success' | 'failed';
+  workflowArquivo: string;
+  workflowRunUrl: string | null;
+  mensagemErro: string | null;
+};
 
 type AlmoxDataContextValue = {
   dataset: AlmoxDataset;
@@ -96,6 +114,49 @@ function formatLoadError(error: unknown) {
   return 'Falha ao consultar a base do Supabase.';
 }
 
+function getSyncJobLabel(job: SyncTrackedJob) {
+  if (job.jobTipo === 'notas_fiscais') {
+    return 'Notas fiscais';
+  }
+
+  if (job.scope === 'material_hospitalar') {
+    return 'Estoque hospitalar';
+  }
+
+  if (job.scope === 'material_farmacologico') {
+    return 'Estoque farmacológico';
+  }
+
+  return 'Estoque';
+}
+
+function descreverJobsSincronizacao(jobs: SyncTrackedJob[]) {
+  return jobs
+    .map((job) => {
+      const suffix =
+        job.status === 'success'
+          ? 'concluído'
+          : job.status === 'failed'
+            ? 'falhou'
+            : job.status === 'running'
+              ? 'em execução'
+              : 'na fila';
+      return `${getSyncJobLabel(job)}: ${suffix}`;
+    })
+    .join(' • ');
+}
+
+function isSyncTrackedJob(value: unknown): value is SyncTrackedJob {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as SyncTrackedJob).jobTipo === 'string' &&
+    typeof (value as SyncTrackedJob).scope === 'string' &&
+    typeof (value as SyncTrackedJob).status === 'string' &&
+    typeof (value as SyncTrackedJob).workflowArquivo === 'string'
+  );
+}
+
 async function parseSyncResponse(response: Response) {
   const rawText = await response.text().catch(() => '');
   let data: any = {};
@@ -158,6 +219,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [usingCachedData, setUsingCachedData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<FiltroCategoriaMaterial>('todos');
+  const [pendingSync, setPendingSync] = useState<PendingSyncState | null>(null);
   const mountedRef = useRef(true);
   const hasLoadedRef = useRef(false);
 
@@ -204,7 +266,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     };
   }, [rows, blacklistItems]);
 
-  async function refresh() {
+  const refresh = useCallback(async function refresh() {
     const isInitialLoad = !hasLoadedRef.current;
 
     if (!mountedRef.current) {
@@ -248,9 +310,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, []);
 
-  async function syncBase() {
+  const syncBase = useCallback(async function syncBase() {
     if (!mountedRef.current) {
       return;
     }
@@ -258,6 +320,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     setSyncingBase(true);
     setSyncError(null);
     setSyncNotice(null);
+    let keepPolling = false;
 
     try {
       const response = await fetch('/api/siscore/sync', {
@@ -271,15 +334,29 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
       const data = await parseSyncResponse(response);
 
-      if (data?.queued) {
-        const workflowUrl =
-          typeof data?.workflowUrl === 'string' && data.workflowUrl.trim().length > 0 ? ` ${data.workflowUrl}` : '';
+      if (data?.queued && typeof data?.trackingId === 'string' && data.trackingId.trim().length > 0) {
+        keepPolling = true;
+        const jobs = Array.isArray(data?.jobs) ? (data.jobs as unknown[]).filter(isSyncTrackedJob) : [];
+        const startedAt = Date.now();
+        setPendingSync({
+          trackingId: data.trackingId,
+          startedAt,
+          deadlineAt: startedAt + SYNC_STATUS_MAX_WAIT_MS,
+        });
         setSyncNotice(
-          `Sincronizacao enviada ao GitHub Actions. A base sera atualizada em background e pode levar alguns minutos.${workflowUrl}`
+          jobs.length > 0
+            ? `Sincronizacao enviada ao GitHub Actions. ${descreverJobsSincronizacao(
+                jobs.map((job: SyncTrackedJob) => ({ ...job, status: 'queued' }))
+              )}.`
+            : 'Sincronizacao enviada ao GitHub Actions. Acompanhando o status por ate 2min30s.'
         );
       } else {
+        removeCachedValue(ALMOX_CACHE_KEY);
         await refresh();
         setSyncNotice('Base sincronizada com sucesso a partir do SISCORE.');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(ALMOX_SYNC_COMPLETED_EVENT));
+        }
       }
     } catch (syncLoadError) {
       if (!mountedRef.current) {
@@ -293,11 +370,11 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       setSyncError(message);
       throw syncLoadError;
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && !keepPolling) {
         setSyncingBase(false);
       }
     }
-  }
+  }, [refresh]);
 
   async function addBlacklistItem(input: { cd_produto: string; ds_produto?: string }) {
     const supabase = getSupabaseClient();
@@ -390,7 +467,115 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mountedRef.current = false;
     };
-  }, []);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!pendingSync) {
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const finishMonitoring = () => {
+      if (!mountedRef.current || cancelled) {
+        return;
+      }
+
+      setPendingSync(null);
+      setSyncingBase(false);
+    };
+
+    const scheduleNextPoll = (delayMs: number) => {
+      if (cancelled) {
+        return;
+      }
+
+      timer = setTimeout(() => {
+        void pollStatus();
+      }, delayMs);
+    };
+
+    const pollStatus = async () => {
+      if (cancelled || !mountedRef.current) {
+        return;
+      }
+
+      const remainingMs = pendingSync.deadlineAt - Date.now();
+      if (remainingMs <= 0) {
+        setSyncNotice(
+          'A sincronizacao continua em background no GitHub Actions. O site aguardou 2min30s e parou de consultar automaticamente.'
+        );
+        finishMonitoring();
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/siscore/sync?trackingId=${encodeURIComponent(pendingSync.trackingId)}`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const data = await parseSyncResponse(response);
+        const jobs = Array.isArray(data?.jobs) ? (data.jobs as SyncTrackedJob[]) : [];
+        const status = typeof data?.status === 'string' ? data.status : 'queued';
+
+        if (status === 'success') {
+          removeCachedValue(ALMOX_CACHE_KEY);
+          await refresh();
+          if (!mountedRef.current || cancelled) {
+            return;
+          }
+
+          setSyncError(null);
+          setSyncNotice(
+            jobs.length > 0
+              ? `Base sincronizada com sucesso. ${descreverJobsSincronizacao(jobs)}.`
+              : 'Base sincronizada com sucesso a partir do SISCORE.'
+          );
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(ALMOX_SYNC_COMPLETED_EVENT));
+          }
+          finishMonitoring();
+          return;
+        }
+
+        if (status === 'failed') {
+          const erroDetalhado =
+            jobs
+              .filter((job) => job.status === 'failed')
+              .map((job) => `${getSyncJobLabel(job)}: ${job.mensagemErro || 'Falha sem detalhe adicional.'}`)
+              .join('\n') || 'Falha ao sincronizar a base do SISCORE.';
+          setSyncError(erroDetalhado);
+          setSyncNotice(null);
+          finishMonitoring();
+          return;
+        }
+
+        setSyncNotice(
+          jobs.length > 0
+            ? `Sincronizacao em andamento. ${descreverJobsSincronizacao(jobs)}.`
+            : 'Sincronizacao em andamento no GitHub Actions.'
+        );
+        scheduleNextPoll(Math.min(SYNC_STATUS_POLL_INTERVAL_MS, remainingMs));
+      } catch (syncStatusError) {
+        const message =
+          syncStatusError instanceof Error && syncStatusError.message
+            ? syncStatusError.message
+            : 'Falha ao consultar o andamento da sincronizacao do SISCORE.';
+        setSyncError(message);
+        finishMonitoring();
+      }
+    };
+
+    void pollStatus();
+
+    return () => {
+      cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [pendingSync, refresh]);
 
   useEffect(() => {
     if (!hasLoadedRef.current) {

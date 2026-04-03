@@ -56,6 +56,7 @@ const CATEGORIAS_IMPORTACAO = [
 const URL_EXPORTACAO_NOTAS_FISCAIS_PADRAO = '/export_notasfiscais?unidade=';
 const ESCOPOS_SISCORE_VALIDOS = new Set([
   'all',
+  'estoque',
   'material_hospitalar',
   'material_farmacologico',
   'notas_fiscais',
@@ -234,6 +235,10 @@ function clonarCookieJar(cookieJar) {
 
 function scopeIncluiNotasFiscais(scope) {
   return scope === 'all' || scope === 'notas_fiscais';
+}
+
+function scopeIncluiEstoque(scope) {
+  return scope === 'all' || scope === 'estoque' || scope === 'material_hospitalar' || scope === 'material_farmacologico';
 }
 
 function parseAtributos(tag) {
@@ -883,6 +888,106 @@ async function atualizarMetadadosLoteNotasFiscais(connectionString, loteId, meta
         where id = $1
       `,
       [loteId, JSON.stringify(metadados)]
+    );
+  });
+}
+
+function normalizarJobTipoSincronizacao(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'notas_fiscais' ? 'notas_fiscais' : normalized === 'estoque' ? 'estoque' : null;
+}
+
+function obterWorkflowRunUrl(env) {
+  const repository = String(env.GITHUB_REPOSITORY ?? '').trim();
+  const runId = String(env.GITHUB_RUN_ID ?? '').trim();
+
+  if (!repository || !runId) {
+    return null;
+  }
+
+  const serverUrl = String(env.GITHUB_SERVER_URL ?? 'https://github.com').trim() || 'https://github.com';
+  return `${serverUrl}/${repository}/actions/runs/${runId}`;
+}
+
+async function atualizarStatusSincronizacaoExecucao({
+  connectionString,
+  trackingId,
+  jobTipo,
+  scope,
+  usuario,
+  triggeredBy,
+  workflowArquivo,
+  status,
+  workflowRunUrl,
+  mensagemErro,
+  metadados,
+}) {
+  if (!trackingId || !jobTipo) {
+    return;
+  }
+
+  await executarComClient(connectionString, async (client) => {
+    await client.query(
+      `
+        insert into almox.siscore_sync_execucao (
+          tracking_id,
+          job_tipo,
+          scope,
+          usuario,
+          triggered_by,
+          workflow_arquivo,
+          status,
+          workflow_run_url,
+          mensagem_erro,
+          iniciado_em,
+          finalizado_em,
+          metadados
+        )
+        values (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          $8,
+          $9,
+          case when $7 = 'running' then now() else null end,
+          case when $7 in ('success', 'failed') then now() else null end,
+          coalesce($10::jsonb, '{}'::jsonb)
+        )
+        on conflict (tracking_id, job_tipo) do update
+          set scope = excluded.scope,
+              usuario = excluded.usuario,
+              triggered_by = excluded.triggered_by,
+              workflow_arquivo = excluded.workflow_arquivo,
+              status = excluded.status,
+              workflow_run_url = coalesce(excluded.workflow_run_url, almox.siscore_sync_execucao.workflow_run_url),
+              mensagem_erro = excluded.mensagem_erro,
+              iniciado_em = case
+                when excluded.status = 'running' then coalesce(almox.siscore_sync_execucao.iniciado_em, now())
+                else almox.siscore_sync_execucao.iniciado_em
+              end,
+              finalizado_em = case
+                when excluded.status in ('success', 'failed') then now()
+                else almox.siscore_sync_execucao.finalizado_em
+              end,
+              metadados = coalesce(almox.siscore_sync_execucao.metadados, '{}'::jsonb) || coalesce(excluded.metadados, '{}'::jsonb),
+              atualizado_em = now()
+      `,
+      [
+        trackingId,
+        jobTipo,
+        scope,
+        usuario,
+        triggeredBy,
+        workflowArquivo,
+        status,
+        workflowRunUrl ?? null,
+        mensagemErro ?? null,
+        JSON.stringify(metadados ?? {}),
+      ]
     );
   });
 }
@@ -1704,11 +1809,22 @@ export async function runSiscoreImport(options = {}) {
   const configuracoesExportacao = obterConfiguracoesExportacao(env);
   const configuracaoNotasFiscais = obterConfiguracaoNotasFiscais(env);
   const configuracoesSelecionadas =
-    scope === 'all'
+    scope === 'all' || scope === 'estoque'
       ? configuracoesExportacao
       : configuracoesExportacao.filter((config) => config.categoria_material === scope);
   const modoPersistenciaEstoque = obterModoPersistenciaEstoque(env);
   const modoPersistenciaNotas = obterModoPersistenciaNotas(env);
+  const trackingId = String(env.SISCORE_SYNC_TRACKING_ID ?? '').trim();
+  const trackingJobTipo = normalizarJobTipoSincronizacao(env.SISCORE_SYNC_JOB_TIPO);
+  const triggeredBy =
+    normalizarUsuarioSiscore(env.SISCORE_SYNC_TRIGGERED_BY) ||
+    usuarioDaSessao ||
+    usuarioConfigurado;
+  const workflowArquivo =
+    String(env.GITHUB_WORKFLOW_REF ?? '').trim().split('/').pop() ||
+    String(env.GITHUB_WORKFLOW ?? '').trim() ||
+    (trackingJobTipo === 'notas_fiscais' ? 'siscore-sync-notas.yml' : 'siscore-sync.yml');
+  const workflowRunUrl = obterWorkflowRunUrl(env);
 
   if (!connectionString) {
     throw new Error('SUPABASE_DB_URL nao foi definida em .env.local.');
@@ -1737,110 +1853,182 @@ export async function runSiscoreImport(options = {}) {
     throw new Error('Nenhuma URL de exportacao de estoque foi configurada para o escopo solicitado.');
   }
 
-  console.log('Autenticando no SISCORE...');
-  const cookieJar = await autenticarSiscore({
-    baseUrl: siscoreBaseUrl,
-    usuario: siscoreUsuario,
-    senha: siscoreSenha,
-  });
-  await registrarUsoCredencialSiscoreNoBanco({
-    connectionString,
-    usuario: siscoreUsuario,
-  });
+  if (trackingId && trackingJobTipo && siscoreUsuario) {
+    await atualizarStatusSincronizacaoExecucao({
+      connectionString,
+      trackingId,
+      jobTipo: trackingJobTipo,
+      scope,
+      usuario: siscoreUsuario,
+      triggeredBy,
+      workflowArquivo,
+      status: 'running',
+      workflowRunUrl,
+      metadados: {
+        scope,
+        workflow_run_url: workflowRunUrl,
+      },
+    });
+  }
 
-  const sucessos = [];
-  const falhas = [];
+  try {
+    console.log('Autenticando no SISCORE...');
+    const cookieJar = await autenticarSiscore({
+      baseUrl: siscoreBaseUrl,
+      usuario: siscoreUsuario,
+      senha: siscoreSenha,
+    });
+    await registrarUsoCredencialSiscoreNoBanco({
+      connectionString,
+      usuario: siscoreUsuario,
+    });
 
-  if (configuracoesSelecionadas.length > 0) {
-    if (configuracoesSelecionadas.length > 1) {
-      console.log(
-        `Processando ${configuracoesSelecionadas.length} exportacao(oes) de estoque em paralelo para reduzir o tempo total.`
+    const sucessos = [];
+    const falhas = [];
+
+    if (scopeIncluiEstoque(scope) && configuracoesSelecionadas.length > 0) {
+      if (configuracoesSelecionadas.length > 1) {
+        console.log(
+          `Processando ${configuracoesSelecionadas.length} exportacao(oes) de estoque em paralelo para reduzir o tempo total.`
+        );
+      }
+
+      const resultadosEstoque = await Promise.allSettled(
+        configuracoesSelecionadas.map((configuracao) =>
+          importarConfiguracaoEstoque({
+            connectionString,
+            siscoreBaseUrl,
+            cookieJar: clonarCookieJar(cookieJar),
+            configuracao,
+            modoPersistenciaEstoque,
+          })
+        )
       );
+
+      for (const [index, resultado] of resultadosEstoque.entries()) {
+        const configuracao = configuracoesSelecionadas[index];
+        if (resultado.status === 'fulfilled') {
+          const sucesso = resultado.value;
+          sucessos.push(sucesso);
+          if (sucesso.skipped) {
+            console.log(`Importacao ignorada para ${configuracao.descricao}: conteudo identico ao ultimo lote processado.`);
+          } else {
+            console.log(`Importacao concluida com sucesso para ${configuracao.descricao}. Lote: ${sucesso.loteId}`);
+          }
+        } else {
+          const message =
+            resultado.reason instanceof Error ? resultado.reason.message : 'Falha interna na importacao.';
+          falhas.push({
+            categoria: configuracao.descricao,
+            message,
+          });
+          console.error(`Falha ao importar ${configuracao.descricao}: ${message}`);
+        }
+      }
     }
 
-    const resultadosEstoque = await Promise.allSettled(
-      configuracoesSelecionadas.map((configuracao) =>
-        importarConfiguracaoEstoque({
+    if (scopeIncluiNotasFiscais(scope)) {
+      try {
+        const sucessoNotas = await importarNotasFiscais({
           connectionString,
           siscoreBaseUrl,
           cookieJar: clonarCookieJar(cookieJar),
-          configuracao,
-          modoPersistenciaEstoque,
-        })
-      )
-    );
+          configuracaoNotasFiscais,
+          modoPersistenciaNotas,
+        });
 
-    for (const [index, resultado] of resultadosEstoque.entries()) {
-      const configuracao = configuracoesSelecionadas[index];
-      if (resultado.status === 'fulfilled') {
-        const sucesso = resultado.value;
-        sucessos.push(sucesso);
-        if (sucesso.skipped) {
-          console.log(`Importacao ignorada para ${configuracao.descricao}: conteudo identico ao ultimo lote processado.`);
+        sucessos.push(sucessoNotas);
+        if (sucessoNotas.skipped) {
+          console.log('Importacao ignorada para NOTAS FISCAIS HMSA: conteudo identico ao ultimo lote processado.');
         } else {
-          console.log(`Importacao concluida com sucesso para ${configuracao.descricao}. Lote: ${sucesso.loteId}`);
+          console.log(`Importacao concluida com sucesso para NOTAS FISCAIS HMSA. Lote: ${sucessoNotas.loteId}`);
         }
-      } else {
-        const message =
-          resultado.reason instanceof Error ? resultado.reason.message : 'Falha interna na importacao.';
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Falha interna na importacao.';
         falhas.push({
-          categoria: configuracao.descricao,
+          categoria: configuracaoNotasFiscais.descricao,
           message,
         });
-        console.error(`Falha ao importar ${configuracao.descricao}: ${message}`);
+        console.error(`Falha ao importar ${configuracaoNotasFiscais.descricao}: ${message}`);
       }
     }
-  }
 
-  if (scopeIncluiNotasFiscais(scope)) {
-    try {
-      const sucessoNotas = await importarNotasFiscais({
+    if (sucessos.length) {
+      console.log('Resumo das importacoes concluidas:');
+      for (const sucesso of sucessos) {
+        if (sucesso.skipped) {
+          console.log(`- ${sucesso.categoria}: sem alteracao, persistencia ignorada`);
+        } else {
+          console.log(`- ${sucesso.categoria}: ${sucesso.quantidade} linha(s), lote ${sucesso.loteId}`);
+        }
+      }
+    }
+
+    if (falhas.length) {
+      throw new Error(
+        `Algumas importacoes falharam: ${falhas.map((falha) => `${falha.categoria} (${falha.message})`).join('; ')}`
+      );
+    }
+
+    const result = {
+      scope,
+      usuario: siscoreUsuario,
+      sucessos,
+      falhas,
+    };
+
+    if (trackingId && trackingJobTipo) {
+      await atualizarStatusSincronizacaoExecucao({
         connectionString,
-        siscoreBaseUrl,
-        cookieJar: clonarCookieJar(cookieJar),
-        configuracaoNotasFiscais,
-        modoPersistenciaNotas,
+        trackingId,
+        jobTipo: trackingJobTipo,
+        scope,
+        usuario: siscoreUsuario,
+        triggeredBy,
+        workflowArquivo,
+        status: 'success',
+        workflowRunUrl,
+        metadados: {
+          scope,
+          workflow_run_url: workflowRunUrl,
+          sucessos: sucessos.map((sucesso) => ({
+            categoria: sucesso.categoria,
+            lote_id: sucesso.loteId ?? null,
+            quantidade: sucesso.quantidade,
+            skipped: sucesso.skipped,
+            arquivo_sha256: sucesso.arquivoSha256,
+            conteudo_sha256: sucesso.conteudoSha256,
+          })),
+        },
       });
+    }
 
-      sucessos.push(sucessoNotas);
-      if (sucessoNotas.skipped) {
-        console.log('Importacao ignorada para NOTAS FISCAIS HMSA: conteudo identico ao ultimo lote processado.');
-      } else {
-        console.log(`Importacao concluida com sucesso para NOTAS FISCAIS HMSA. Lote: ${sucessoNotas.loteId}`);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Falha interna na importacao.';
-      falhas.push({
-        categoria: configuracaoNotasFiscais.descricao,
-        message,
+    return result;
+  } catch (error) {
+    if (trackingId && trackingJobTipo && siscoreUsuario) {
+      await atualizarStatusSincronizacaoExecucao({
+        connectionString,
+        trackingId,
+        jobTipo: trackingJobTipo,
+        scope,
+        usuario: siscoreUsuario,
+        triggeredBy,
+        workflowArquivo,
+        status: 'failed',
+        workflowRunUrl,
+        mensagemErro: error instanceof Error ? error.message : 'Falha interna na importacao.',
+        metadados: {
+          scope,
+          workflow_run_url: workflowRunUrl,
+        },
+      }).catch((statusError) => {
+        console.error('Falha ao atualizar status da sincronizacao do SISCORE.');
+        console.error(statusError instanceof Error ? statusError.message : 'Falha interna ao atualizar status.');
       });
-      console.error(`Falha ao importar ${configuracaoNotasFiscais.descricao}: ${message}`);
     }
-  }
 
-  if (sucessos.length) {
-    console.log('Resumo das importacoes concluidas:');
-    for (const sucesso of sucessos) {
-      if (sucesso.skipped) {
-        console.log(`- ${sucesso.categoria}: sem alteracao, persistencia ignorada`);
-      } else {
-        console.log(`- ${sucesso.categoria}: ${sucesso.quantidade} linha(s), lote ${sucesso.loteId}`);
-      }
-    }
+    throw error;
   }
-
-  if (falhas.length) {
-    throw new Error(
-      `Algumas importacoes falharam: ${falhas.map((falha) => `${falha.categoria} (${falha.message})`).join('; ')}`
-    );
-  }
-
-  return {
-    scope,
-    usuario: siscoreUsuario,
-    sucessos,
-    falhas,
-  };
 }
 
 const currentFilePath = fileURLToPath(import.meta.url);

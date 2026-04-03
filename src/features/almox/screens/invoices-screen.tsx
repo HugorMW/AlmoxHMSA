@@ -1,7 +1,14 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { readCachedValue, readSessionFlag, writeCachedValue, writeSessionFlag } from '@/features/almox/cache';
+import {
+  readCachedValue,
+  readSessionFlag,
+  removeCachedValue,
+  removeCachedValuesByPrefix,
+  writeCachedValue,
+  writeSessionFlag,
+} from '@/features/almox/cache';
 import {
   ActionButton,
   AppIcon,
@@ -24,13 +31,14 @@ import {
 } from '@/features/almox/types';
 import { getSupabaseClient } from '@/lib/supabase';
 import { formatDecimal, matchesQuery, paginate } from '@/features/almox/utils';
-import { useAlmoxData } from '@/features/almox/almox-provider';
+import { ALMOX_SYNC_COMPLETED_EVENT, useAlmoxData } from '@/features/almox/almox-provider';
 
 const PAGE_SIZE = 8;
 const NOTAS_CACHE_KEY = 'almox:notas-fiscais:v1';
 const NOTAS_SESSION_KEY = 'almox:notas-fiscais:session:v1';
 const NOTAS_CACHE_TTL_MS = 5 * 60 * 1000;
 const NOTA_ITENS_CACHE_TTL_MS = 10 * 60 * 1000;
+const NOTA_ITENS_CACHE_PREFIX = 'almox:nota-itens:';
 
 type StatusFilter = 'all' | NotaFiscalStatusSincronizacao | 'multiplas_datas';
 
@@ -380,6 +388,24 @@ export default function InvoicesScreen() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleSyncCompleted = () => {
+      removeCachedValue(NOTAS_CACHE_KEY);
+      removeCachedValuesByPrefix(NOTA_ITENS_CACHE_PREFIX);
+      allowSessionCacheRef.current = false;
+      void refresh();
+    };
+
+    window.addEventListener(ALMOX_SYNC_COMPLETED_EVENT, handleSyncCompleted);
+    return () => {
+      window.removeEventListener(ALMOX_SYNC_COMPLETED_EVENT, handleSyncCompleted);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!notes.length) {
       return;
     }
@@ -539,7 +565,6 @@ export default function InvoicesScreen() {
 
   async function handleSyncBase() {
     await syncBase();
-    await refresh();
   }
 
   return (

@@ -1,6 +1,6 @@
-name: SISCORE Sync Estoque
+name: SISCORE Sync Notas
 
-run-name: SISCORE Estoque · ${{ inputs.tracking_id || inputs.triggered_by || inputs.siscore_usuario }}
+run-name: SISCORE Notas · ${{ inputs.tracking_id || inputs.triggered_by || inputs.siscore_usuario }}
 
 on:
   workflow_dispatch:
@@ -12,12 +12,10 @@ on:
       scope:
         description: Escopo solicitado pelo app
         required: false
-        default: estoque
+        default: notas_fiscais
         type: choice
         options:
-          - estoque
-          - material_hospitalar
-          - material_farmacologico
+          - notas_fiscais
       triggered_by:
         description: Usuario que disparou a sincronizacao
         required: false
@@ -28,7 +26,7 @@ on:
         type: string
 
 concurrency:
-  group: siscore-sync-estoque
+  group: siscore-sync-notas
   cancel-in-progress: false
 
 jobs:
@@ -49,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run SISCORE import
+      - name: Run SISCORE notes import
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SISCORE_BASE_URL: ${{ secrets.SISCORE_BASE_URL }}
@@ -63,5 +61,5 @@ jobs:
           SISCORE_SYNC_SCOPE: ${{ inputs.scope }}
           SISCORE_SYNC_TRIGGERED_BY: ${{ inputs.triggered_by }}
           SISCORE_SYNC_TRACKING_ID: ${{ inputs.tracking_id }}
-          SISCORE_SYNC_JOB_TIPO: estoque
+          SISCORE_SYNC_JOB_TIPO: notas_fiscais
         run: npm run siscore:import
