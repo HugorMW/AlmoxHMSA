@@ -54,6 +54,12 @@ const CATEGORIAS_IMPORTACAO = [
 ];
 
 const URL_EXPORTACAO_NOTAS_FISCAIS_PADRAO = '/export_notasfiscais?unidade=';
+const ESCOPOS_SISCORE_VALIDOS = new Set([
+  'all',
+  'material_hospitalar',
+  'material_farmacologico',
+  'notas_fiscais',
+]);
 
 function carregarEnv(filePath) {
   const env = { ...process.env };
@@ -215,6 +221,19 @@ export function obterConfiguracaoNotasFiscais(env) {
       limparValorUrlExportacao(env.SISCORE_EXPORTACAO_URL_NOTAS_FISCAIS) ||
       URL_EXPORTACAO_NOTAS_FISCAIS_PADRAO,
   };
+}
+
+function normalizarEscopoSiscore(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return ESCOPOS_SISCORE_VALIDOS.has(normalized) ? normalized : 'all';
+}
+
+function clonarCookieJar(cookieJar) {
+  return new Map(cookieJar);
+}
+
+function scopeIncluiNotasFiscais(scope) {
+  return scope === 'all' || scope === 'notas_fiscais';
 }
 
 function parseAtributos(tag) {
@@ -791,6 +810,83 @@ async function persistirEstoque({
   });
 }
 
+async function executarComClient(connectionString, callback) {
+  const client = new Client({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+  });
+
+  await client.connect();
+
+  try {
+    return await callback(client);
+  } finally {
+    await client.end();
+  }
+}
+
+async function carregarUltimoHashEstoque(connectionString, categoriaMaterial) {
+  return executarComClient(connectionString, async (client) => {
+    const result = await client.query(
+      `
+        select metadados ->> 'conteudo_sha256' as conteudo_sha256
+        from almox.lote_importacao
+        where status = 'processado'
+          and categoria_material = $1
+          and coalesce(metadados ->> 'conteudo_sha256', '') <> ''
+        order by coalesce(processado_em, importado_em) desc
+        limit 1
+      `,
+      [categoriaMaterial]
+    );
+
+    return result.rows[0]?.conteudo_sha256 ?? null;
+  });
+}
+
+async function carregarUltimoHashNotasFiscais(connectionString) {
+  return executarComClient(connectionString, async (client) => {
+    const result = await client.query(
+      `
+        select metadados ->> 'conteudo_sha256' as conteudo_sha256
+        from almox.lote_importacao_notas_fiscais
+        where status = 'processado'
+          and coalesce(metadados ->> 'conteudo_sha256', '') <> ''
+        order by coalesce(processado_em, importado_em) desc
+        limit 1
+      `
+    );
+
+    return result.rows[0]?.conteudo_sha256 ?? null;
+  });
+}
+
+async function atualizarMetadadosLoteEstoque(connectionString, loteId, metadados) {
+  await executarComClient(connectionString, async (client) => {
+    await client.query(
+      `
+        update almox.lote_importacao
+        set metadados = coalesce(metadados, '{}'::jsonb) || $2::jsonb
+        where id = $1
+      `,
+      [loteId, JSON.stringify(metadados)]
+    );
+  });
+}
+
+async function atualizarMetadadosLoteNotasFiscais(connectionString, loteId, metadados) {
+  await executarComClient(connectionString, async (client) => {
+    await client.query(
+      `
+        update almox.lote_importacao_notas_fiscais
+        set metadados = coalesce(metadados, '{}'::jsonb) || $2::jsonb
+        where id = $1
+      `,
+      [loteId, JSON.stringify(metadados)]
+    );
+  });
+}
+
 function unidadeEhHmsa(value) {
   const normalized = String(value ?? '').trim().toUpperCase();
   return normalized === 'HMSA' || normalized === 'HMSASOUL';
@@ -798,6 +894,87 @@ function unidadeEhHmsa(value) {
 
 function hashConteudo(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function hashArquivo(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function compararValoresOrdenacao(left, right) {
+  return String(left ?? '').localeCompare(String(right ?? ''));
+}
+
+function calcularHashConteudoEstoque(rows) {
+  const canonicalRows = rows
+    .map((row) => ({
+      categoria_material: row.categoria_material,
+      codigo_produto: row.codigo_produto,
+      nome_produto: row.nome_produto,
+      unidade_medida_produto: row.unidade_medida_produto ?? null,
+      codigo_produto_referencia: row.codigo_produto_referencia ?? null,
+      nome_produto_referencia: row.nome_produto_referencia ?? null,
+      unidade_medida_referencia: row.unidade_medida_referencia ?? null,
+      codigo_unidade: row.codigo_unidade,
+      nome_unidade: row.nome_unidade,
+      suficiencia_em_dias: row.suficiencia_em_dias ?? null,
+      data_ultima_entrada: row.data_ultima_entrada ?? null,
+      valor_custo_medio: row.valor_custo_medio ?? null,
+      consumo_medio: row.consumo_medio ?? null,
+      estoque_atual: row.estoque_atual ?? null,
+      especie_padrao: row.especie_padrao ?? null,
+    }))
+    .sort((left, right) => {
+      return (
+        compararValoresOrdenacao(left.categoria_material, right.categoria_material) ||
+        compararValoresOrdenacao(left.codigo_unidade, right.codigo_unidade) ||
+        compararValoresOrdenacao(left.codigo_produto, right.codigo_produto) ||
+        compararValoresOrdenacao(left.codigo_produto_referencia, right.codigo_produto_referencia) ||
+        compararValoresOrdenacao(left.data_ultima_entrada, right.data_ultima_entrada)
+      );
+    });
+
+  return hashConteudo(canonicalRows);
+}
+
+function calcularHashConteudoNotasFiscais(notasFiscais) {
+  const canonicalNotes = notasFiscais
+    .map((note) => ({
+      unidade_origem_siscore: note.unidade_origem_siscore,
+      nome_fornecedor: note.nome_fornecedor,
+      fornecedor_chave: note.fornecedor_chave,
+      data_entrada: note.data_entrada,
+      numero_documento: note.numero_documento,
+      possui_item_duplicado: note.possui_item_duplicado,
+      status_conferencia: note.status_conferencia,
+      items: [...note.items]
+        .map((item) => ({
+          sequencia_item: item.sequencia_item,
+          linha_origem: item.linha_origem,
+          codigo_produto: item.codigo_produto,
+          descricao_produto: item.descricao_produto,
+          quantidade_entrada: item.quantidade_entrada ?? null,
+          valor_unitario: item.valor_unitario ?? null,
+          valor_total: item.valor_total ?? null,
+          descricao_especie: item.descricao_especie ?? null,
+          duplicado_na_nota: item.duplicado_na_nota,
+        }))
+        .sort((left, right) => {
+          return (
+            Number(left.sequencia_item ?? 0) - Number(right.sequencia_item ?? 0) ||
+            Number(left.linha_origem ?? 0) - Number(right.linha_origem ?? 0) ||
+            compararValoresOrdenacao(left.codigo_produto, right.codigo_produto)
+          );
+        }),
+    }))
+    .sort((left, right) => {
+      return (
+        compararValoresOrdenacao(left.fornecedor_chave, right.fornecedor_chave) ||
+        compararValoresOrdenacao(left.numero_documento, right.numero_documento) ||
+        compararValoresOrdenacao(left.data_entrada, right.data_entrada)
+      );
+    });
+
+  return hashConteudo(canonicalNotes);
 }
 
 export function normalizarLinhasNotasFiscais(rows) {
@@ -1364,6 +1541,150 @@ async function persistirNotasFiscais({
   });
 }
 
+async function importarConfiguracaoEstoque({
+  connectionString,
+  siscoreBaseUrl,
+  cookieJar,
+  configuracao,
+  modoPersistenciaEstoque,
+}) {
+  console.log(`Baixando planilha do SISCORE para ${configuracao.descricao}...`);
+  const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
+    baseUrl: siscoreBaseUrl,
+    exportacaoUrl: configuracao.exportacaoUrl,
+    cookieJar,
+  });
+
+  const arquivoSha256 = hashArquivo(buffer);
+
+  console.log(`Lendo e validando planilha de ${configuracao.descricao}...`);
+  const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_ESTOQUE);
+  const rows = normalizarLinhasEstoque(rawRows, configuracao.categoria_material);
+  const conteudoSha256 = calcularHashConteudoEstoque(rows);
+  const ultimoHash = await carregarUltimoHashEstoque(connectionString, configuracao.categoria_material);
+
+  if (ultimoHash && ultimoHash === conteudoSha256) {
+    console.log(`Sem alteracoes em ${configuracao.descricao}. Pulando persistencia por hash de conteudo identico.`);
+    return {
+      categoria: configuracao.descricao,
+      loteId: null,
+      quantidade: rows.length,
+      skipped: true,
+      conteudoSha256,
+      arquivoSha256,
+    };
+  }
+
+  console.log(
+    `Persistindo ${rows.length} linha(s) de ${configuracao.descricao} no Supabase via ${
+      modoPersistenciaEstoque === 'rpc' ? 'RPC em lote' : 'modo legado'
+    }...`
+  );
+  const inicioPersistenciaEstoque = Date.now();
+  const loteId = await persistirEstoque({
+    connectionString,
+    rows,
+    nomeArquivo,
+    categoriaMaterial: configuracao.categoria_material,
+    exportacaoUrl: configuracao.exportacaoUrl,
+    modoPersistencia: modoPersistenciaEstoque,
+  });
+  const duracaoPersistenciaSegundos = ((Date.now() - inicioPersistenciaEstoque) / 1000).toFixed(1);
+  console.log(
+    `Persistencia de ${configuracao.descricao} finalizada em ${duracaoPersistenciaSegundos}s via ${
+      modoPersistenciaEstoque === 'rpc' ? 'RPC em lote' : 'modo legado'
+    }.`
+  );
+
+  await atualizarMetadadosLoteEstoque(connectionString, loteId, {
+    arquivo_sha256: arquivoSha256,
+    conteudo_sha256: conteudoSha256,
+    quantidade_linhas_normalizadas: rows.length,
+    modo_persistencia: modoPersistenciaEstoque,
+  });
+
+  return {
+    categoria: configuracao.descricao,
+    loteId,
+    quantidade: rows.length,
+    skipped: false,
+    conteudoSha256,
+    arquivoSha256,
+  };
+}
+
+async function importarNotasFiscais({
+  connectionString,
+  siscoreBaseUrl,
+  cookieJar,
+  configuracaoNotasFiscais,
+  modoPersistenciaNotas,
+}) {
+  console.log('Baixando planilha do SISCORE para NOTAS FISCAIS HMSA...');
+  const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
+    baseUrl: siscoreBaseUrl,
+    exportacaoUrl: configuracaoNotasFiscais.exportacaoUrl,
+    cookieJar,
+  });
+
+  const arquivoSha256 = hashArquivo(buffer);
+
+  console.log('Lendo e validando planilha de NOTAS FISCAIS HMSA...');
+  const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS);
+  const rows = normalizarLinhasNotasFiscais(rawRows);
+  const notasFiscais = agruparNotasFiscais(rows);
+  const conteudoSha256 = calcularHashConteudoNotasFiscais(notasFiscais);
+  const ultimoHash = await carregarUltimoHashNotasFiscais(connectionString);
+
+  if (ultimoHash && ultimoHash === conteudoSha256) {
+    console.log('Sem alteracoes em NOTAS FISCAIS HMSA. Pulando persistencia por hash de conteudo identico.');
+    return {
+      categoria: configuracaoNotasFiscais.descricao,
+      loteId: null,
+      quantidade: rows.length,
+      skipped: true,
+      conteudoSha256,
+      arquivoSha256,
+    };
+  }
+
+  console.log(
+    `Persistindo ${notasFiscais.length} nota(s) fiscais do HMSA no Supabase via ${
+      modoPersistenciaNotas === 'rpc' ? 'RPC em lote' : 'modo legado'
+    }...`
+  );
+  const inicioPersistenciaNotas = Date.now();
+  const resumo = await persistirNotasFiscais({
+    connectionString,
+    notasFiscais,
+    nomeArquivo,
+    exportacaoUrl: configuracaoNotasFiscais.exportacaoUrl,
+    modoPersistencia: modoPersistenciaNotas,
+  });
+  console.log(
+    `Persistencia de notas fiscais finalizada em ${((Date.now() - inicioPersistenciaNotas) / 1000).toFixed(1)}s via ${
+      modoPersistenciaNotas === 'rpc' ? 'RPC em lote' : 'modo legado'
+    }.`
+  );
+
+  await atualizarMetadadosLoteNotasFiscais(connectionString, resumo.loteId, {
+    arquivo_sha256: arquivoSha256,
+    conteudo_sha256: conteudoSha256,
+    quantidade_notas_normalizadas: notasFiscais.length,
+    quantidade_linhas_normalizadas: rows.length,
+    modo_persistencia: modoPersistenciaNotas,
+  });
+
+  return {
+    categoria: configuracaoNotasFiscais.descricao,
+    loteId: resumo.loteId,
+    quantidade: resumo.quantidadeLinhas,
+    skipped: false,
+    conteudoSha256,
+    arquivoSha256,
+  };
+}
+
 export async function runSiscoreImport(options = {}) {
   const rootDir = options.rootDir ?? process.cwd();
   const env = {
@@ -1372,6 +1693,7 @@ export async function runSiscoreImport(options = {}) {
   };
   const connectionString = env.SUPABASE_DB_URL;
   const siscoreBaseUrl = env.SISCORE_BASE_URL;
+  const scope = normalizarEscopoSiscore(options.scope ?? env.SISCORE_SYNC_SCOPE);
   const usuarioDaSessao = normalizarUsuarioSiscore(options.usuarioSessao);
   const usuarioConfigurado =
     normalizarUsuarioSiscore(env.SISCORE_CREDENTIALS_USUARIO) ||
@@ -1381,6 +1703,10 @@ export async function runSiscoreImport(options = {}) {
   let siscoreSenha = String(env.SISCORE_SENHA ?? '').trim();
   const configuracoesExportacao = obterConfiguracoesExportacao(env);
   const configuracaoNotasFiscais = obterConfiguracaoNotasFiscais(env);
+  const configuracoesSelecionadas =
+    scope === 'all'
+      ? configuracoesExportacao
+      : configuracoesExportacao.filter((config) => config.categoria_material === scope);
   const modoPersistenciaEstoque = obterModoPersistenciaEstoque(env);
   const modoPersistenciaNotas = obterModoPersistenciaNotas(env);
 
@@ -1401,10 +1727,14 @@ export async function runSiscoreImport(options = {}) {
     }
   }
 
-  if (!siscoreBaseUrl || !siscoreUsuario || !siscoreSenha || configuracoesExportacao.length === 0) {
+  if (!siscoreBaseUrl || !siscoreUsuario || !siscoreSenha) {
     throw new Error(
-      'Preencha SISCORE_BASE_URL e ao menos uma URL de exportacao do SISCORE em .env.local. Para autenticar a importacao, use SISCORE_USUARIO/SISCORE_SENHA ou uma credencial cifrada salva no banco para o usuario informado.'
+      'Preencha SISCORE_BASE_URL e as credenciais do SISCORE em .env.local. Para autenticar a importacao, use SISCORE_USUARIO/SISCORE_SENHA ou uma credencial cifrada salva no banco para o usuario informado.'
     );
+  }
+
+  if (scope !== 'notas_fiscais' && configuracoesSelecionadas.length === 0) {
+    throw new Error('Nenhuma URL de exportacao de estoque foi configurada para o escopo solicitado.');
   }
 
   console.log('Autenticando no SISCORE...');
@@ -1421,101 +1751,81 @@ export async function runSiscoreImport(options = {}) {
   const sucessos = [];
   const falhas = [];
 
-  for (const configuracao of configuracoesExportacao) {
-    try {
-      console.log(`Baixando planilha do SISCORE para ${configuracao.descricao}...`);
-      const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
-        baseUrl: siscoreBaseUrl,
-        exportacaoUrl: configuracao.exportacaoUrl,
-        cookieJar,
-      });
-
-      console.log(`Lendo e validando planilha de ${configuracao.descricao}...`);
-      const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_ESTOQUE);
-      const rows = normalizarLinhasEstoque(rawRows, configuracao.categoria_material);
-
+  if (configuracoesSelecionadas.length > 0) {
+    if (configuracoesSelecionadas.length > 1) {
       console.log(
-        `Persistindo ${rows.length} linha(s) de ${configuracao.descricao} no Supabase via ${
-          modoPersistenciaEstoque === 'rpc' ? 'RPC em lote' : 'modo legado'
-        }...`
+        `Processando ${configuracoesSelecionadas.length} exportacao(oes) de estoque em paralelo para reduzir o tempo total.`
       );
-      const inicioPersistenciaEstoque = Date.now();
-      const loteId = await persistirEstoque({
-        connectionString,
-        rows,
-        nomeArquivo,
-        categoriaMaterial: configuracao.categoria_material,
-        exportacaoUrl: configuracao.exportacaoUrl,
-        modoPersistencia: modoPersistenciaEstoque,
-      });
-      console.log(
-        `Persistencia de ${configuracao.descricao} finalizada em ${(
-          (Date.now() - inicioPersistenciaEstoque) /
-          1000
-        ).toFixed(1)}s via ${modoPersistenciaEstoque === 'rpc' ? 'RPC em lote' : 'modo legado'}.`
-      );
+    }
 
-      sucessos.push({ categoria: configuracao.descricao, loteId, quantidade: rows.length });
-      console.log(`Importacao concluida com sucesso para ${configuracao.descricao}. Lote: ${loteId}`);
-    } catch (error) {
-      falhas.push({
-        categoria: configuracao.descricao,
-        message: error.message,
-      });
-      console.error(`Falha ao importar ${configuracao.descricao}: ${error.message}`);
+    const resultadosEstoque = await Promise.allSettled(
+      configuracoesSelecionadas.map((configuracao) =>
+        importarConfiguracaoEstoque({
+          connectionString,
+          siscoreBaseUrl,
+          cookieJar: clonarCookieJar(cookieJar),
+          configuracao,
+          modoPersistenciaEstoque,
+        })
+      )
+    );
+
+    for (const [index, resultado] of resultadosEstoque.entries()) {
+      const configuracao = configuracoesSelecionadas[index];
+      if (resultado.status === 'fulfilled') {
+        const sucesso = resultado.value;
+        sucessos.push(sucesso);
+        if (sucesso.skipped) {
+          console.log(`Importacao ignorada para ${configuracao.descricao}: conteudo identico ao ultimo lote processado.`);
+        } else {
+          console.log(`Importacao concluida com sucesso para ${configuracao.descricao}. Lote: ${sucesso.loteId}`);
+        }
+      } else {
+        const message =
+          resultado.reason instanceof Error ? resultado.reason.message : 'Falha interna na importacao.';
+        falhas.push({
+          categoria: configuracao.descricao,
+          message,
+        });
+        console.error(`Falha ao importar ${configuracao.descricao}: ${message}`);
+      }
     }
   }
 
-  try {
-    console.log('Baixando planilha do SISCORE para NOTAS FISCAIS HMSA...');
-    const { buffer, nomeArquivo } = await baixarPlanilhaSiscore({
-      baseUrl: siscoreBaseUrl,
-      exportacaoUrl: configuracaoNotasFiscais.exportacaoUrl,
-      cookieJar,
-    });
+  if (scopeIncluiNotasFiscais(scope)) {
+    try {
+      const sucessoNotas = await importarNotasFiscais({
+        connectionString,
+        siscoreBaseUrl,
+        cookieJar: clonarCookieJar(cookieJar),
+        configuracaoNotasFiscais,
+        modoPersistenciaNotas,
+      });
 
-    console.log('Lendo e validando planilha de NOTAS FISCAIS HMSA...');
-    const rawRows = lerLinhasDaPlanilha(buffer, COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS);
-    const rows = normalizarLinhasNotasFiscais(rawRows);
-    const notasFiscais = agruparNotasFiscais(rows);
-
-    console.log(
-      `Persistindo ${notasFiscais.length} nota(s) fiscais do HMSA no Supabase via ${
-        modoPersistenciaNotas === 'rpc' ? 'RPC em lote' : 'modo legado'
-      }...`
-    );
-    const inicioPersistenciaNotas = Date.now();
-    const resumo = await persistirNotasFiscais({
-      connectionString,
-      notasFiscais,
-      nomeArquivo,
-      exportacaoUrl: configuracaoNotasFiscais.exportacaoUrl,
-      modoPersistencia: modoPersistenciaNotas,
-    });
-    console.log(
-      `Persistencia de notas fiscais finalizada em ${((Date.now() - inicioPersistenciaNotas) / 1000).toFixed(1)}s via ${
-        modoPersistenciaNotas === 'rpc' ? 'RPC em lote' : 'modo legado'
-      }.`
-    );
-
-    sucessos.push({
-      categoria: configuracaoNotasFiscais.descricao,
-      loteId: resumo.loteId,
-      quantidade: resumo.quantidadeLinhas,
-    });
-    console.log(`Importacao concluida com sucesso para NOTAS FISCAIS HMSA. Lote: ${resumo.loteId}`);
-  } catch (error) {
-    falhas.push({
-      categoria: configuracaoNotasFiscais.descricao,
-      message: error.message,
-    });
-    console.error(`Falha ao importar ${configuracaoNotasFiscais.descricao}: ${error.message}`);
+      sucessos.push(sucessoNotas);
+      if (sucessoNotas.skipped) {
+        console.log('Importacao ignorada para NOTAS FISCAIS HMSA: conteudo identico ao ultimo lote processado.');
+      } else {
+        console.log(`Importacao concluida com sucesso para NOTAS FISCAIS HMSA. Lote: ${sucessoNotas.loteId}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha interna na importacao.';
+      falhas.push({
+        categoria: configuracaoNotasFiscais.descricao,
+        message,
+      });
+      console.error(`Falha ao importar ${configuracaoNotasFiscais.descricao}: ${message}`);
+    }
   }
 
   if (sucessos.length) {
     console.log('Resumo das importacoes concluidas:');
     for (const sucesso of sucessos) {
-      console.log(`- ${sucesso.categoria}: ${sucesso.quantidade} linha(s), lote ${sucesso.loteId}`);
+      if (sucesso.skipped) {
+        console.log(`- ${sucesso.categoria}: sem alteracao, persistencia ignorada`);
+      } else {
+        console.log(`- ${sucesso.categoria}: ${sucesso.quantidade} linha(s), lote ${sucesso.loteId}`);
+      }
     }
   }
 
@@ -1526,6 +1836,7 @@ export async function runSiscoreImport(options = {}) {
   }
 
   return {
+    scope,
     usuario: siscoreUsuario,
     sucessos,
     falhas,
