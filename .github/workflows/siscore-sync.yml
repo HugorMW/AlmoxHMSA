@@ -39,14 +39,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: AlmoxHMSA/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: AlmoxHMSA
         run: npm ci
 
       - name: Run SISCORE import
-        working-directory: AlmoxHMSA
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SISCORE_BASE_URL: ${{ secrets.SISCORE_BASE_URL }}
