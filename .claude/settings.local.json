@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx --yes tsc --noEmit --project \"c:/Users/hugor/Projetos/SiteAlmoxHMSA/v1/AlmoxHMSA/tsconfig.json\")",
+      "Bash(npm run:*)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
+    ]
+  }
+}

@@ -20,7 +20,7 @@ import { EmailConfig } from '@/features/almox/types';
 import { formatDecimal } from '@/features/almox/utils';
 
 export default function SettingsScreen() {
-  const { dataset, categoryFilter, emailConfig, error, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
+  const { dataset, categoryFilter, emailConfig, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
   const [config, setConfig] = useState<EmailConfig>(emailConfig);
   const alertItems = dataset.emailPreviewItems;
   const formattedSync = dataset.lastSync
@@ -34,11 +34,12 @@ export default function SettingsScreen() {
         subtitle={`Tela preparada para SMTP e alertas automáticos. Base atual sincronizada em ${formattedSync}.`}
         aside={
           <ActionButton
-            label={syncingBase ? 'Sincronizando...' : 'Atualizar base'}
+            label={loading ? 'Carregando...' : syncingBase ? 'Sincronizando...' : 'Atualizar estoque'}
             icon="refresh"
             tone="neutral"
-            onPress={() => void syncBase()}
+            onPress={() => void syncBase('estoque')}
             disabled={refreshing || syncingBase}
+            loading={loading}
           />
         }
       />

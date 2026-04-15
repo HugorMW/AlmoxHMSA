@@ -564,7 +564,7 @@ export default function InvoicesScreen() {
   }, [noteItems, selectedNote]);
 
   async function handleSyncBase() {
-    await syncBase();
+    await syncBase('notas_fiscais');
   }
 
   return (
@@ -574,7 +574,7 @@ export default function InvoicesScreen() {
         subtitle="Cada documento é identificado por fornecedor, número e data de entrada. A consolidação só agrupa quando o mesmo fornecedor e número reaparecem em dias diferentes."
         aside={
           <ActionButton
-            label={syncingBase ? 'Sincronizando...' : refreshing ? 'Atualizando...' : 'Atualizar base'}
+            label={syncingBase ? 'Sincronizando...' : refreshing ? 'Atualizando...' : 'Atualizar notas'}
             icon="refresh"
             tone="neutral"
             onPress={() => void handleSyncBase()}

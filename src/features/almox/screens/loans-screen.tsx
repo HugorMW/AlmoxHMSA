@@ -43,10 +43,10 @@ export default function LoansScreen() {
         subtitle="Painel focado em redistribuição entre unidades e itens com sobra operacional."
         aside={
           <ActionButton
-            label={syncingBase ? 'Sincronizando...' : 'Atualizar base'}
+            label={syncingBase ? 'Sincronizando...' : 'Atualizar estoque'}
             icon="refresh"
             tone="neutral"
-            onPress={() => void syncBase()}
+            onPress={() => void syncBase('estoque')}
             disabled={refreshing || syncingBase}
           />
         }

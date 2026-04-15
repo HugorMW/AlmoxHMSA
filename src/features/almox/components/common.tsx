@@ -2,6 +2,7 @@ import { Link, Href } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -52,7 +53,9 @@ type IconName =
   | 'chevronLeft'
   | 'chevronRight'
   | 'check'
-  | 'logout';
+  | 'logout'
+  | 'opme'
+  | 'consumo';
 
 const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = {
   dashboard: 'view-dashboard-outline',
@@ -94,6 +97,8 @@ const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = 
   chevronRight: 'chevron-right',
   check: 'check',
   logout: 'logout',
+  opme: 'medical-bag',
+  consumo: 'speedometer',
 };
 
 type ButtonTone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
@@ -264,6 +269,7 @@ export function ActionButton({
   icon,
   tone = 'primary',
   disabled,
+  loading,
   onPress,
   href,
 }: {
@@ -271,23 +277,29 @@ export function ActionButton({
   icon?: IconName;
   tone?: ButtonTone;
   disabled?: boolean;
+  loading?: boolean;
   onPress?: () => void;
   href?: Href;
 }) {
+  const isDisabled = disabled || loading;
   const palette = buttonTones[tone];
   const button = (
     <Pressable
-      disabled={disabled}
+      disabled={isDisabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: disabled ? almoxTheme.colors.surfaceStrong : palette.background,
-          opacity: pressed && !disabled ? 0.85 : 1,
+          backgroundColor: isDisabled ? almoxTheme.colors.surfaceStrong : palette.background,
+          opacity: pressed && !isDisabled ? 0.85 : 1,
         },
       ]}>
-      {icon ? <AppIcon name={icon} size={15} color={disabled ? almoxTheme.colors.textMuted : palette.foreground} /> : null}
-      <Text style={[styles.buttonText, { color: disabled ? almoxTheme.colors.textMuted : palette.foreground }]}>{label}</Text>
+      {loading ? (
+        <ActivityIndicator size={15} color={almoxTheme.colors.textMuted} />
+      ) : icon ? (
+        <AppIcon name={icon} size={15} color={isDisabled ? almoxTheme.colors.textMuted : palette.foreground} />
+      ) : null}
+      <Text style={[styles.buttonText, { color: isDisabled ? almoxTheme.colors.textMuted : palette.foreground }]}>{label}</Text>
     </Pressable>
   );
 

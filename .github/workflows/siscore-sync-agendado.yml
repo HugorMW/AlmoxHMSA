@@ -1,0 +1,63 @@
+name: SISCORE Sync Estoque Agendado
+
+on:
+  schedule:
+    # 03:00 UTC = 00:00 America/Sao_Paulo (UTC-3)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: siscore-sync-estoque
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run SISCORE import (com retry)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SISCORE_BASE_URL: ${{ secrets.SISCORE_BASE_URL }}
+          SISCORE_EXPORTACAO_URL: ${{ secrets.SISCORE_EXPORTACAO_URL }}
+          SISCORE_EXPORTACAO_URL_FARMACOLOGICO: ${{ secrets.SISCORE_EXPORTACAO_URL_FARMACOLOGICO }}
+          SISCORE_CREDENTIALS_KEY: ${{ secrets.SISCORE_CREDENTIALS_KEY }}
+          SISCORE_CREDENTIALS_USUARIO: ${{ secrets.SISCORE_CREDENTIALS_USUARIO }}
+          SISCORE_ESTOQUE_MODO: rpc
+          SISCORE_SYNC_SCOPE: estoque
+          SISCORE_SYNC_TRIGGERED_BY: agendado
+          SISCORE_SYNC_JOB_TIPO: estoque
+        run: |
+          set +e
+          for tentativa in 1 2 3 4 5; do
+            echo "Tentativa $tentativa de importacao do SISCORE..."
+            npm run siscore:import
+            status=$?
+            if [ $status -eq 0 ]; then
+              echo "Importacao concluida com sucesso na tentativa $tentativa."
+              exit 0
+            fi
+            echo "Falha na tentativa $tentativa (status $status). Aguardando 60s..."
+            sleep 60
+          done
+          echo "Todas as tentativas falharam."
+          exit 1
+
+      - name: Registrar snapshot diario do estoque
+        if: ${{ success() }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: npm run almox:snapshot

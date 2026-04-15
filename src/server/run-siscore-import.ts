@@ -129,6 +129,26 @@ export async function executarImportacaoSiscoreDoUsuario(usuario: string, scope:
     );
   }
 
+  const estoqueAtualizado =
+    scope === 'all' ||
+    scope === 'estoque' ||
+    scope === 'material_hospitalar' ||
+    scope === 'material_farmacologico';
+
+  if (estoqueAtualizado && sucessos.length > 0) {
+    try {
+      const { error: snapshotError } = await supabase.rpc('registrar_snapshot_estoque_diario');
+      if (snapshotError) {
+        console.warn('Falha ao registrar snapshot diario do estoque:', snapshotError.message);
+      }
+    } catch (snapshotException) {
+      console.warn(
+        'Excecao ao registrar snapshot diario do estoque:',
+        snapshotException instanceof Error ? snapshotException.message : snapshotException
+      );
+    }
+  }
+
   return {
     usuario: credencial.usuario,
     sucessos,

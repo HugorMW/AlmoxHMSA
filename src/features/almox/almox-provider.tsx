@@ -16,15 +16,12 @@ const PAGE_SIZE = 1000;
 const ALMOX_CACHE_KEY = 'almox:base:v1';
 const ALMOX_SESSION_KEY = 'almox:base:session:v1';
 const ALMOX_CACHE_TTL_MS = 5 * 60 * 1000;
-const SYNC_STATUS_POLL_INTERVAL_MS = 10 * 1000;
-const SYNC_STATUS_MAX_WAIT_MS = 2.5 * 60 * 1000;
+const SYNC_STATUS_MAX_WAIT_MS = 10 * 60 * 1000;
 const emailConfig = getEmailConfig();
 export const ALMOX_SYNC_COMPLETED_EVENT = 'almox:sync-completed';
 
 type PendingSyncState = {
   trackingId: string;
-  startedAt: number;
-  deadlineAt: number;
 };
 
 type SyncTrackedJob = {
@@ -64,7 +61,7 @@ type AlmoxDataContextValue = {
   removeBlacklistItem: (id: string) => Promise<void>;
   emailConfig: EmailConfig;
   refresh: () => Promise<void>;
-  syncBase: () => Promise<void>;
+  syncBase: (scope: 'estoque' | 'notas_fiscais') => Promise<void>;
 };
 
 const AlmoxDataContext = createContext<AlmoxDataContextValue | null>(null);
@@ -116,6 +113,13 @@ async function loadBlacklistItems() {
 function formatLoadError(error: unknown) {
   if (error instanceof Error && error.message) {
     return error.message;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const msg = (error as Record<string, unknown>).message;
+    if (typeof msg === 'string' && msg) {
+      return msg;
+    }
   }
 
   return 'Falha ao consultar a base do Supabase.';
@@ -331,7 +335,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const syncBase = useCallback(async function syncBase() {
+  const syncBase = useCallback(async function syncBase(scope: 'estoque' | 'notas_fiscais') {
     if (!mountedRef.current) {
       return;
     }
@@ -348,7 +352,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ scope: 'all' }),
+        body: JSON.stringify({ scope }),
       });
 
       const data = await parseSyncResponse(response);
@@ -356,11 +360,8 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       if (data?.queued && typeof data?.trackingId === 'string' && data.trackingId.trim().length > 0) {
         keepPolling = true;
         const jobs = Array.isArray(data?.jobs) ? (data.jobs as unknown[]).filter(isSyncTrackedJob) : [];
-        const startedAt = Date.now();
         setPendingSync({
           trackingId: data.trackingId,
-          startedAt,
-          deadlineAt: startedAt + SYNC_STATUS_MAX_WAIT_MS,
         });
         setSyncNotice(
           jobs.length > 0
@@ -494,39 +495,21 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const supabase = getSupabaseClient();
+    let finished = false;
 
     const finishMonitoring = () => {
-      if (!mountedRef.current || cancelled) {
+      if (!mountedRef.current || finished) {
         return;
       }
 
+      finished = true;
       setPendingSync(null);
       setSyncingBase(false);
     };
 
-    const scheduleNextPoll = (delayMs: number) => {
-      if (cancelled) {
-        return;
-      }
-
-      timer = setTimeout(() => {
-        void pollStatus();
-      }, delayMs);
-    };
-
-    const pollStatus = async () => {
-      if (cancelled || !mountedRef.current) {
-        return;
-      }
-
-      const remainingMs = pendingSync.deadlineAt - Date.now();
-      if (remainingMs <= 0) {
-        setSyncNotice(
-          'A sincronizacao continua em background no GitHub Actions. O site aguardou 2min30s e parou de consultar automaticamente.'
-        );
-        finishMonitoring();
+    const handleStatusChange = async () => {
+      if (finished || !mountedRef.current) {
         return;
       }
 
@@ -542,7 +525,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         if (status === 'success') {
           removeCachedValue(ALMOX_CACHE_KEY);
           await refresh();
-          if (!mountedRef.current || cancelled) {
+          if (!mountedRef.current || finished) {
             return;
           }
 
@@ -581,24 +564,46 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
             ? `Sincronizacao em andamento. ${descreverJobsSincronizacao(jobs)}.`
             : 'Sincronizacao em andamento no GitHub Actions.'
         );
-        scheduleNextPoll(Math.min(SYNC_STATUS_POLL_INTERVAL_MS, remainingMs));
-      } catch (syncStatusError) {
-        const message =
-          syncStatusError instanceof Error && syncStatusError.message
-            ? syncStatusError.message
-            : 'Falha ao consultar o andamento da sincronizacao do SISCORE.';
-        setSyncError(message);
-        finishMonitoring();
+      } catch {
+        // Erro transitório — o próximo evento Realtime vai tentar novamente.
       }
     };
 
-    void pollStatus();
+    // Timeout de segurança: para de monitorar se o Realtime não sinalizar em 10min.
+    const timeoutId = setTimeout(() => {
+      if (!finished) {
+        setSyncNotice(
+          'A sincronizacao continua em background no GitHub Actions. O site aguardou 10min e parou de monitorar automaticamente.'
+        );
+        finishMonitoring();
+      }
+    }, SYNC_STATUS_MAX_WAIT_MS);
+
+    const channel = supabase
+      .channel(`sync-tracking-${pendingSync.trackingId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'almox',
+          table: 'siscore_sync_execucao',
+          filter: `tracking_id=eq.${pendingSync.trackingId}`,
+        },
+        () => {
+          void handleStatusChange();
+        }
+      )
+      .subscribe((subscribeStatus) => {
+        if (subscribeStatus === 'SUBSCRIBED') {
+          // Verificação inicial para capturar eventos ocorridos antes da subscription.
+          void handleStatusChange();
+        }
+      });
 
     return () => {
-      cancelled = true;
-      if (timer) {
-        clearTimeout(timer);
-      }
+      finished = true;
+      clearTimeout(timeoutId);
+      void supabase.removeChannel(channel);
     };
   }, [pendingSync, refresh]);
 

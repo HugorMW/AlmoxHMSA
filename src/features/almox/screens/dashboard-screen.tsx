@@ -89,11 +89,12 @@ export default function DashboardScreen() {
         subtitle={`Base operacional conectada ao Supabase. Última importação com mudança: ${formattedSync}. Última leitura do app: ${formattedRefresh}.`}
         aside={
           <ActionButton
-            label={syncingBase ? 'Sincronizando...' : 'Atualizar base'}
+            label={loading ? 'Carregando...' : syncingBase ? 'Sincronizando...' : 'Atualizar estoque'}
             icon="refresh"
             tone="neutral"
-            onPress={() => void syncBase()}
+            onPress={() => void syncBase('estoque')}
             disabled={refreshing || syncingBase}
+            loading={loading}
           />
         }
       />

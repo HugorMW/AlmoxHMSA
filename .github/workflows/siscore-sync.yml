@@ -65,3 +65,9 @@ jobs:
           SISCORE_SYNC_TRACKING_ID: ${{ inputs.tracking_id }}
           SISCORE_SYNC_JOB_TIPO: estoque
         run: npm run siscore:import
+
+      - name: Registrar snapshot diario do estoque
+        if: ${{ success() && inputs.scope == 'estoque' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: npm run almox:snapshot

@@ -141,10 +141,10 @@ export default function ProductsScreen() {
         aside={
           <View style={styles.headerActions}>
             <ActionButton
-              label={syncingBase ? 'Sincronizando...' : 'Atualizar base'}
+              label={syncingBase ? 'Sincronizando...' : 'Atualizar estoque'}
               icon="refresh"
               tone="neutral"
-              onPress={() => void syncBase()}
+              onPress={() => void syncBase('estoque')}
               disabled={refreshing || syncingBase}
             />
             <ActionButton

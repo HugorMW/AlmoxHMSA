@@ -20,7 +20,9 @@ const navigationItems: Array<{
   { href: '/products' as Href, label: 'Produtos', hint: 'Carteira', match: '/products', icon: 'products' },
   { href: '/loans' as Href, label: 'Emprést.', hint: 'Redistribuição', match: '/loans', icon: 'loans' },
   { href: '/orders' as Href, label: 'Pedidos', hint: 'Reposição', match: '/orders', icon: 'orders' },
+  { href: '/consumo' as Href, label: 'Consumo', hint: 'Mês atual', match: '/consumo', icon: 'consumo' },
   { href: '/invoices' as Href, label: 'Notas', hint: 'Fiscais', match: '/invoices', icon: 'receipt' },
+  { href: '/opme' as Href, label: 'OPME', hint: 'Especiais', match: '/opme', icon: 'opme' },
   { href: '/blacklist' as Href, label: 'Excluir', hint: 'Bloqueios', match: '/blacklist', icon: 'blacklist' },
   { href: '/settings' as Href, label: 'Config.', hint: 'Parâmetros', match: '/settings', icon: 'settings' },
 ];

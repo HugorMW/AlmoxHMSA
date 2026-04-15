@@ -13,7 +13,8 @@
     "web:deploy:prod": "npm run web:export && npx eas-cli deploy --environment production --prod",
     "lint": "expo lint",
     "db:apply": "node ./scripts/aplicar-migration-supabase.mjs",
-    "siscore:import": "node ./scripts/importar-siscore.mjs"
+    "siscore:import": "node ./scripts/importar-siscore.mjs",
+    "almox:snapshot": "node ./scripts/registrar-snapshot.mjs"
   },
   "dependencies": {
     "@react-navigation/bottom-tabs": "^7.15.5",
@@ -48,6 +49,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~55.0.0",
     "typescript": "~5.9.2"
   },
   "private": true
