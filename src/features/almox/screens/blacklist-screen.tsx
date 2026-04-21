@@ -1,5 +1,5 @@
-import React, { useDeferredValue, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   ActionButton,
@@ -15,7 +15,14 @@ import {
 } from '@/features/almox/components/common';
 import { useAlmoxData } from '@/features/almox/almox-provider';
 import { almoxTheme } from '@/features/almox/tokens';
+import { FiltroCategoriaMaterial } from '@/features/almox/types';
 import { matchesQuery } from '@/features/almox/utils';
+
+const categoryOptions: Array<{ label: string; value: FiltroCategoriaMaterial }> = [
+  { label: 'Todos', value: 'todos' },
+  { label: 'Hospitalar', value: 'material_hospitalar' },
+  { label: 'Farmacológico', value: 'material_farmacologico' },
+];
 
 export default function BlacklistScreen() {
   const [search, setSearch] = useState('');
@@ -24,12 +31,30 @@ export default function BlacklistScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger'; message: string } | null>(null);
-  const { blacklistItems, blacklistSummary, findHmsaProductNameByCode, addBlacklistItem, removeBlacklistItem, usingCachedData } = useAlmoxData();
+  const {
+    blacklistItems,
+    blacklistSummary,
+    findHmsaProductNameByCode,
+    findHmsaProductCategoryByCode,
+    addBlacklistItem,
+    removeBlacklistItem,
+    usingCachedData,
+  } = useAlmoxData();
+  const [categoryFilter, setCategoryFilter] = useState<FiltroCategoriaMaterial>('todos');
 
   const deferredSearch = useDeferredValue(search);
-  const items = blacklistItems.filter((item) =>
-    matchesQuery([item.cd_produto, item.ds_produto], deferredSearch)
-  );
+  const items = useMemo(() => {
+    return blacklistItems.filter((item) => {
+      if (!matchesQuery([item.cd_produto, item.ds_produto], deferredSearch)) {
+        return false;
+      }
+      if (categoryFilter === 'todos') {
+        return true;
+      }
+      const categoria = findHmsaProductCategoryByCode(item.cd_produto);
+      return categoria === categoryFilter;
+    });
+  }, [blacklistItems, deferredSearch, categoryFilter, findHmsaProductCategoryByCode]);
 
   useEffect(() => {
     const codigo = newCode.trim();
@@ -147,6 +172,25 @@ export default function BlacklistScreen() {
           subtitle={`${items.length} item(ns) excluídos do HMSA • ${blacklistSummary.hospitalar} hospitalares • ${blacklistSummary.farmacologico} farmacológicos`}
           icon="blocked"
         />
+        <View style={styles.filterRow}>
+          {categoryOptions.map((option) => {
+            const isActive = option.value === categoryFilter;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => setCategoryFilter(option.value)}
+                style={({ pressed }) => [
+                  styles.filterChip,
+                  isActive ? styles.filterChipActive : null,
+                  pressed ? styles.filterChipPressed : null,
+                ]}>
+                <Text style={[styles.filterChipText, isActive ? styles.filterChipTextActive : null]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
         <SearchField value={search} onChangeText={setSearch} placeholder="Buscar por código ou descrição..." />
 
         {items.length === 0 ? (
@@ -214,5 +258,34 @@ const styles = StyleSheet.create({
     color: almoxTheme.colors.orange,
     fontSize: 12,
     lineHeight: 18,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: almoxTheme.spacing.sm,
+    marginBottom: almoxTheme.spacing.sm,
+  },
+  filterChip: {
+    paddingHorizontal: almoxTheme.spacing.md,
+    paddingVertical: almoxTheme.spacing.xs,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: almoxTheme.colors.line,
+    backgroundColor: almoxTheme.colors.surface,
+  },
+  filterChipActive: {
+    borderColor: almoxTheme.colors.brand,
+    backgroundColor: almoxTheme.colors.brand,
+  },
+  filterChipPressed: {
+    opacity: 0.75,
+  },
+  filterChipText: {
+    color: almoxTheme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  filterChipTextActive: {
+    color: '#ffffff',
   },
 });

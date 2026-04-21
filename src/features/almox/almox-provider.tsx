@@ -57,6 +57,7 @@ type AlmoxDataContextValue = {
     farmacologico: number;
   };
   findHmsaProductNameByCode: (cdProduto: string) => string | null;
+  findHmsaProductCategoryByCode: (cdProduto: string) => CategoriaMaterial | null;
   addBlacklistItem: (input: { cd_produto: string; ds_produto?: string }) => Promise<void>;
   removeBlacklistItem: (id: string) => Promise<void>;
   emailConfig: EmailConfig;
@@ -217,7 +218,7 @@ function normalizeCategory(value: EstoqueAtualRow['categoria_material']): Catego
 
 function rowEhDoHmsa(row: EstoqueAtualRow) {
   const unidade = String(row.codigo_unidade ?? '').trim().toUpperCase();
-  return unidade === 'HMSA' || unidade === 'HMSASOUL';
+  return unidade === 'HMSASOUL';
 }
 
 function normalizarCodigoProduto(value: string) {
@@ -451,6 +452,24 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     );
   }, [rows]);
 
+  const findHmsaProductCategoryByCode = useCallback(
+    (cdProduto: string): CategoriaMaterial | null => {
+      const codigoNormalizado = normalizarCodigoProduto(cdProduto);
+
+      if (!codigoNormalizado) {
+        return null;
+      }
+
+      const row = rows.find(
+        (current) =>
+          rowEhDoHmsa(current) && normalizarCodigoProduto(current.codigo_produto) === codigoNormalizado
+      );
+
+      return row ? normalizeCategory(row.categoria_material) : null;
+    },
+    [rows]
+  );
+
   async function removeBlacklistItem(id: string) {
     const supabase = getSupabaseClient();
     const { error: updateError } = await supabase
@@ -635,6 +654,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         blacklistItems,
         blacklistSummary,
         findHmsaProductNameByCode,
+        findHmsaProductCategoryByCode,
         addBlacklistItem,
         removeBlacklistItem,
         emailConfig,

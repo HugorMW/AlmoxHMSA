@@ -101,7 +101,7 @@ export function getCategoriaMaterialLabel(value: CategoriaMaterial) {
 function mapHospital(code: string): Hospital | null {
   const normalized = String(code ?? '').trim().toUpperCase();
 
-  if (normalized === 'HMSASOUL' || normalized === 'HMSA') {
+  if (normalized === 'HMSASOUL') {
     return 'HMSA';
   }
   if (normalized === 'HEC' || normalized === 'HDDS' || normalized === 'HABF') {

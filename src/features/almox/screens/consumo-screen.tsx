@@ -42,8 +42,7 @@ function toNumber(value: number | string | null | undefined): number {
 }
 
 function rowIsHmsa(codigoUnidade: string) {
-  const unidade = codigoUnidade.trim().toUpperCase();
-  return unidade === 'HMSA' || unidade === 'HMSASOUL';
+  return codigoUnidade.trim().toUpperCase() === 'HMSASOUL';
 }
 
 function normalizeCategoria(value: ConsumoRow['categoria_material']): CategoriaMaterial {

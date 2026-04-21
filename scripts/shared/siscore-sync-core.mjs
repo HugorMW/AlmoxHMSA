@@ -389,7 +389,12 @@ export function normalizarLinhasEstoque(rows, categoriaMaterial) {
         especie_padrao: codigoProdutoReferencia ? String(row.especie_padrao ?? '').trim() || null : null,
       };
     })
-    .filter((row) => row.codigo_produto && row.codigo_unidade);
+    .filter(
+      (row) =>
+        row.codigo_produto &&
+        row.codigo_unidade &&
+        row.codigo_unidade.trim().toUpperCase() !== 'HMSA'
+    );
 
   const quantidadeReferenciasValidas = normalized.filter((row) => row.codigo_produto_referencia).length;
   if (quantidadeReferenciasValidas === 0) {
@@ -403,7 +408,7 @@ export function normalizarLinhasEstoque(rows, categoriaMaterial) {
 
 function unidadeEhHmsa(value) {
   const normalized = String(value ?? '').trim().toUpperCase();
-  return normalized === 'HMSA' || normalized === 'HMSASOUL';
+  return normalized === 'HMSASOUL';
 }
 
 function hashConteudo(value) {
