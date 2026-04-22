@@ -15,39 +15,17 @@ import {
   SectionTitle,
 } from '@/features/almox/components/common';
 import { useAlmoxData } from '@/features/almox/almox-provider';
+import { getActionTooltips, getLevelRangeLabels, getLevelTooltips, getLimiteCompraDias } from '@/features/almox/configuracao';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
 import { createExportTimestamp, exportRowsToExcel } from '@/features/almox/excel';
 import { almoxTheme } from '@/features/almox/tokens';
-import { Action, Hospital, Level, Product } from '@/features/almox/types';
+import { Hospital, Product } from '@/features/almox/types';
 import { formatDecimal, paginate, matchesQuery } from '@/features/almox/utils';
 
 const PAGE_SIZE = 8;
 type ActionFilter = 'all' | 'COMPRAR' | 'PEGAR EMPRESTADO' | 'AVALIAR';
 type LevelFilter = 'all' | 'URGENTE' | 'CRÍTICO' | 'ALTO' | 'MÉDIO' | 'BAIXO' | 'ESTÁVEL';
 type SortOption = 'dias_asc' | 'dias_desc' | 'nome_asc' | 'codigo_asc';
-
-const levelTooltips: Record<Level, string> = {
-  URGENTE: 'Estoque zerado. Ação imediata para evitar indisponibilidade do item.',
-  CRÍTICO: 'Cobertura de 0 a 7 dias. Faixa com maior risco de ruptura.',
-  ALTO: 'Cobertura entre 8 e 15 dias. Ainda atende, mas já pede ação rápida.',
-  MÉDIO: 'Cobertura entre 16 e 30 dias. Sai da urgência curta, mas ainda merece acompanhamento.',
-  BAIXO: 'Cobertura entre 31 e 60 dias. Faixa operacional mais confortável.',
-  ESTÁVEL: 'Cobertura acima de 60 dias. Indica estoque folgado e possível excedente.',
-};
-
-const actionTooltips: Record<Action, string> = {
-  COMPRAR:
-    'Recomendado quando o HMSA está com até 15 dias sem doador seguro acima de 100 dias, ou quando já entrou na faixa de 16 a 30 dias.',
-  'PEGAR EMPRESTADO':
-    'Recomendado quando o HMSA está com até 15 dias e existe doador da mesma categoria e do mesmo cd_pro_fat acima de 100 dias.',
-  AVALIAR:
-    'Faixa mantida para leitura operacional, mas a regra atual prioriza apenas compra ou empréstimo até 15 dias.',
-  'PODE EMPRESTAR':
-    'Item com folga acima de 120 dias. Pode entrar como origem de redistribuição, preservando piso seguro no doador.',
-  OK: 'Item fora da faixa crítica e sem necessidade de ação imediata.',
-  'EXECUTAR AGORA': 'Ação imediata priorizada em fluxos operacionais específicos.',
-  'BAIXA PRIORIDADE': 'Item monitorado, mas sem urgência operacional no momento.',
-};
 
 export default function ProductsScreen() {
   const [activeHospital, setActiveHospital] = useState<Hospital>('HMSA');
@@ -58,7 +36,11 @@ export default function ProductsScreen() {
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
+  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig } = useAlmoxData();
+  const levelTooltips = useMemo(() => getLevelTooltips(systemConfig), [systemConfig]);
+  const actionTooltips = useMemo(() => getActionTooltips(systemConfig), [systemConfig]);
+  const levelRanges = useMemo(() => getLevelRangeLabels(systemConfig), [systemConfig]);
+  const limiteCompraDias = useMemo(() => getLimiteCompraDias(systemConfig), [systemConfig]);
 
   const deferredSearch = useDeferredValue(search);
   const hospitals = dataset.hospitals;
@@ -230,7 +212,7 @@ export default function ProductsScreen() {
           <View style={styles.filterBlock}>
             <View style={styles.filterLabelRow}>
               <Text style={styles.filterLabel}>Ações</Text>
-              <HelpHint text="Filtra a recomendação operacional calculada para o HMSA. Empréstimo só aparece quando há doador seguro acima de 100 dias." />
+              <HelpHint text={`Filtra a recomendação calculada para o HMSA. Empréstimo só aparece quando outro hospital tem o mesmo item com mais de ${systemConfig.doadorSeguroDias} dias de cobertura.`} />
             </View>
             <InlineTabs
               options={[
@@ -243,13 +225,13 @@ export default function ProductsScreen() {
                   label: 'Comprar',
                   value: 'COMPRAR' as const,
                   tooltip:
-                    'Item com até 15 dias sem doador seguro acima de 100 dias, ou já na faixa de 16 a 30 dias sem redistribuição prioritária.',
+                    `Item com até ${limiteCompraDias} dias sem outro hospital com cobertura suficiente para emprestar, ou já na faixa até ${systemConfig.medioDias} dias sem redistribuição prioritária.`,
                 },
                 {
                   label: 'Pegar emprestado',
                   value: 'PEGAR EMPRESTADO' as const,
                   tooltip:
-                    'Item do HMSA com até 15 dias e doador da mesma categoria e do mesmo cd_pro_fat acima de 100 dias.',
+                    `Item do HMSA com até ${limiteCompraDias} dias e outro hospital com o mesmo item acima de ${systemConfig.doadorSeguroDias} dias, mantendo pelo menos ${systemConfig.pisoDoadorAposEmprestimoDias} dias após a transferência.`,
                 },
                 {
                   label: 'Avaliar',
@@ -306,7 +288,7 @@ export default function ProductsScreen() {
         <View style={styles.filterBlock}>
           <View style={styles.filterLabelRow}>
             <Text style={styles.filterLabel}>Níveis</Text>
-            <HelpHint text="Filtra a faixa de cobertura. Urgente para estoque zerado, crítico até 7 dias, alto até 15, médio até 30, baixo até 60 e estável acima disso." />
+            <HelpHint text={`Filtra a faixa de cobertura. Urgente para estoque zerado, crítico ${levelRanges['CRÍTICO']}, alto ${levelRanges.ALTO}, médio ${levelRanges['MÉDIO']}, baixo ${levelRanges.BAIXO} e estável ${levelRanges['ESTÁVEL']}.`} />
           </View>
           <InlineTabs
             options={[
@@ -318,32 +300,32 @@ export default function ProductsScreen() {
               {
                 label: 'Urgente',
                 value: 'URGENTE' as const,
-                tooltip: 'Itens com estoque zerado. Demandam ação imediata.',
+                tooltip: levelTooltips.URGENTE,
               },
               {
                 label: 'Crítico',
                 value: 'CRÍTICO' as const,
-                tooltip: 'Cobertura de 0 a 7 dias. Faixa de maior risco de ruptura.',
+                tooltip: levelTooltips['CRÍTICO'],
               },
               {
                 label: 'Alto',
                 value: 'ALTO' as const,
-                tooltip: 'Cobertura entre 8 e 15 dias. Já pede atenção imediata.',
+                tooltip: levelTooltips.ALTO,
               },
               {
                 label: 'Médio',
                 value: 'MÉDIO' as const,
-                tooltip: 'Cobertura entre 16 e 30 dias. Situação ainda monitorada.',
+                tooltip: levelTooltips['MÉDIO'],
               },
               {
                 label: 'Baixo',
                 value: 'BAIXO' as const,
-                tooltip: 'Cobertura entre 31 e 60 dias. Faixa operacional confortável.',
+                tooltip: levelTooltips.BAIXO,
               },
               {
                 label: 'Estável',
                 value: 'ESTÁVEL' as const,
-                tooltip: 'Cobertura acima de 60 dias. Pode indicar excedente.',
+                tooltip: levelTooltips['ESTÁVEL'],
               },
             ]}
             value={levelFilter}
@@ -396,6 +378,10 @@ export default function ProductsScreen() {
                   item={item}
                   showActionColumns={showActionColumns}
                   showMaterialLabel={categoryFilter === 'todos'}
+                  levelTooltip={levelTooltips[item.level]}
+                  actionTooltip={item.action ? actionTooltips[item.action] : undefined}
+                  doadorSeguroDias={systemConfig.doadorSeguroDias}
+                  pisoDoadorAposEmprestimoDias={systemConfig.pisoDoadorAposEmprestimoDias}
                 />
               ))}
             </View>
@@ -430,10 +416,18 @@ function ProductRow({
   item,
   showActionColumns,
   showMaterialLabel,
+  levelTooltip,
+  actionTooltip,
+  doadorSeguroDias,
+  pisoDoadorAposEmprestimoDias,
 }: {
   item: Product;
   showActionColumns: boolean;
   showMaterialLabel: boolean;
+  levelTooltip: string;
+  actionTooltip?: string;
+  doadorSeguroDias: number;
+  pisoDoadorAposEmprestimoDias: number;
 }) {
   return (
     <View style={styles.tableRow}>
@@ -449,14 +443,14 @@ function ProductRow({
       <Text style={[styles.tableCell, styles.codeColumn]}>{item.product_code}</Text>
       <Text style={[styles.tableCell, styles.smallColumn]}>{formatDecimal(item.sufficiency_days)}</Text>
       <View style={[styles.tableBadgeCell, styles.smallColumn]}>
-        <HoverInfo text={levelTooltips[item.level]}>
+        <HoverInfo text={levelTooltip}>
           <LevelBadge level={item.level} />
         </HoverInfo>
       </View>
       {showActionColumns ? (
         <View style={[styles.tableBadgeCell, styles.actionColumn]}>
           {item.action ? (
-            <HoverInfo text={actionTooltips[item.action]}>
+            <HoverInfo text={actionTooltip ?? 'Recomendação operacional calculada para este item.'}>
               <ActionBadge action={item.action} />
             </HoverInfo>
           ) : (
@@ -469,8 +463,8 @@ function ProductRow({
           <HoverInfo
             text={
               item.suggested_hospital
-                ? `Melhor hospital doador encontrado para o mesmo cd_pro_fat e a mesma categoria. O valor em dias ao lado do hospital representa a suficiência atual do estoque dessa unidade doadora: ${item.donor_sufficiency?.toFixed(0) ?? 'sem dado'} dias. Estoque atual da unidade sugerida: ${item.donor_current_stock != null ? formatDecimal(item.donor_current_stock, 0) : 'sem dado'}. Suficiência projetada do doador após a cessão sugerida: ${item.nova_suf_doador?.toFixed(0) ?? 'sem dado'} dias.`
-                : 'Nenhum doador seguro encontrado com mais de 100 dias de suficiência atual para este item.'
+                ? `Melhor hospital para emprestar este item. O valor em dias ao lado do hospital mostra a cobertura atual dessa unidade: ${item.donor_sufficiency?.toFixed(0) ?? 'sem dado'} dias. Estoque atual da unidade sugerida: ${item.donor_current_stock != null ? formatDecimal(item.donor_current_stock, 0) : 'sem dado'}. Cobertura estimada depois do empréstimo: ${item.nova_suf_doador?.toFixed(0) ?? 'sem dado'} dias. Mínimo configurado depois de emprestar: ${pisoDoadorAposEmprestimoDias} dias.`
+                : `Nenhum hospital encontrado com o mesmo item e mais de ${doadorSeguroDias} dias de cobertura atual.`
             }>
             <View style={styles.productCell}>
               <Text style={styles.tableCell}>

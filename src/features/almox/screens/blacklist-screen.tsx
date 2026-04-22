@@ -39,6 +39,11 @@ export default function BlacklistScreen() {
     addBlacklistItem,
     removeBlacklistItem,
     usingCachedData,
+    systemConfig,
+    systemConfigLoading,
+    systemConfigSaving,
+    systemConfigError,
+    saveSystemConfig,
   } = useAlmoxData();
   const [categoryFilter, setCategoryFilter] = useState<FiltroCategoriaMaterial>('todos');
 
@@ -106,6 +111,26 @@ export default function BlacklistScreen() {
     }
   }
 
+  async function handleToggleLowConsumption(nextValue: boolean) {
+    setFeedback(null);
+
+    try {
+      await saveSystemConfig({
+        ...systemConfig,
+        excluirCmmMenorQueUm: nextValue,
+      });
+      setFeedback({
+        tone: 'success',
+        message: nextValue
+          ? 'Itens com consumo mensal menor que 1 foram ocultados dos cálculos.'
+          : 'Itens com consumo mensal menor que 1 voltaram aos cálculos.',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao salvar a exclusão automática.';
+      setFeedback({ tone: 'danger', message });
+    }
+  }
+
   return (
     <ScreenScrollView>
       <PageHeader
@@ -127,6 +152,14 @@ export default function BlacklistScreen() {
         />
       ) : null}
 
+      {systemConfigError ? (
+        <InfoBanner
+          title="Falha nas exclusões automáticas"
+          description={`${systemConfigError} A lista manual continua disponível.`}
+          tone="danger"
+        />
+      ) : null}
+
       {feedback ? (
         <InfoBanner
           title={feedback.tone === 'success' ? 'Atualização concluída' : 'Falha ao atualizar exclusões'}
@@ -134,6 +167,21 @@ export default function BlacklistScreen() {
           tone={feedback.tone}
         />
       ) : null}
+
+      <SectionCard>
+        <SectionTitle
+          title="Exclusões automáticas"
+          subtitle="Filtros que tiram itens dos cálculos do app sem apagar os dados do banco."
+          icon="blocked"
+        />
+        <ToggleField
+          label="Ocultar itens com consumo mensal menor que 1"
+          description="Quando ligado, itens que consomem menos de 1 unidade por mês deixam de entrar nos KPIs, listas e recomendações. O dado original continua salvo."
+          value={systemConfig.excluirCmmMenorQueUm}
+          disabled={systemConfigLoading || systemConfigSaving}
+          onChange={(nextValue) => void handleToggleLowConsumption(nextValue)}
+        />
+      </SectionCard>
 
       <SectionCard>
         <SectionTitle
@@ -222,6 +270,42 @@ export default function BlacklistScreen() {
   );
 }
 
+function ToggleField({
+  label,
+  description,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  value: boolean;
+  disabled?: boolean;
+  onChange: (nextValue: boolean) => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value, disabled }}
+      disabled={disabled}
+      onPress={() => onChange(!value)}
+      style={({ pressed }) => [
+        styles.toggle,
+        value ? styles.toggleActive : null,
+        pressed && !disabled ? styles.togglePressed : null,
+        disabled ? styles.toggleDisabled : null,
+      ]}>
+      <View style={styles.toggleTextWrap}>
+        <Text style={styles.toggleTitle}>{label}</Text>
+        <Text style={styles.toggleDescription}>{description}</Text>
+      </View>
+      <View style={[styles.toggleTrack, value ? styles.toggleTrackActive : null]}>
+        <View style={[styles.toggleThumb, value ? styles.toggleThumbActive : null]} />
+      </View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   formGrid: {
     gap: almoxTheme.spacing.md,
@@ -287,5 +371,63 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: '#ffffff',
+  },
+  toggle: {
+    minHeight: 72,
+    borderRadius: almoxTheme.radii.md,
+    borderWidth: 1,
+    borderColor: almoxTheme.colors.lineStrong,
+    backgroundColor: almoxTheme.colors.surfaceMuted,
+    padding: almoxTheme.spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: almoxTheme.spacing.md,
+  },
+  toggleActive: {
+    borderColor: '#93c5fd',
+    backgroundColor: '#eff6ff',
+  },
+  togglePressed: {
+    opacity: 0.88,
+  },
+  toggleDisabled: {
+    opacity: 0.55,
+  },
+  toggleTextWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  toggleTitle: {
+    color: almoxTheme.colors.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  toggleDescription: {
+    color: almoxTheme.colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  toggleTrack: {
+    width: 50,
+    height: 30,
+    borderRadius: almoxTheme.radii.pill,
+    backgroundColor: almoxTheme.colors.surfaceStrong,
+    padding: 3,
+    justifyContent: 'center',
+  },
+  toggleTrackActive: {
+    backgroundColor: almoxTheme.colors.brand,
+  },
+  toggleThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: almoxTheme.colors.white,
+    borderWidth: 1,
+    borderColor: almoxTheme.colors.line,
+  },
+  toggleThumbActive: {
+    alignSelf: 'flex-end',
   },
 });
