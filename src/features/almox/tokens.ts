@@ -58,11 +58,21 @@ export const almoxTheme = {
 } as const;
 
 export const levelColors = {
-  'CRÍTICO': { background: '#ffe1e7', foreground: '#b4234a' },
-  ALERTA: { background: '#ffeedb', foreground: '#b5671b' },
-  BAIXO: { background: '#fff4d6', foreground: '#9f7514' },
-  'MÉDIO': { background: '#def7ea', foreground: '#19724d' },
-  ALTO: { background: '#ddeeff', foreground: '#1d5fbf' },
+  URGENTE: { background: '#111827', foreground: '#ffffff' },
+  'CRÍTICO': { background: '#dc2626', foreground: '#ffffff' },
+  ALTO: { background: '#ea580c', foreground: '#ffffff' },
+  'MÉDIO': { background: '#eab308', foreground: '#1f2937' },
+  BAIXO: { background: '#16a34a', foreground: '#ffffff' },
+  'ESTÁVEL': { background: '#2563eb', foreground: '#ffffff' },
+} as const;
+
+export const levelRanges = {
+  URGENTE: 'zerado',
+  'CRÍTICO': '1–7 dias',
+  ALTO: '8–15 dias',
+  'MÉDIO': '16–30 dias',
+  BAIXO: '31–60 dias',
+  'ESTÁVEL': '60+ dias',
 } as const;
 
 export const actionColors = {

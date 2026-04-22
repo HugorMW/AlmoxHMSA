@@ -16,8 +16,8 @@ import {
 } from '@/features/almox/components/common';
 import { useAlmoxData } from '@/features/almox/almox-provider';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
-import { almoxTheme } from '@/features/almox/tokens';
-import { DetailItem, Hospital } from '@/features/almox/types';
+import { almoxTheme, levelColors, levelRanges } from '@/features/almox/tokens';
+import { DetailItem, Hospital, Level } from '@/features/almox/types';
 import { formatDecimal } from '@/features/almox/utils';
 
 type PanelKey = 'transfer' | 'idle' | 'rupture';
@@ -161,38 +161,53 @@ export default function DashboardScreen() {
         />
       </SectionCard>
 
+      <TotalHero
+        value={dashboard.kpi.total_products}
+        hospital={activeHospital}
+      />
+
       <View style={styles.metricGrid}>
-        <MetricCard
-          label="Total"
-          value={`${dashboard.kpi.total_products}`}
-          icon="package"
-          color={almoxTheme.colors.blue}
-          hint="Itens válidos após filtros e exclusões do HMSA."
-          tooltip="Quantidade total de itens visíveis após aplicar categoria selecionada, bloqueios do HMSA e validações da base."
+        <LevelMetricCard
+          label="Urgente"
+          value={dashboard.kpi.urgent}
+          total={dashboard.kpi.total_products}
+          level="URGENTE"
+          tooltip="Itens com estoque atual igual a zero. Pedem ação imediata para evitar indisponibilidade."
         />
-        <MetricCard
-          label="Críticos"
-          value={`${dashboard.kpi.critical}`}
-          icon="alert"
-          color={almoxTheme.colors.red}
-          hint="Cobertura de até 7 dias."
-          tooltip="Itens com suficiência de 0 a 7 dias. São os produtos com maior pressão de abastecimento."
+        <LevelMetricCard
+          label="Crítico"
+          value={dashboard.kpi.critical}
+          total={dashboard.kpi.total_products}
+          level="CRÍTICO"
+          tooltip="Itens com suficiência de 1 a 7 dias. São os produtos com maior pressão de abastecimento."
         />
-        <MetricCard
-          label="Em alerta"
-          value={`${dashboard.kpi.alert}`}
-          icon="alert"
-          color={almoxTheme.colors.orange}
-          hint="Cobertura entre 8 e 15 dias."
+        <LevelMetricCard
+          label="Alto"
+          value={dashboard.kpi.high}
+          total={dashboard.kpi.total_products}
+          level="ALTO"
           tooltip="Itens com suficiência entre 8 e 15 dias. Ainda não romperam, mas já entram na faixa de atenção imediata."
         />
-        <MetricCard
-          label="Estáveis"
-          value={`${dashboard.kpi.medium + dashboard.kpi.high}`}
-          icon="uptrend"
-          color={almoxTheme.colors.green}
-          hint="Cobertura acima de 30 dias."
-          tooltip="Agrupa os itens com mais de 30 dias de cobertura, fora da faixa curta de abastecimento."
+        <LevelMetricCard
+          label="Médio"
+          value={dashboard.kpi.medium}
+          total={dashboard.kpi.total_products}
+          level="MÉDIO"
+          tooltip="Itens com suficiência entre 16 e 30 dias. Faixa de risco moderado: ainda há folga, mas já é hora de acompanhar."
+        />
+        <LevelMetricCard
+          label="Baixo"
+          value={dashboard.kpi.low}
+          total={dashboard.kpi.total_products}
+          level="BAIXO"
+          tooltip="Itens com suficiência entre 31 e 60 dias. Risco baixo, sem necessidade imediata de ação."
+        />
+        <LevelMetricCard
+          label="Estável"
+          value={dashboard.kpi.stable}
+          total={dashboard.kpi.total_products}
+          level="ESTÁVEL"
+          tooltip="Itens com mais de 60 dias de cobertura. Estão fora da faixa de atenção operacional."
         />
       </View>
 
@@ -212,14 +227,6 @@ export default function DashboardScreen() {
           color={almoxTheme.colors.cyan}
           hint="Até 15 dias com doador compatível."
           tooltip="Item do HMSA com até 15 dias e doador da mesma categoria e mesmo cd_pro_fat acima de 100 dias."
-        />
-        <MetricCard
-          label="Avaliar"
-          value={`${dashboard.kpi.to_evaluate}`}
-          icon="spark"
-          color={almoxTheme.colors.violet}
-          hint="Regra atual não usa essa faixa."
-          tooltip="Com a regra atual, empréstimo só é considerado quando o HMSA tem 15 dias ou menos. Por isso esta faixa tende a ficar zerada."
         />
         <MetricCard
           label="Pode emprestar"
@@ -417,9 +424,9 @@ function MetricCard({
 }: {
   label: string;
   value: string;
-  icon: Parameters<typeof AppIcon>[0]['name'];
-  color: string;
-  hint: string;
+  icon?: Parameters<typeof AppIcon>[0]['name'];
+  color?: string;
+  hint?: string;
   tooltip: string;
 }) {
   const [showTooltip, setShowTooltip] = useState(false);
@@ -432,13 +439,81 @@ function MetricCard({
       onPressOut={() => setShowTooltip(false)}
       style={({ pressed }) => [styles.metricCard, pressed ? styles.metricCardPressed : null]}>
       {showTooltip ? <CardTooltip text={tooltip} /> : null}
-      <View style={[styles.metricIcon, { backgroundColor: `${color}20` }]}>
-        <AppIcon name={icon} size={18} color={color} />
-      </View>
+      {icon && color ? (
+        <View style={[styles.metricIcon, { backgroundColor: `${color}20` }]}>
+          <AppIcon name={icon} size={18} color={color} />
+        </View>
+      ) : null}
       <Text style={styles.metricValue}>{value}</Text>
       <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricHint}>{hint}</Text>
+      {hint ? <Text style={styles.metricHint}>{hint}</Text> : null}
     </Pressable>
+  );
+}
+
+function LevelMetricCard({
+  label,
+  value,
+  total,
+  level,
+  tooltip,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  level: Level;
+  tooltip: string;
+}) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const palette = levelColors[level];
+  const range = levelRanges[level];
+  const percent = total > 0 ? Math.round((value / total) * 100) : 0;
+
+  return (
+    <Pressable
+      onHoverIn={() => setShowTooltip(true)}
+      onHoverOut={() => setShowTooltip(false)}
+      onPressIn={() => setShowTooltip(true)}
+      onPressOut={() => setShowTooltip(false)}
+      style={({ pressed }) => [
+        styles.metricCard,
+        styles.levelMetricCard,
+        { borderTopColor: palette.background },
+        pressed ? styles.metricCardPressed : null,
+      ]}>
+      {showTooltip ? <CardTooltip text={tooltip} /> : null}
+
+      <View style={styles.levelCardHeader}>
+        <Text style={styles.metricLabelTitle}>{label}</Text>
+        <View style={[styles.rangeBadge, { backgroundColor: palette.background }]}>
+          <Text style={[styles.rangeBadgeText, { color: palette.foreground }]}>{range}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.metricValue}>{value}</Text>
+
+      <View style={styles.proportionBarTrack}>
+        <View
+          style={[
+            styles.proportionBarFill,
+            { backgroundColor: palette.background, width: `${percent}%` },
+          ]}
+        />
+      </View>
+      <Text style={styles.proportionText}>{percent}% do total</Text>
+    </Pressable>
+  );
+}
+
+function TotalHero({ value, hospital }: { value: number; hospital: Hospital }) {
+  return (
+    <View style={styles.totalHero}>
+      <View style={styles.totalHeroMain}>
+        <Text style={styles.totalHeroLabel}>Total de produtos</Text>
+        <Text style={styles.totalHeroSub}>Itens monitorados em {hospital} na base atual</Text>
+      </View>
+      <Text style={styles.totalHeroValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -503,7 +578,7 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flexGrow: 1,
-    flexBasis: 220,
+    flexBasis: 160,
     minHeight: 142,
     borderRadius: almoxTheme.radii.lg,
     borderWidth: 1,
@@ -518,6 +593,16 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 3,
+  },
+  levelMetricCard: {
+    borderTopWidth: 4,
+    paddingTop: almoxTheme.spacing.md,
+  },
+  levelCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: almoxTheme.spacing.xs,
   },
   metricCardPressable: {
     justifyContent: 'space-between',
@@ -543,10 +628,79 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  metricLabelTitle: {
+    color: almoxTheme.colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
   metricHint: {
     color: almoxTheme.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
+  },
+  rangeBadge: {
+    paddingHorizontal: almoxTheme.spacing.sm,
+    paddingVertical: 3,
+    borderRadius: almoxTheme.radii.sm,
+  },
+  rangeBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  proportionBarTrack: {
+    height: 5,
+    borderRadius: almoxTheme.radii.pill,
+    backgroundColor: almoxTheme.colors.surfaceStrong,
+    overflow: 'hidden',
+    marginTop: almoxTheme.spacing.xs,
+  },
+  proportionBarFill: {
+    height: '100%',
+    borderRadius: almoxTheme.radii.pill,
+  },
+  proportionText: {
+    color: almoxTheme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  totalHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: almoxTheme.spacing.md,
+    padding: almoxTheme.spacing.lg,
+    borderRadius: almoxTheme.radii.lg,
+    borderWidth: 1,
+    borderColor: almoxTheme.colors.line,
+    backgroundColor: almoxTheme.colors.surface,
+    shadowColor: almoxTheme.colors.black,
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  totalHeroMain: {
+    flex: 1,
+    gap: 4,
+  },
+  totalHeroLabel: {
+    color: almoxTheme.colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  totalHeroSub: {
+    color: almoxTheme.colors.textMuted,
+    fontSize: 12,
+  },
+  totalHeroValue: {
+    color: almoxTheme.colors.brand,
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.8,
   },
   tooltipBubble: {
     position: 'absolute',
