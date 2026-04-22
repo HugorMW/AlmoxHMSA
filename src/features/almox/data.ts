@@ -111,12 +111,13 @@ function mapHospital(code: string): Hospital | null {
   return null;
 }
 
-function getLevel(days: number) {
+function getLevel(days: number, estoqueAtual: number) {
+  if (estoqueAtual <= 0) return 'URGENTE' as const;
   if (days <= 7) return 'CRÍTICO' as const;
-  if (days <= 15) return 'ALERTA' as const;
-  if (days <= 30) return 'BAIXO' as const;
-  if (days <= 90) return 'MÉDIO' as const;
-  return 'ALTO' as const;
+  if (days <= 15) return 'ALTO' as const;
+  if (days <= 30) return 'MÉDIO' as const;
+  if (days <= 60) return 'BAIXO' as const;
+  return 'ESTÁVEL' as const;
 }
 
 function getRuptureRisk(days: number) {
@@ -165,6 +166,8 @@ function buildBaseProducts(rows: EstoqueAtualRow[]) {
       const avgMonthlyConsumption = parseNumber(row.consumo_medio);
       const sufficiencyDays = clampSufficiency(parseNumber(row.suficiencia_em_dias));
       const categoriaMaterial = normalizeCategoriaMaterial(row.categoria_material);
+      const estoqueAtualValue = parseNumber(row.estoque_atual);
+      const levelValue = getLevel(sufficiencyDays, estoqueAtualValue);
 
       return {
         hospital,
@@ -176,9 +179,9 @@ function buildBaseProducts(rows: EstoqueAtualRow[]) {
         sufficiency_days: sufficiencyDays,
         avg_monthly_consumption: avgMonthlyConsumption,
         daily_usage: round(safeDailyUsage(avgMonthlyConsumption), 4),
-        level: getLevel(sufficiencyDays),
+        level: levelValue,
         rupture_risk: getRuptureRisk(sufficiencyDays),
-        estoque_atual: parseNumber(row.estoque_atual),
+        estoque_atual: estoqueAtualValue,
         data_ultima_entrada: row.data_ultima_entrada,
         action: baseActionForHospital({
           hospital,
@@ -190,9 +193,9 @@ function buildBaseProducts(rows: EstoqueAtualRow[]) {
           sufficiency_days: sufficiencyDays,
           avg_monthly_consumption: avgMonthlyConsumption,
           daily_usage: round(safeDailyUsage(avgMonthlyConsumption), 4),
-          level: getLevel(sufficiencyDays),
+          level: levelValue,
           rupture_risk: getRuptureRisk(sufficiencyDays),
-          estoque_atual: parseNumber(row.estoque_atual),
+          estoque_atual: estoqueAtualValue,
           data_ultima_entrada: row.data_ultima_entrada,
         }),
       };
@@ -334,11 +337,12 @@ function buildDashboard(hospital: Hospital, productsByHospital: Record<Hospital,
   const dashboard: DashboardData = {
     kpi: {
       total_products: items.length,
+      urgent: items.filter((item) => item.level === 'URGENTE').length,
       critical: items.filter((item) => item.level === 'CRÍTICO').length,
-      alert: items.filter((item) => item.level === 'ALERTA').length,
-      low: items.filter((item) => item.level === 'BAIXO').length,
-      medium: items.filter((item) => item.level === 'MÉDIO').length,
       high: items.filter((item) => item.level === 'ALTO').length,
+      medium: items.filter((item) => item.level === 'MÉDIO').length,
+      low: items.filter((item) => item.level === 'BAIXO').length,
+      stable: items.filter((item) => item.level === 'ESTÁVEL').length,
       to_buy: items.filter((item) => item.action === 'COMPRAR').length,
       to_borrow: items.filter((item) => item.action === 'PEGAR EMPRESTADO').length,
       to_evaluate: items.filter((item) => item.action === 'AVALIAR').length,
@@ -428,7 +432,7 @@ function buildOrderItems(productsByHospital: Record<Hospital, Product[]>): Order
 
 function buildEmailPreviewItems(productsByHospital: Record<Hospital, Product[]>) {
   return (productsByHospital.HMSA ?? [])
-    .filter((item) => item.level === 'CRÍTICO' || item.level === 'ALERTA')
+    .filter((item) => item.level === 'URGENTE' || item.level === 'CRÍTICO' || item.level === 'ALTO')
     .sort((left, right) => left.sufficiency_days - right.sufficiency_days)
     .slice(0, 5);
 }

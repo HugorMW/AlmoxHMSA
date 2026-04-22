@@ -23,15 +23,16 @@ import { formatDecimal, paginate, matchesQuery } from '@/features/almox/utils';
 
 const PAGE_SIZE = 8;
 type ActionFilter = 'all' | 'COMPRAR' | 'PEGAR EMPRESTADO' | 'AVALIAR';
-type LevelFilter = 'all' | 'CRÍTICO' | 'ALERTA' | 'BAIXO' | 'MÉDIO' | 'ALTO';
+type LevelFilter = 'all' | 'URGENTE' | 'CRÍTICO' | 'ALTO' | 'MÉDIO' | 'BAIXO' | 'ESTÁVEL';
 type SortOption = 'dias_asc' | 'dias_desc' | 'nome_asc' | 'codigo_asc';
 
 const levelTooltips: Record<Level, string> = {
+  URGENTE: 'Estoque zerado. Ação imediata para evitar indisponibilidade do item.',
   CRÍTICO: 'Cobertura de 0 a 7 dias. Faixa com maior risco de ruptura.',
-  ALERTA: 'Cobertura entre 8 e 15 dias. Ainda atende, mas já pede ação rápida.',
-  BAIXO: 'Cobertura entre 16 e 30 dias. Sai da urgência curta, mas ainda merece acompanhamento.',
-  MÉDIO: 'Cobertura entre 31 e 90 dias. Faixa operacional mais confortável.',
-  ALTO: 'Cobertura acima de 90 dias. Indica estoque folgado e possível excedente.',
+  ALTO: 'Cobertura entre 8 e 15 dias. Ainda atende, mas já pede ação rápida.',
+  MÉDIO: 'Cobertura entre 16 e 30 dias. Sai da urgência curta, mas ainda merece acompanhamento.',
+  BAIXO: 'Cobertura entre 31 e 60 dias. Faixa operacional mais confortável.',
+  ESTÁVEL: 'Cobertura acima de 60 dias. Indica estoque folgado e possível excedente.',
 };
 
 const actionTooltips: Record<Action, string> = {
@@ -305,7 +306,7 @@ export default function ProductsScreen() {
         <View style={styles.filterBlock}>
           <View style={styles.filterLabelRow}>
             <Text style={styles.filterLabel}>Níveis</Text>
-            <HelpHint text="Filtra a faixa de cobertura em dias. Crítico vai até 7 dias, alerta até 15, baixo até 30, médio até 90 e alto acima disso." />
+            <HelpHint text="Filtra a faixa de cobertura. Urgente para estoque zerado, crítico até 7 dias, alto até 15, médio até 30, baixo até 60 e estável acima disso." />
           </View>
           <InlineTabs
             options={[
@@ -315,29 +316,34 @@ export default function ProductsScreen() {
                 tooltip: 'Mostra todas as faixas de cobertura em dias.',
               },
               {
+                label: 'Urgente',
+                value: 'URGENTE' as const,
+                tooltip: 'Itens com estoque zerado. Demandam ação imediata.',
+              },
+              {
                 label: 'Crítico',
                 value: 'CRÍTICO' as const,
                 tooltip: 'Cobertura de 0 a 7 dias. Faixa de maior risco de ruptura.',
               },
               {
-                label: 'Alerta',
-                value: 'ALERTA' as const,
+                label: 'Alto',
+                value: 'ALTO' as const,
                 tooltip: 'Cobertura entre 8 e 15 dias. Já pede atenção imediata.',
-              },
-              {
-                label: 'Baixo',
-                value: 'BAIXO' as const,
-                tooltip: 'Cobertura entre 16 e 30 dias. Situação ainda monitorada.',
               },
               {
                 label: 'Médio',
                 value: 'MÉDIO' as const,
-                tooltip: 'Cobertura entre 31 e 90 dias. Faixa operacional confortável.',
+                tooltip: 'Cobertura entre 16 e 30 dias. Situação ainda monitorada.',
               },
               {
-                label: 'Alto',
-                value: 'ALTO' as const,
-                tooltip: 'Cobertura acima de 90 dias. Pode indicar excedente.',
+                label: 'Baixo',
+                value: 'BAIXO' as const,
+                tooltip: 'Cobertura entre 31 e 60 dias. Faixa operacional confortável.',
+              },
+              {
+                label: 'Estável',
+                value: 'ESTÁVEL' as const,
+                tooltip: 'Cobertura acima de 60 dias. Pode indicar excedente.',
               },
             ]}
             value={levelFilter}

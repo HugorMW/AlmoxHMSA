@@ -1,7 +1,7 @@
 export type Hospital = 'HMSA' | 'HEC' | 'HDDS' | 'HABF';
 export type CategoriaMaterial = 'material_hospitalar' | 'material_farmacologico';
 export type FiltroCategoriaMaterial = 'todos' | CategoriaMaterial;
-export type Level = 'CRÍTICO' | 'ALERTA' | 'BAIXO' | 'MÉDIO' | 'ALTO';
+export type Level = 'URGENTE' | 'CRÍTICO' | 'ALTO' | 'MÉDIO' | 'BAIXO' | 'ESTÁVEL';
 export type Action =
   | 'COMPRAR'
   | 'PEGAR EMPRESTADO'
@@ -41,11 +41,12 @@ export interface Product {
 
 export interface DashboardKPI {
   total_products: number;
+  urgent: number;
   critical: number;
-  alert: number;
-  low: number;
-  medium: number;
   high: number;
+  medium: number;
+  low: number;
+  stable: number;
   to_buy: number;
   to_borrow: number;
   to_evaluate: number;
