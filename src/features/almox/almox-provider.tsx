@@ -10,6 +10,7 @@ import {
   hydrateDataset,
 } from './data';
 import { readCachedValue, readSessionFlag, removeCachedValue, writeCachedValue, writeSessionFlag } from './cache';
+import { ConfiguracaoSistema, configuracaoSistemaPadrao, normalizarConfiguracaoSistema } from './configuracao';
 import { BlacklistItem, CategoriaMaterial, EmailConfig, FiltroCategoriaMaterial } from './types';
 
 const PAGE_SIZE = 1000;
@@ -19,6 +20,7 @@ const ALMOX_CACHE_TTL_MS = 5 * 60 * 1000;
 const SYNC_STATUS_MAX_WAIT_MS = 10 * 60 * 1000;
 const emailConfig = getEmailConfig();
 export const ALMOX_SYNC_COMPLETED_EVENT = 'almox:sync-completed';
+export const ALMOX_CONFIG_UPDATED_EVENT = 'almox:config-updated';
 
 type PendingSyncState = {
   trackingId: string;
@@ -56,6 +58,14 @@ type AlmoxDataContextValue = {
     hospitalar: number;
     farmacologico: number;
   };
+  systemConfig: ConfiguracaoSistema;
+  systemConfigLoading: boolean;
+  systemConfigSaving: boolean;
+  systemConfigError: string | null;
+  systemConfigNotice: string | null;
+  systemConfigUpdatedAt: string | null;
+  refreshSystemConfig: () => Promise<void>;
+  saveSystemConfig: (nextConfig: ConfiguracaoSistema) => Promise<void>;
   findHmsaProductNameByCode: (cdProduto: string) => string | null;
   findHmsaProductCategoryByCode: (cdProduto: string) => CategoriaMaterial | null;
   addBlacklistItem: (input: { cd_produto: string; ds_produto?: string }) => Promise<void>;
@@ -212,6 +222,33 @@ async function parseSyncResponse(response: Response) {
   return data;
 }
 
+async function parseConfiguracaoResponse(response: Response) {
+  const rawText = await response.text().catch(() => '');
+  let data: any = {};
+
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = {};
+    }
+  }
+
+  if (!response.ok) {
+    const errorMessage =
+      typeof data?.error === 'string'
+        ? data.error
+        : 'Falha inesperada ao consultar os parametros do sistema.';
+    const details = Array.isArray(data?.details)
+      ? data.details.filter((detail: unknown): detail is string => typeof detail === 'string' && detail.trim().length > 0)
+      : [];
+
+    throw new Error([errorMessage, ...details].join('\n'));
+  }
+
+  return data;
+}
+
 function normalizeCategory(value: EstoqueAtualRow['categoria_material']): CategoriaMaterial {
   return value === 'material_farmacologico' ? 'material_farmacologico' : 'material_hospitalar';
 }
@@ -243,6 +280,12 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<FiltroCategoriaMaterial>('todos');
   const [pendingSync, setPendingSync] = useState<PendingSyncState | null>(null);
+  const [systemConfig, setSystemConfig] = useState<ConfiguracaoSistema>(configuracaoSistemaPadrao);
+  const [systemConfigLoading, setSystemConfigLoading] = useState(true);
+  const [systemConfigSaving, setSystemConfigSaving] = useState(false);
+  const [systemConfigError, setSystemConfigError] = useState<string | null>(null);
+  const [systemConfigNotice, setSystemConfigNotice] = useState<string | null>(null);
+  const [systemConfigUpdatedAt, setSystemConfigUpdatedAt] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const hasLoadedRef = useRef(false);
 
@@ -257,8 +300,8 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         ? visibleRows
         : visibleRows.filter((row) => normalizeCategory(row.categoria_material) === categoryFilter);
 
-    return filteredRows.length > 0 ? hydrateDataset(filteredRows) : createEmptyDataset();
-  }, [rows, blacklistItems, categoryFilter]);
+    return filteredRows.length > 0 ? hydrateDataset(filteredRows, systemConfig) : createEmptyDataset(systemConfig);
+  }, [rows, blacklistItems, categoryFilter, systemConfig]);
 
   const blacklistSummary = useMemo(() => {
     const blockedCodes = new Set(blacklistItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
@@ -288,6 +331,105 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       farmacologico: farmacologico.size,
     };
   }, [rows, blacklistItems]);
+
+  const refreshSystemConfig = useCallback(async function refreshSystemConfig() {
+    if (!mountedRef.current) {
+      return;
+    }
+
+    setSystemConfigLoading(true);
+    setSystemConfigError(null);
+
+    try {
+      const response = await fetch('/api/configuracao', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      const data = await parseConfiguracaoResponse(response);
+      const nextConfig = normalizarConfiguracaoSistema(data?.config);
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      startTransition(() => {
+        setSystemConfig(nextConfig);
+      });
+      setSystemConfigUpdatedAt(typeof data?.atualizadoEm === 'string' ? data.atualizadoEm : null);
+      setSystemConfigError(null);
+    } catch (configError) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const message =
+        configError instanceof Error && configError.message
+          ? configError.message
+          : 'Falha ao carregar os parametros do sistema.';
+      setSystemConfigError(message);
+    } finally {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setSystemConfigLoading(false);
+    }
+  }, []);
+
+  const saveSystemConfig = useCallback(async function saveSystemConfig(nextConfig: ConfiguracaoSistema) {
+    if (!mountedRef.current) {
+      return;
+    }
+
+    setSystemConfigSaving(true);
+    setSystemConfigError(null);
+    setSystemConfigNotice(null);
+
+    try {
+      const response = await fetch('/api/configuracao', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ config: nextConfig }),
+      });
+      const data = await parseConfiguracaoResponse(response);
+      const savedConfig = normalizarConfiguracaoSistema(data?.config);
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      startTransition(() => {
+        setSystemConfig(savedConfig);
+      });
+      setSystemConfigUpdatedAt(typeof data?.atualizadoEm === 'string' ? data.atualizadoEm : new Date().toISOString());
+      setSystemConfigNotice('Parâmetros do sistema salvos com sucesso.');
+      removeCachedValue(ALMOX_CACHE_KEY);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(ALMOX_CONFIG_UPDATED_EVENT));
+      }
+    } catch (configError) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const message =
+        configError instanceof Error && configError.message
+          ? configError.message
+          : 'Falha ao salvar os parametros do sistema.';
+      setSystemConfigError(message);
+      throw configError;
+    } finally {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setSystemConfigSaving(false);
+    }
+  }, []);
 
   const refresh = useCallback(async function refresh() {
     const isInitialLoad = !hasLoadedRef.current;
@@ -503,11 +645,12 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     void refresh();
+    void refreshSystemConfig();
 
     return () => {
       mountedRef.current = false;
     };
-  }, [refresh]);
+  }, [refresh, refreshSystemConfig]);
 
   useEffect(() => {
     if (!pendingSync) {
@@ -653,6 +796,14 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         setCategoryFilter,
         blacklistItems,
         blacklistSummary,
+        systemConfig,
+        systemConfigLoading,
+        systemConfigSaving,
+        systemConfigError,
+        systemConfigNotice,
+        systemConfigUpdatedAt,
+        refreshSystemConfig,
+        saveSystemConfig,
         findHmsaProductNameByCode,
         findHmsaProductCategoryByCode,
         addBlacklistItem,

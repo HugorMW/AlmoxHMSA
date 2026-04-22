@@ -66,15 +66,6 @@ export const levelColors = {
   'ESTÁVEL': { background: '#2563eb', foreground: '#ffffff' },
 } as const;
 
-export const levelRanges = {
-  URGENTE: 'zerado',
-  'CRÍTICO': '1–7 dias',
-  ALTO: '8–15 dias',
-  'MÉDIO': '16–30 dias',
-  BAIXO: '31–60 dias',
-  'ESTÁVEL': '60+ dias',
-} as const;
-
 export const actionColors = {
   COMPRAR: { background: '#ffe3e9', foreground: '#ba3358' },
   'PEGAR EMPRESTADO': { background: '#dff2ff', foreground: '#176ab5' },

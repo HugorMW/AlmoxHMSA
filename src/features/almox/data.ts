@@ -10,6 +10,7 @@ import {
   Priority,
   Product,
 } from './types';
+import { ConfiguracaoSistema, configuracaoSistemaPadrao, getLimiteCompraDias } from './configuracao';
 
 export interface EstoqueAtualRow {
   categoria_material?: CategoriaMaterial | string | null;
@@ -111,24 +112,24 @@ function mapHospital(code: string): Hospital | null {
   return null;
 }
 
-function getLevel(days: number, estoqueAtual: number) {
+function getLevel(days: number, estoqueAtual: number, config: ConfiguracaoSistema) {
   if (estoqueAtual <= 0) return 'URGENTE' as const;
-  if (days <= 7) return 'CRÍTICO' as const;
-  if (days <= 15) return 'ALTO' as const;
-  if (days <= 30) return 'MÉDIO' as const;
-  if (days <= 60) return 'BAIXO' as const;
+  if (days <= config.criticoDias) return 'CRÍTICO' as const;
+  if (days <= config.altoDias) return 'ALTO' as const;
+  if (days <= config.medioDias) return 'MÉDIO' as const;
+  if (days <= config.baixoDias) return 'BAIXO' as const;
   return 'ESTÁVEL' as const;
 }
 
-function getRuptureRisk(days: number) {
-  if (days <= 10) return 'RISCO ALTO' as const;
-  if (days <= 25) return 'RISCO MÉDIO' as const;
+function getRuptureRisk(days: number, config: ConfiguracaoSistema) {
+  if (days <= config.riscoAltoDias) return 'RISCO ALTO' as const;
+  if (days <= config.riscoMedioDias) return 'RISCO MÉDIO' as const;
   return 'ESTÁVEL' as const;
 }
 
-function getPriority(item: Product): Priority {
-  if (item.sufficiency_days <= 7) return 'URGENTE';
-  if (item.sufficiency_days <= 15) return 'ALTA';
+function getPriority(item: Product, config: ConfiguracaoSistema): Priority {
+  if (item.sufficiency_days <= config.prioridadeUrgenteDias) return 'URGENTE';
+  if (item.sufficiency_days <= config.prioridadeAltaDias) return 'ALTA';
   return 'NORMAL';
 }
 
@@ -148,14 +149,14 @@ function clampScore(value: number) {
   return Math.min(Math.max(Math.round(value), 0), 100);
 }
 
-function baseActionForHospital(item: EnrichedProduct) {
-  if (item.sufficiency_days <= 15) return 'COMPRAR' as const;
-  if (item.sufficiency_days <= 30) return 'AVALIAR' as const;
-  if (item.sufficiency_days >= 120) return 'PODE EMPRESTAR' as const;
+function baseActionForHospital(item: EnrichedProduct, config: ConfiguracaoSistema) {
+  if (item.sufficiency_days <= getLimiteCompraDias(config)) return 'COMPRAR' as const;
+  if (item.sufficiency_days <= config.medioDias) return 'AVALIAR' as const;
+  if (item.sufficiency_days >= config.podeEmprestarDias) return 'PODE EMPRESTAR' as const;
   return 'OK' as const;
 }
 
-function buildBaseProducts(rows: EstoqueAtualRow[]) {
+function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema) {
   const products = rows
     .map<EnrichedProduct | null>((row) => {
       const hospital = mapHospital(row.codigo_unidade);
@@ -164,12 +165,17 @@ function buildBaseProducts(rows: EstoqueAtualRow[]) {
       }
 
       const avgMonthlyConsumption = parseNumber(row.consumo_medio);
+      if (config.excluirCmmMenorQueUm && avgMonthlyConsumption < 1) {
+        return null;
+      }
+
       const sufficiencyDays = clampSufficiency(parseNumber(row.suficiencia_em_dias));
       const categoriaMaterial = normalizeCategoriaMaterial(row.categoria_material);
       const estoqueAtualValue = parseNumber(row.estoque_atual);
-      const levelValue = getLevel(sufficiencyDays, estoqueAtualValue);
+      const levelValue = getLevel(sufficiencyDays, estoqueAtualValue, config);
+      const ruptureRiskValue = getRuptureRisk(sufficiencyDays, config);
 
-      return {
+      const product: EnrichedProduct = {
         hospital,
         categoria_material: categoriaMaterial,
         product_code: String(row.codigo_produto),
@@ -180,24 +186,14 @@ function buildBaseProducts(rows: EstoqueAtualRow[]) {
         avg_monthly_consumption: avgMonthlyConsumption,
         daily_usage: round(safeDailyUsage(avgMonthlyConsumption), 4),
         level: levelValue,
-        rupture_risk: getRuptureRisk(sufficiencyDays),
+        rupture_risk: ruptureRiskValue,
         estoque_atual: estoqueAtualValue,
         data_ultima_entrada: row.data_ultima_entrada,
-        action: baseActionForHospital({
-          hospital,
-          categoria_material: categoriaMaterial,
-          product_code: String(row.codigo_produto),
-          product_name: row.nome_produto,
-          produto_referencia_id: row.produto_referencia_id,
-          codigo_produto_referencia: row.codigo_produto_referencia,
-          sufficiency_days: sufficiencyDays,
-          avg_monthly_consumption: avgMonthlyConsumption,
-          daily_usage: round(safeDailyUsage(avgMonthlyConsumption), 4),
-          level: levelValue,
-          rupture_risk: getRuptureRisk(sufficiencyDays),
-          estoque_atual: estoqueAtualValue,
-          data_ultima_entrada: row.data_ultima_entrada,
-        }),
+      };
+
+      return {
+        ...product,
+        action: baseActionForHospital(product, config),
       };
     })
     .filter((item): item is EnrichedProduct => item !== null);
@@ -224,15 +220,16 @@ function getBestDonor(item: EnrichedProduct, productsByHospital: Record<Hospital
     .sort((left, right) => right.sufficiency_days - left.sufficiency_days)[0];
 }
 
-function enrichProducts(productsByHospital: Record<Hospital, EnrichedProduct[]>) {
+function enrichProducts(productsByHospital: Record<Hospital, EnrichedProduct[]>, config: ConfiguracaoSistema) {
   const hmsaProducts = productsByHospital.HMSA.map((product) => {
     const donor = getBestDonor(product, productsByHospital);
-    const proposedTransfer = Math.max(0, Math.ceil(product.avg_monthly_consumption * 0.75));
+    const limiteCompraDias = getLimiteCompraDias(config);
+    const proposedTransfer = Math.max(0, Math.ceil(product.avg_monthly_consumption * config.alvoTransferenciaCmm));
     const donorDailyUsage = donor ? safeDailyUsage(donor.avg_monthly_consumption) : 0;
     const donorTransferCapacity = donor
-      ? Math.max(0, Math.floor((donor.sufficiency_days - 100) * donorDailyUsage))
+      ? Math.max(0, Math.floor((donor.sufficiency_days - config.pisoDoadorAposEmprestimoDias) * donorDailyUsage))
       : 0;
-    const hasSafeDonor = !!donor && donor.sufficiency_days > 100 && donorTransferCapacity > 0;
+    const hasSafeDonor = proposedTransfer > 0 && !!donor && donor.sufficiency_days > config.doadorSeguroDias && donorTransferCapacity > 0;
     const qtyTransfer = hasSafeDonor ? Math.min(proposedTransfer, donorTransferCapacity) : undefined;
     const projectedSuf = qtyTransfer ? round(product.sufficiency_days + qtyTransfer / safeDailyUsage(product.avg_monthly_consumption), 1) : undefined;
     const donorAfter = donor && qtyTransfer ? round(donor.sufficiency_days - qtyTransfer / donorDailyUsage, 1) : undefined;
@@ -240,7 +237,7 @@ function enrichProducts(productsByHospital: Record<Hospital, EnrichedProduct[]>)
       donor && qtyTransfer && projectedSuf && donorAfter
         ? clampScore(
             Math.min(projectedSuf, 45) / 45 * 45 +
-              Math.min(Math.max(donorAfter - 100, 0), 40) / 40 * 30 +
+              Math.min(Math.max(donorAfter - config.pisoDoadorAposEmprestimoDias, 0), 40) / 40 * 30 +
               Math.min(qtyTransfer / Math.max(proposedTransfer, 1), 1) * 15 +
               (product.rupture_risk === 'RISCO ALTO' ? 10 : product.rupture_risk === 'RISCO MÉDIO' ? 6 : 4)
           )
@@ -248,17 +245,17 @@ function enrichProducts(productsByHospital: Record<Hospital, EnrichedProduct[]>)
     const classification = score != null ? (score >= 80 ? 'Alta aderência' : score >= 60 ? 'Viável' : 'Atenção') : undefined;
 
     let action = product.action;
-    if (product.sufficiency_days <= 15) {
+    if (product.sufficiency_days <= limiteCompraDias) {
       action = hasSafeDonor ? 'PEGAR EMPRESTADO' : 'COMPRAR';
-    } else if (product.sufficiency_days <= 30) {
+    } else if (product.sufficiency_days <= config.medioDias) {
       action = 'COMPRAR';
-    } else if (product.sufficiency_days >= 120) {
+    } else if (product.sufficiency_days >= config.podeEmprestarDias) {
       action = 'PODE EMPRESTAR';
     } else {
       action = 'OK';
     }
 
-    const qtyToBuy = action === 'COMPRAR' ? Math.max(1, Math.ceil(product.avg_monthly_consumption * 2)) : undefined;
+    const qtyToBuy = action === 'COMPRAR' ? Math.max(1, Math.ceil(product.avg_monthly_consumption * config.mesesCompraSugerida)) : undefined;
 
     return {
       ...product,
@@ -362,7 +359,7 @@ function buildDashboard(hospital: Hospital, productsByHospital: Record<Hospital,
   return dashboard;
 }
 
-function buildIntelligenceDetails(productsByHospital: Record<Hospital, Product[]>): IntelligenceDetails {
+function buildIntelligenceDetails(productsByHospital: Record<Hospital, Product[]>, config: ConfiguracaoSistema): IntelligenceDetails {
   const hmsaItems = productsByHospital.HMSA ?? [];
   const transferItems: DetailItem[] = hmsaItems
     .filter((item) => item.qty_transfer && item.action === 'PEGAR EMPRESTADO')
@@ -384,14 +381,14 @@ function buildIntelligenceDetails(productsByHospital: Record<Hospital, Product[]
     }));
 
   const idleItems: DetailItem[] = hmsaItems
-    .filter((item) => item.sufficiency_days >= 120)
+    .filter((item) => item.sufficiency_days >= config.podeEmprestarDias)
     .slice(0, 6)
     .map((item) => ({
       categoria_material: item.categoria_material,
       product_name: item.product_name,
       product_code: item.product_code,
       sufficiency_days: item.sufficiency_days,
-      excess_qty: Math.max(0, Math.ceil((item as EnrichedProduct).estoque_atual - item.avg_monthly_consumption * 2)),
+      excess_qty: Math.max(0, Math.ceil((item as EnrichedProduct).estoque_atual - item.avg_monthly_consumption * config.mesesCompraSugerida)),
       recommendation: 'Rever redistribuição ou consumo programado antes da próxima reposição.',
     }));
 
@@ -419,14 +416,14 @@ function buildIntelligenceDetails(productsByHospital: Record<Hospital, Product[]
   };
 }
 
-function buildOrderItems(productsByHospital: Record<Hospital, Product[]>): OrderItem[] {
+function buildOrderItems(productsByHospital: Record<Hospital, Product[]>, config: ConfiguracaoSistema): OrderItem[] {
   return (productsByHospital.HMSA ?? [])
     .filter((item) => item.action === 'COMPRAR')
     .sort((left, right) => left.sufficiency_days - right.sufficiency_days)
     .map((item) => ({
       ...item,
-      qty_to_buy: item.qty_to_buy ?? Math.max(1, Math.ceil(item.avg_monthly_consumption * 2)),
-      priority: getPriority(item),
+      qty_to_buy: item.qty_to_buy ?? Math.max(1, Math.ceil(item.avg_monthly_consumption * config.mesesCompraSugerida)),
+      priority: getPriority(item, config),
     }));
 }
 
@@ -437,7 +434,7 @@ function buildEmailPreviewItems(productsByHospital: Record<Hospital, Product[]>)
     .slice(0, 5);
 }
 
-export function createEmptyDataset(): AlmoxDataset {
+export function createEmptyDataset(config: ConfiguracaoSistema = configuracaoSistemaPadrao): AlmoxDataset {
   const productsByHospital = hospitalOrder.reduce<Record<Hospital, Product[]>>((accumulator, hospital) => {
     accumulator[hospital] = [];
     return accumulator;
@@ -465,9 +462,9 @@ export function createEmptyDataset(): AlmoxDataset {
   };
 }
 
-export function hydrateDataset(rows: EstoqueAtualRow[]): AlmoxDataset {
-  const baseProducts = buildBaseProducts(rows);
-  const enrichedProducts = enrichProducts(baseProducts);
+export function hydrateDataset(rows: EstoqueAtualRow[], config: ConfiguracaoSistema = configuracaoSistemaPadrao): AlmoxDataset {
+  const baseProducts = buildBaseProducts(rows, config);
+  const enrichedProducts = enrichProducts(baseProducts, config);
   const productsByHospital = hospitalOrder.reduce<Record<Hospital, Product[]>>((accumulator, hospital) => {
     accumulator[hospital] = enrichedProducts[hospital];
     return accumulator;
@@ -487,14 +484,14 @@ export function hydrateDataset(rows: EstoqueAtualRow[]): AlmoxDataset {
     hospitals: hospitalOrder,
     productsByHospital,
     dashboardByHospital,
-    intelligenceDetails: buildIntelligenceDetails(productsByHospital),
+    intelligenceDetails: buildIntelligenceDetails(productsByHospital, config),
     loansNeeded: [...(productsByHospital.HMSA ?? [])]
       .filter((item) => item.action === 'PEGAR EMPRESTADO' || item.action === 'AVALIAR')
       .sort((left, right) => left.sufficiency_days - right.sufficiency_days),
     canLend: [...(productsByHospital.HMSA ?? [])]
       .filter((item) => item.action === 'PODE EMPRESTAR')
       .sort((left, right) => right.sufficiency_days - left.sufficiency_days),
-    orderItems: buildOrderItems(productsByHospital),
+    orderItems: buildOrderItems(productsByHospital, config),
     emailPreviewItems: buildEmailPreviewItems(productsByHospital),
     lastSync,
   };

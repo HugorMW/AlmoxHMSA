@@ -15,8 +15,9 @@ import {
   SectionTitle,
 } from '@/features/almox/components/common';
 import { useAlmoxData } from '@/features/almox/almox-provider';
+import { getLevelRangeLabels, getLevelTooltips, getLimiteCompraDias } from '@/features/almox/configuracao';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
-import { almoxTheme, levelColors, levelRanges } from '@/features/almox/tokens';
+import { almoxTheme, levelColors } from '@/features/almox/tokens';
 import { DetailItem, Hospital, Level } from '@/features/almox/types';
 import { formatDecimal } from '@/features/almox/utils';
 
@@ -25,8 +26,11 @@ type PanelKey = 'transfer' | 'idle' | 'rupture';
 export default function DashboardScreen() {
   const [activeHospital, setActiveHospital] = useState<Hospital>('HMSA');
   const [activePanel, setActivePanel] = useState<PanelKey | null>('transfer');
-  const { dataset, categoryFilter, error, loading, refreshing, lastRefreshAt, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
+  const { dataset, categoryFilter, error, loading, refreshing, lastRefreshAt, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig } = useAlmoxData();
   const showMaterialLabel = categoryFilter === 'todos';
+  const levelRanges = getLevelRangeLabels(systemConfig);
+  const levelTooltips = getLevelTooltips(systemConfig);
+  const limiteCompraDias = getLimiteCompraDias(systemConfig);
 
   const dashboard = dataset.dashboardByHospital[activeHospital];
   const intelligence = dataset.intelligenceDetails;
@@ -52,7 +56,7 @@ export default function DashboardScreen() {
       color: almoxTheme.colors.cyan,
       subtitle: 'Itens com potencial de remanejamento entre unidades',
       tooltip:
-        'Conta apenas itens do HMSA com até 15 dias de cobertura e doador compatível da mesma categoria com mais de 100 dias em estoque.',
+        `Conta itens do HMSA com até ${limiteCompraDias} dias de cobertura quando outro hospital tem o mesmo item com mais de ${systemConfig.doadorSeguroDias} dias e continua com pelo menos ${systemConfig.pisoDoadorAposEmprestimoDias} dias depois de emprestar.`,
     },
     {
       key: 'idle' as const,
@@ -62,7 +66,7 @@ export default function DashboardScreen() {
       color: almoxTheme.colors.amber,
       subtitle: 'Produtos com cobertura excedente e revisão recomendada',
       tooltip:
-        'Mostra itens com mais de 120 dias de cobertura. Eles podem ser analisados como origem de redistribuição, preservando piso seguro no doador.',
+        `Mostra itens com pelo menos ${systemConfig.podeEmprestarDias} dias de cobertura. Eles podem ser analisados como estoque com folga para ajudar outras unidades.`,
     },
     {
       key: 'rupture' as const,
@@ -72,7 +76,7 @@ export default function DashboardScreen() {
       color: almoxTheme.colors.rose,
       subtitle: 'Produtos que pedem ação antes da próxima virada',
       tooltip:
-        'Risco alto até 10 dias e risco médio entre 11 e 25 dias. Abaixo dessa faixa o item pede ação prioritária.',
+        `Risco alto até ${systemConfig.riscoAltoDias} dias e risco médio até ${systemConfig.riscoMedioDias} dias. Abaixo dessa faixa o item pede ação prioritária.`,
     },
   ];
 
@@ -172,42 +176,48 @@ export default function DashboardScreen() {
           value={dashboard.kpi.urgent}
           total={dashboard.kpi.total_products}
           level="URGENTE"
-          tooltip="Itens com estoque atual igual a zero. Pedem ação imediata para evitar indisponibilidade."
+          range={levelRanges.URGENTE}
+          tooltip={levelTooltips.URGENTE}
         />
         <LevelMetricCard
           label="Crítico"
           value={dashboard.kpi.critical}
           total={dashboard.kpi.total_products}
           level="CRÍTICO"
-          tooltip="Itens com suficiência de 1 a 7 dias. São os produtos com maior pressão de abastecimento."
+          range={levelRanges['CRÍTICO']}
+          tooltip={levelTooltips['CRÍTICO']}
         />
         <LevelMetricCard
           label="Alto"
           value={dashboard.kpi.high}
           total={dashboard.kpi.total_products}
           level="ALTO"
-          tooltip="Itens com suficiência entre 8 e 15 dias. Ainda não romperam, mas já entram na faixa de atenção imediata."
+          range={levelRanges.ALTO}
+          tooltip={levelTooltips.ALTO}
         />
         <LevelMetricCard
           label="Médio"
           value={dashboard.kpi.medium}
           total={dashboard.kpi.total_products}
           level="MÉDIO"
-          tooltip="Itens com suficiência entre 16 e 30 dias. Faixa de risco moderado: ainda há folga, mas já é hora de acompanhar."
+          range={levelRanges['MÉDIO']}
+          tooltip={levelTooltips['MÉDIO']}
         />
         <LevelMetricCard
           label="Baixo"
           value={dashboard.kpi.low}
           total={dashboard.kpi.total_products}
           level="BAIXO"
-          tooltip="Itens com suficiência entre 31 e 60 dias. Risco baixo, sem necessidade imediata de ação."
+          range={levelRanges.BAIXO}
+          tooltip={levelTooltips.BAIXO}
         />
         <LevelMetricCard
           label="Estável"
           value={dashboard.kpi.stable}
           total={dashboard.kpi.total_products}
           level="ESTÁVEL"
-          tooltip="Itens com mais de 60 dias de cobertura. Estão fora da faixa de atenção operacional."
+          range={levelRanges['ESTÁVEL']}
+          tooltip={levelTooltips['ESTÁVEL']}
         />
       </View>
 
@@ -217,24 +227,24 @@ export default function DashboardScreen() {
           value={`${dashboard.kpi.to_buy}`}
           icon="cart"
           color={almoxTheme.colors.rose}
-          hint="Até 15 dias sem doador seguro."
-          tooltip="Item do HMSA com até 15 dias e sem doador da mesma categoria com mais de 100 dias do medicamento em estoque. Sem doador seguro, a recomendação vira comprar."
+          hint={`Até ${limiteCompraDias} dias sem hospital para emprestar.`}
+          tooltip={`Item do HMSA com até ${limiteCompraDias} dias e sem outro hospital com o mesmo item acima de ${systemConfig.doadorSeguroDias} dias de cobertura. Sem opção segura de empréstimo, a recomendação vira comprar.`}
         />
         <MetricCard
           label="Pegar emprestado"
           value={`${dashboard.kpi.to_borrow}`}
           icon="borrow"
           color={almoxTheme.colors.cyan}
-          hint="Até 15 dias com doador compatível."
-          tooltip="Item do HMSA com até 15 dias e doador da mesma categoria e mesmo cd_pro_fat acima de 100 dias."
+          hint={`Até ${limiteCompraDias} dias com outro hospital podendo ajudar.`}
+          tooltip={`Item do HMSA com até ${limiteCompraDias} dias e outro hospital com o mesmo item acima de ${systemConfig.doadorSeguroDias} dias, mantendo pelo menos ${systemConfig.pisoDoadorAposEmprestimoDias} dias após a transferência.`}
         />
         <MetricCard
           label="Pode emprestar"
           value={`${dashboard.kpi.can_lend}`}
           icon="lend"
           color={almoxTheme.colors.teal}
-          hint="Cobertura acima de 120 dias."
-          tooltip="Itens com mais de 120 dias de cobertura no HMSA. Eles podem ser analisados como excedente, desde que o doador permaneça acima de 100 dias após a cessão."
+          hint={`Cobertura a partir de ${systemConfig.podeEmprestarDias} dias.`}
+          tooltip={`Itens com pelo menos ${systemConfig.podeEmprestarDias} dias de cobertura no HMSA. Eles podem ser analisados como estoque com folga para ajudar outras unidades.`}
         />
       </View>
 
@@ -456,17 +466,18 @@ function LevelMetricCard({
   value,
   total,
   level,
+  range,
   tooltip,
 }: {
   label: string;
   value: number;
   total: number;
   level: Level;
+  range: string;
   tooltip: string;
 }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const palette = levelColors[level];
-  const range = levelRanges[level];
   const percent = total > 0 ? Math.round((value / total) * 100) : 0;
 
   return (

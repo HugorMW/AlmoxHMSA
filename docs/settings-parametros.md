@@ -4,7 +4,7 @@ Documento vivo. Status por item: `[ ]` aberto · `[x]` aprovado · `[~]` parcial
 
 Arquivo-alvo: [settings-screen.tsx](../src/features/almox/screens/settings-screen.tsx)
 Lógica que lê os parâmetros: [data.ts](../src/features/almox/data.ts)
-Persistência: nova tabela `almox.configuracao_sistema` (a criar).
+Persistência: nova tabela `almox.configuracao_sistema` em [20260422093000_criar_configuracao_sistema.sql](../supabase/migrations/20260422093000_criar_configuracao_sistema.sql).
 
 ---
 
@@ -13,34 +13,36 @@ Persistência: nova tabela `almox.configuracao_sistema` (a criar).
 - [x] **Escopo = Global** (por enquanto). Um único set de parâmetros vale para todos os hospitais. Pode virar "Global + override por hospital" depois — a tabela já nasce preparada (coluna `codigo_unidade` nullable, `NULL` = global).
 - [x] **Bloco de e-mail** (config SMTP, auto-send, preview de alertas, dica SMTP) — **removido** da tela em `settings-screen.tsx`.
 - [x] **Permissão** — qualquer usuário autenticado pode editar por enquanto. Gate por papel fica para fase 2.
-- [ ] **Parâmetros técnicos (Grupo 2)** — pendente decidir se entram no painel ou ficam hardcoded. Recomendação: **manter hardcoded** (são tuning knobs do algoritmo, não regra de negócio).
+- [x] **Parâmetros técnicos (Grupo 2)** — ficam hardcoded. São tuning knobs do algoritmo, não regra de negócio.
+- [x] **Regra de compra** — usar apenas "Comprar quando faltar até". Os campos separados de prazo de chegada e folga foram removidos da configuração ativa para evitar dúvida operacional.
 
 ---
 
 ## 1. Diagnóstico (o que hoje está fixo no código)
 
-Tudo que a tela de Settings deveria regular está hardcoded em [data.ts](../src/features/almox/data.ts). Hoje a tela só configura SMTP (sem persistência real).
+As regras abaixo saíram do hardcode de [data.ts](../src/features/almox/data.ts) e agora passam por [configuracao.ts](../src/features/almox/configuracao.ts), API e tabela `almox.configuracao_sistema`.
 
 ### Grupo 1 — Regras de negócio (candidatas a painel)
 
 | # | Parâmetro | Valor atual | Origem |
 |---|-----------|-------------|--------|
-| 1 | URGENTE: estoque zerado | `estoque_atual <= 0` | [data.ts:115](../src/features/almox/data.ts#L115) |
-| 2 | CRÍTICO (dias ≤) | `7` | [data.ts:116](../src/features/almox/data.ts#L116) |
-| 3 | ALTO (dias ≤) | `15` | [data.ts:117](../src/features/almox/data.ts#L117) |
-| 4 | MÉDIO (dias ≤) | `30` | [data.ts:118](../src/features/almox/data.ts#L118) |
-| 5 | BAIXO (dias ≤) | `60` | [data.ts:119](../src/features/almox/data.ts#L119) |
-| 6 | RISCO ALTO (dias ≤) | `10` | [data.ts:124](../src/features/almox/data.ts#L124) |
-| 7 | RISCO MÉDIO (dias ≤) | `25` | [data.ts:125](../src/features/almox/data.ts#L125) |
-| 8 | Prioridade URGENTE (dias ≤) | `7` | [data.ts:130](../src/features/almox/data.ts#L130) |
-| 9 | Prioridade ALTA (dias ≤) | `15` | [data.ts:131](../src/features/almox/data.ts#L131) |
-| 10 | Ação COMPRAR (dias ≤) — não-HMSA | `15` | [data.ts:152](../src/features/almox/data.ts#L152) |
-| 11 | Ação PODE EMPRESTAR (dias ≥) | `120` | [data.ts:154, 255, 387, 495](../src/features/almox/data.ts#L154) |
-| 12 | Doador seguro para transferência (dias >) | `100` | [data.ts:233, 235](../src/features/almox/data.ts#L233) |
-| 13 | Alvo de transferência (× CMM mensal) | `0.75` | [data.ts:230](../src/features/almox/data.ts#L230) |
-| 14 | Meses de compra sugerida (× CMM mensal) | `2` | [data.ts:261, 394, 428](../src/features/almox/data.ts#L261) |
-| 15 | Idle / acima da faixa (dias ≥) | `120` | [data.ts:387](../src/features/almox/data.ts#L387) |
-| 16 | ~~Níveis alvo de e-mail~~ | `URGENTE + CRÍTICO + ALTO` | [data.ts:435](../src/features/almox/data.ts#L435) — **fora de escopo** |
+| 1 | URGENTE: estoque zerado | `estoque_atual <= 0` | permanece fixo em [data.ts](../src/features/almox/data.ts) |
+| 2 | CRÍTICO (dias ≤) | `criticoDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 3 | ALTO (dias ≤) | `altoDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 4 | MÉDIO (dias ≤) | `medioDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 5 | BAIXO (dias ≤) | `baixoDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 6 | RISCO ALTO (dias ≤) | `riscoAltoDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 7 | RISCO MÉDIO (dias ≤) | `riscoMedioDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 8 | Prioridade URGENTE (dias ≤) | `prioridadeUrgenteDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 9 | Prioridade ALTA (dias ≤) | `prioridadeAltaDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 10 | Ação COMPRAR (dias ≤) | `comprarDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 11 | Ação PODE EMPRESTAR (dias ≥) | `podeEmprestarDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 12 | Hospital que empresta precisa ter mais de | `doadorSeguroDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 13 | Hospital que empresta deve ficar com pelo menos | `pisoDoadorAposEmprestimoDias` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 14 | Quanto o HMSA deve pegar emprestado | `alvoTransferenciaCmm` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 15 | Quantidade sugerida para compra | `mesesCompraSugerida` | [configuracao.ts](../src/features/almox/configuracao.ts) |
+| 16 | Ocultar itens com consumo mensal menor que 1 | `excluirCmmMenorQueUm` | [blacklist-screen.tsx](../src/features/almox/screens/blacklist-screen.tsx) |
+| 17 | ~~Níveis alvo de e-mail~~ | `URGENTE + CRÍTICO + ALTO` | [data.ts](../src/features/almox/data.ts) — **fora de escopo** |
 
 ### Grupo 2 — Técnicos (recomendação: ficar hardcoded)
 
@@ -57,11 +59,11 @@ Tudo que a tela de Settings deveria regular está hardcoded em [data.ts](../src/
 
 | # | Item | Estado atual |
 |---|------|--------------|
-| S1 | SMTP (host/port/user/pass) | Tem UI, **não persiste** — `useState` local |
-| S2 | E-mail destino | Tem UI, **não persiste** |
-| S3 | `auto_send_on_sync` | Tem toggle, **não persiste** |
+| S1 | SMTP (host/port/user/pass) | Removido da UI. Campos legados continuam fora de escopo. |
+| S2 | E-mail destino | Removido da UI. |
+| S3 | `auto_send_on_sync` | Removido da UI. |
 | S4 | Filtro de categoria (material hospitalar/farmacológico) | Vive no `almox-provider` (contexto runtime) — **não é config**, é seleção de tela. Não entra aqui. |
-| S5 | Blacklist de produtos | Tela própria (`blacklist-screen`). Não entra aqui. |
+| S5 | Exclusões manuais e automáticas | Tela própria (`blacklist-screen`). Inclui produtos bloqueados por código e filtro de consumo mensal menor que 1. |
 
 ---
 
@@ -69,7 +71,7 @@ Tudo que a tela de Settings deveria regular está hardcoded em [data.ts](../src/
 
 ### 2.1 Banco — tabela de configuração
 
-- [ ] **2.1.1 Criar migration** `supabase/migrations/YYYYMMDDHHMMSS_criar_configuracao_sistema.sql`
+- [x] **2.1.1 Criar migration** `supabase/migrations/20260422093000_criar_configuracao_sistema.sql`
   ```sql
   create table almox.configuracao_sistema (
     id uuid primary key default gen_random_uuid(),
@@ -77,43 +79,44 @@ Tudo que a tela de Settings deveria regular está hardcoded em [data.ts](../src/
     chave text not null,
     valor jsonb not null,
     atualizado_em timestamptz not null default now(),
-    atualizado_por uuid null references auth.users(id),
-    unique (codigo_unidade, chave)
+    atualizado_por text null
   );
   ```
-  Singleton lógico: apenas linhas com `codigo_unidade IS NULL` nesta fase.
+  Singleton lógico: apenas linhas com `codigo_unidade IS NULL` nesta fase. A implementação usa índices únicos parciais para tratar `NULL` corretamente e `atualizado_por text` porque a sessão atual do app é o usuário SISCORE, não Supabase Auth.
 
-- [ ] **2.1.2 Seed com valores atuais** para não quebrar nada no primeiro deploy (ver tabela Grupo 1).
+- [x] **2.1.2 Seed com valores atuais** para não quebrar nada no primeiro deploy (ver tabela Grupo 1). As chaves adicionadas depois entram também pela migration [20260422103000_adicionar_configuracoes_operacionais.sql](../supabase/migrations/20260422103000_adicionar_configuracoes_operacionais.sql).
 
-- [ ] **2.1.3 RLS**: leitura liberada para usuários autenticados; escrita só via service_role (API route).
+- [x] **2.1.3 RLS**: leitura liberada para usuários autenticados; escrita só via service_role (API route).
 
 ### 2.2 Back — API routes
 
-- [ ] **2.2.1 `GET /api/configuracao+api.ts`** — retorna objeto `{ criticoDias: 7, altoDias: 15, ... }` com fallback para defaults.
-- [ ] **2.2.2 `PUT /api/configuracao+api.ts`** — aceita patch parcial, valida tipos/ranges, salva e devolve a config resultante.
-- [ ] **2.2.3 Validação server-side** das ordens: `critico ≤ alto ≤ médio ≤ baixo`, `riscoAlto ≤ riscoMédio`, `prioridadeUrg ≤ prioridadeAlta`, `podeEmprestar ≥ doadorSeguro`, `0 ≤ alvoTransferencia ≤ 1`, `mesesCompra > 0`.
+- [x] **2.2.1 `GET /api/configuracao+api.ts`** — retorna objeto `{ criticoDias: 7, altoDias: 15, ... }` com fallback para defaults.
+- [x] **2.2.2 `PUT /api/configuracao+api.ts`** — aceita patch parcial, valida tipos/ranges, salva e devolve a config resultante.
+- [x] **2.2.3 Validação server-side** das ordens: `critico ≤ alto ≤ médio ≤ baixo`, `riscoAlto ≤ riscoMédio`, `prioridadeUrg ≤ prioridadeAlta`, `podeEmprestar ≥ mínimo para emprestar`, `0 ≤ quanto o HMSA deve pegar emprestado ≤ 2 meses`, `quantidade de compra > 0`.
 
 ### 2.3 Client — leitura na pipeline atual
 
-- [ ] **2.3.1 Hook** `useConfiguracaoSistema()` dentro do `almox-provider` — busca `/api/configuracao` no mount, cacheia no contexto.
-- [ ] **2.3.2 Refatorar [data.ts](../src/features/almox/data.ts)** para receber `config` como parâmetro (não ler global). Trocar constantes pelas chaves equivalentes. As helpers `getLevel`, `getRuptureRisk`, `getPriority`, `baseActionForHospital`, `buildEnrichedHmsaProducts`, `buildEmailPreviewItems` viram fechaduras que capturam `config`.
-- [ ] **2.3.3 Invalidar cache** (`cache.ts`) quando config mudar — emitir evento `almox:config-updated` e re-derivar.
+- [x] **2.3.1 Configuração no `almox-provider`** — busca `/api/configuracao` no mount, guarda no contexto e expõe `refreshSystemConfig` / `saveSystemConfig`.
+- [x] **2.3.2 Refatorar [data.ts](../src/features/almox/data.ts)** para receber `config` como parâmetro (não ler global). Trocar constantes pelas chaves equivalentes.
+- [x] **2.3.3 Invalidar cache** (`cache.ts`) quando config mudar — emite `almox:config-updated`, remove cache local da base e re-deriva via estado do provider.
 
 ### 2.4 UI — nova seção em Settings
 
 Ordem proposta na tela, de cima para baixo:
 
-- [ ] **2.4.1 Bloco "Faixas de cobertura"** — 4 inputs numéricos (Crítico ≤, Alto ≤, Médio ≤, Baixo ≤) com preview inline mostrando a tabela resultante ("Crítico: 1-7 · Alto: 8-15 ..."). Validação cruzada em tempo real.
-- [ ] **2.4.2 Bloco "Risco e prioridade"** — 2 inputs Risco (Alto ≤, Médio ≤) + 2 inputs Prioridade (Urgente ≤, Alta ≤).
-- [ ] **2.4.3 Bloco "Regras de ação"** — 5 campos: Comprar ≤, Pode emprestar ≥, Doador seguro >, Alvo de transferência (× CMM), Meses de compra (× CMM), Idle ≥.
-- [ ] **2.4.4 Estado local + dirty flag + botão "Salvar alterações"** no rodapé (disabled se não houver mudança ou se validação falhar). Toast de sucesso. Confirmação antes de salvar mudança de banda ("isso vai reclassificar X produtos — continuar?").
-- [ ] **2.4.5 Botão "Restaurar padrões"** — reseta para os valores seed.
+- [x] **2.4.1 Bloco "Faixas de cobertura"** — 4 inputs numéricos (Crítico ≤, Alto ≤, Médio ≤, Baixo ≤) com preview inline mostrando a tabela resultante ("Crítico: 1-7 · Alto: 8-15 ..."). Validação cruzada em tempo real.
+- [x] **2.4.2 Bloco "Risco e prioridade"** — 2 inputs Risco (Alto ≤, Médio ≤) + 2 inputs Prioridade (Urgente ≤, Alta ≤).
+- [x] **2.4.3 Bloco "Regras de ação"** — dividido em grupos internos: Compra e Empréstimos. Em Empréstimos, subgrupos: Para o HMSA e Estoque com folga. Campos: Comprar quando faltar até, Pode emprestar quando tiver, Hospital que empresta precisa ter mais de, Hospital que empresta deve ficar com pelo menos, Quanto o HMSA deve pegar emprestado, Quantidade sugerida para compra.
+- [x] **2.4.3.1 Remover parâmetro "Estoque alto a partir de"** — o painel "Acima da faixa" agora usa o mesmo limite de **Pode emprestar quando tiver**.
+- [x] **2.4.4 Estado local + dirty flag + botão "Salvar alterações"** no rodapé (disabled se não houver mudança ou se validação falhar). Feedback temporário de sucesso. Confirmação antes de salvar mudança de banda.
+- [x] **2.4.5 Botão "Restaurar padrões"** — reseta o formulário para os valores seed; o usuário ainda precisa salvar para persistir.
 - [x] **2.4.6 Remover blocos SMTP/e-mail/preview/dica** da Settings — feito em [settings-screen.tsx](../src/features/almox/screens/settings-screen.tsx). A tela ficou com header + banners + placeholder "Parâmetros editáveis" aguardando os blocos do item 2.4.
+- [x] **2.4.7 Bloco "Filtros da base"** — removido da Settings. O toggle para ocultar itens com consumo mensal menor que 1 foi movido para a tela `blacklist-screen.tsx`, junto das demais exclusões.
 
 ### 2.5 Segurança / guard-rails
 
 - [x] **2.5.1 Permissão** — qualquer usuário autenticado edita. Gate por papel fica para fase 2.
-- [ ] **2.5.2 Audit trail** — campo `atualizado_por` + `atualizado_em` já preenchidos. Histórico completo fica para fase 2.
+- [x] **2.5.2 Audit trail** — campo `atualizado_por` + `atualizado_em` já preenchidos. Histórico completo fica para fase 2.
 
 ---
 
@@ -124,8 +127,21 @@ Ordem proposta na tela, de cima para baixo:
 - **Grupo 2 técnico** — knobs de chart/score/top-N permanecem no código.
 - **Histórico de mudanças de configuração** — fora da fase 1.
 
+## 3.1 Ideias registradas para depois
+
+- **Estoque mínimo em unidades** — marcar urgente antes de zerar quando `estoque_atual <= estoqueMinimoUnidades`.
+- **Quantidade mínima para transferência** — evitar sugerir remanejamentos muito pequenos.
+- **Compra mínima por item** — garantir quantidade mínima quando a sugestão por CMM ficar muito baixa.
+- **Compra máxima por item** — limitar sugestões exageradas quando o CMM vier distorcido.
+- **CMM mínimo para cálculo** — tratar CMM muito baixo como análise manual em vez de cálculo automático.
+- **Dias sem entrada para alerta** — destacar itens sem entrada recente mesmo quando a suficiência ainda parece confortável.
+- **Estoque parado por tempo** — combinar suficiência alta com última entrada/movimentação antiga.
+- **Itens que nunca podem emprestar** — produto continua visível, mas nunca entra como doador.
+- **Itens críticos sempre monitorados** — whitelist de produtos sensíveis que aparecem em acompanhamento mesmo com boa suficiência.
+- **Notificações** — destinatários, níveis que disparam alerta e frequência de envio.
+
 ---
 
 ## 4. Perguntas em aberto
 
-- [ ] Grupo 2 — fica hardcoded mesmo? (recomendação: sim)
+- [x] Grupo 2 — fica hardcoded mesmo.
