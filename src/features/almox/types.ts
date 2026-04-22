@@ -127,6 +127,25 @@ export interface BlacklistItem {
   atualizado_em?: string;
 }
 
+export interface CmmExceptionItem {
+  id?: string;
+  cd_produto: string;
+  ds_produto: string;
+  codigo_unidade?: string;
+  categoria_material?: CategoriaMaterial | null;
+  ativo?: boolean;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export interface LowConsumptionCandidate {
+  cd_produto: string;
+  ds_produto: string;
+  categoria_material: CategoriaMaterial;
+  cmm: number;
+  estoque_atual: number;
+}
+
 export interface NotaFiscalResumo {
   nota_fiscal_id: string;
   lote_importacao_atual_id: string | null;

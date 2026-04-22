@@ -11,7 +11,15 @@ import {
 } from './data';
 import { readCachedValue, readSessionFlag, removeCachedValue, writeCachedValue, writeSessionFlag } from './cache';
 import { ConfiguracaoSistema, configuracaoSistemaPadrao, normalizarConfiguracaoSistema } from './configuracao';
-import { BlacklistItem, CategoriaMaterial, EmailConfig, FiltroCategoriaMaterial } from './types';
+import {
+  BlacklistItem,
+  CategoriaMaterial,
+  CmmExceptionItem,
+  EmailConfig,
+  FiltroCategoriaMaterial,
+  Hospital,
+  LowConsumptionCandidate,
+} from './types';
 
 const PAGE_SIZE = 1000;
 const ALMOX_CACHE_KEY = 'almox:base:v1';
@@ -53,10 +61,19 @@ type AlmoxDataContextValue = {
   error: string | null;
   categoryFilter: FiltroCategoriaMaterial;
   setCategoryFilter: (nextFilter: FiltroCategoriaMaterial) => void;
+  dashboardHospital: Hospital;
+  setDashboardHospital: (nextHospital: Hospital) => void;
   blacklistItems: BlacklistItem[];
   blacklistSummary: {
     hospitalar: number;
     farmacologico: number;
+  };
+  cmmExceptionItems: CmmExceptionItem[];
+  lowConsumptionCandidates: LowConsumptionCandidate[];
+  cmmExceptionSummary: {
+    hospitalar: number;
+    farmacologico: number;
+    candidates: number;
   };
   systemConfig: ConfiguracaoSistema;
   systemConfigLoading: boolean;
@@ -70,6 +87,8 @@ type AlmoxDataContextValue = {
   findHmsaProductCategoryByCode: (cdProduto: string) => CategoriaMaterial | null;
   addBlacklistItem: (input: { cd_produto: string; ds_produto?: string }) => Promise<void>;
   removeBlacklistItem: (id: string) => Promise<void>;
+  addCmmExceptionItem: (input: { cd_produto: string; ds_produto?: string; categoria_material?: CategoriaMaterial }) => Promise<void>;
+  removeCmmExceptionItem: (id: string) => Promise<void>;
   emailConfig: EmailConfig;
   refresh: () => Promise<void>;
   syncBase: (scope: 'estoque' | 'notas_fiscais') => Promise<void>;
@@ -119,6 +138,21 @@ async function loadBlacklistItems() {
   }
 
   return (data ?? []) as BlacklistItem[];
+}
+
+async function loadCmmExceptionItems() {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('almox_excecoes_cmm_hmsa')
+    .select('id, cd_produto, ds_produto, codigo_unidade, categoria_material, ativo, criado_em, atualizado_em')
+    .eq('ativo', true)
+    .order('cd_produto', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as CmmExceptionItem[];
 }
 
 function formatLoadError(error: unknown) {
@@ -262,14 +296,29 @@ function normalizarCodigoProduto(value: string) {
   return String(value ?? '').trim();
 }
 
+function parseNumericRowValue(value: number | string | null | undefined) {
+  if (value == null || value === '') {
+    return 0;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const parsed = Number(String(value).replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 type AlmoxBaseCache = {
   rows: EstoqueAtualRow[];
   blacklistItems: BlacklistItem[];
+  cmmExceptionItems: CmmExceptionItem[];
 };
 
 export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [rows, setRows] = useState<EstoqueAtualRow[]>([]);
   const [blacklistItems, setBlacklistItems] = useState<BlacklistItem[]>([]);
+  const [cmmExceptionItems, setCmmExceptionItems] = useState<CmmExceptionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncingBase, setSyncingBase] = useState(false);
@@ -279,6 +328,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<FiltroCategoriaMaterial>('todos');
+  const [dashboardHospital, setDashboardHospital] = useState<Hospital>('HMSA');
   const [pendingSync, setPendingSync] = useState<PendingSyncState | null>(null);
   const [systemConfig, setSystemConfig] = useState<ConfiguracaoSistema>(configuracaoSistemaPadrao);
   const [systemConfigLoading, setSystemConfigLoading] = useState(true);
@@ -291,6 +341,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
   const dataset = useMemo<AlmoxDataset>(() => {
     const blacklistSet = new Set(blacklistItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
+    const cmmExceptionSet = new Set(cmmExceptionItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
     const visibleRows = rows.filter(
       (row) => !(rowEhDoHmsa(row) && blacklistSet.has(normalizarCodigoProduto(row.codigo_produto)))
     );
@@ -300,8 +351,10 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         ? visibleRows
         : visibleRows.filter((row) => normalizeCategory(row.categoria_material) === categoryFilter);
 
-    return filteredRows.length > 0 ? hydrateDataset(filteredRows, systemConfig) : createEmptyDataset(systemConfig);
-  }, [rows, blacklistItems, categoryFilter, systemConfig]);
+    return filteredRows.length > 0
+      ? hydrateDataset(filteredRows, systemConfig, { cmmExceptionCodes: cmmExceptionSet })
+      : createEmptyDataset(systemConfig);
+  }, [rows, blacklistItems, cmmExceptionItems, categoryFilter, systemConfig]);
 
   const blacklistSummary = useMemo(() => {
     const blockedCodes = new Set(blacklistItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
@@ -331,6 +384,61 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       farmacologico: farmacologico.size,
     };
   }, [rows, blacklistItems]);
+
+  const lowConsumptionCandidates = useMemo<LowConsumptionCandidate[]>(() => {
+    const blockedCodes = new Set(blacklistItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
+    const byCode = new Map<string, LowConsumptionCandidate>();
+
+    for (const row of rows) {
+      if (!rowEhDoHmsa(row)) {
+        continue;
+      }
+
+      const cdProduto = normalizarCodigoProduto(row.codigo_produto);
+      if (!cdProduto || blockedCodes.has(cdProduto)) {
+        continue;
+      }
+
+      const cmm = parseNumericRowValue(row.consumo_medio);
+      if (cmm >= 1) {
+        continue;
+      }
+
+      byCode.set(cdProduto, {
+        cd_produto: cdProduto,
+        ds_produto: row.nome_produto,
+        categoria_material: normalizeCategory(row.categoria_material),
+        cmm,
+        estoque_atual: parseNumericRowValue(row.estoque_atual),
+      });
+    }
+
+    return [...byCode.values()].sort(
+      (left, right) =>
+        left.categoria_material.localeCompare(right.categoria_material) ||
+        left.ds_produto.localeCompare(right.ds_produto, 'pt-BR') ||
+        left.cd_produto.localeCompare(right.cd_produto)
+    );
+  }, [rows, blacklistItems]);
+
+  const cmmExceptionSummary = useMemo(() => {
+    let hospitalar = 0;
+    let farmacologico = 0;
+
+    for (const item of cmmExceptionItems) {
+      if (item.categoria_material === 'material_farmacologico') {
+        farmacologico += 1;
+      } else {
+        hospitalar += 1;
+      }
+    }
+
+    return {
+      hospitalar,
+      farmacologico,
+      candidates: lowConsumptionCandidates.length,
+    };
+  }, [cmmExceptionItems, lowConsumptionCandidates.length]);
 
   const refreshSystemConfig = useCallback(async function refreshSystemConfig() {
     if (!mountedRef.current) {
@@ -447,7 +555,11 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const [nextRows, nextBlacklistItems] = await Promise.all([loadEstoqueAtualRows(), loadBlacklistItems()]);
+      const [nextRows, nextBlacklistItems, nextCmmExceptionItems] = await Promise.all([
+        loadEstoqueAtualRows(),
+        loadBlacklistItems(),
+        loadCmmExceptionItems(),
+      ]);
 
       if (!mountedRef.current) {
         return;
@@ -456,6 +568,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       startTransition(() => {
         setRows(nextRows);
         setBlacklistItems(nextBlacklistItems);
+        setCmmExceptionItems(nextCmmExceptionItems);
       });
       setError(null);
       setUsingCachedData(false);
@@ -628,6 +741,79 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
+  async function addCmmExceptionItem(input: {
+    cd_produto: string;
+    ds_produto?: string;
+    categoria_material?: CategoriaMaterial;
+  }) {
+    const supabase = getSupabaseClient();
+    const cdProduto = normalizarCodigoProduto(input.cd_produto);
+
+    if (!cdProduto) {
+      throw new Error('Informe o cd_produto para cadastrar a exceção.');
+    }
+
+    const row = rows.find((current) => rowEhDoHmsa(current) && normalizarCodigoProduto(current.codigo_produto) === cdProduto);
+    const cmm = parseNumericRowValue(row?.consumo_medio);
+
+    if (!row) {
+      throw new Error('O item informado não foi encontrado na base atual do HMSA.');
+    }
+
+    if (cmm >= 1) {
+      throw new Error('A exceção só se aplica a itens com consumo mensal menor que 1.');
+    }
+
+    const dsProduto = String(input.ds_produto ?? '').trim() || row.nome_produto || 'Produto com exceção de CMM';
+    const categoriaMaterial = input.categoria_material ?? normalizeCategory(row.categoria_material);
+
+    const { data, error: upsertError } = await supabase
+      .from('almox_excecoes_cmm_hmsa')
+      .upsert(
+        {
+          cd_produto: cdProduto,
+          ds_produto: dsProduto,
+          codigo_unidade: 'HMSASOUL',
+          categoria_material: categoriaMaterial,
+          ativo: true,
+        },
+        {
+          onConflict: 'codigo_unidade,cd_produto',
+        }
+      )
+      .select('id, cd_produto, ds_produto, codigo_unidade, categoria_material, ativo, criado_em, atualizado_em')
+      .single();
+
+    if (upsertError) {
+      throw upsertError;
+    }
+
+    const nextItem = data as CmmExceptionItem;
+
+    startTransition(() => {
+      setCmmExceptionItems((current) => {
+        const withoutCurrent = current.filter((item) => normalizarCodigoProduto(item.cd_produto) !== cdProduto);
+        return [...withoutCurrent, nextItem].sort((left, right) => left.cd_produto.localeCompare(right.cd_produto));
+      });
+    });
+  }
+
+  async function removeCmmExceptionItem(id: string) {
+    const supabase = getSupabaseClient();
+    const { error: updateError } = await supabase
+      .from('almox_excecoes_cmm_hmsa')
+      .update({ ativo: false })
+      .eq('id', id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    startTransition(() => {
+      setCmmExceptionItems((current) => current.filter((item) => item.id !== id));
+    });
+  }
+
   useEffect(() => {
     mountedRef.current = true;
 
@@ -638,6 +824,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       startTransition(() => {
         setRows(cached.value.rows);
         setBlacklistItems(cached.value.blacklistItems);
+        setCmmExceptionItems(cached.value.cmmExceptionItems ?? []);
       });
       setUsingCachedData(true);
       setLastRefreshAt(new Date(cached.savedAt).toISOString());
@@ -777,8 +964,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     writeCachedValue<AlmoxBaseCache>(ALMOX_CACHE_KEY, {
       rows,
       blacklistItems,
+      cmmExceptionItems,
     });
-  }, [rows, blacklistItems]);
+  }, [rows, blacklistItems, cmmExceptionItems]);
 
   return (
     <AlmoxDataContext.Provider
@@ -794,8 +982,13 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         error,
         categoryFilter,
         setCategoryFilter,
+        dashboardHospital,
+        setDashboardHospital,
         blacklistItems,
         blacklistSummary,
+        cmmExceptionItems,
+        lowConsumptionCandidates,
+        cmmExceptionSummary,
         systemConfig,
         systemConfigLoading,
         systemConfigSaving,
@@ -808,6 +1001,8 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         findHmsaProductCategoryByCode,
         addBlacklistItem,
         removeBlacklistItem,
+        addCmmExceptionItem,
+        removeCmmExceptionItem,
         emailConfig,
         refresh,
         syncBase,

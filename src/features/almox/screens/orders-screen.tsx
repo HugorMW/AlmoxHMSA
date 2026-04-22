@@ -2,12 +2,14 @@ import React, { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useAlmoxData } from "@/features/almox/almox-provider";
-import { PriorityBadge } from "@/features/almox/components/badges";
+import { LevelBadge } from "@/features/almox/components/badges";
 import {
   ActionButton,
   EmptyState,
   InfoBanner,
   PageHeader,
+  PageSize,
+  PaginationFooter,
   ScreenScrollView,
   SectionCard,
   SectionTitle,
@@ -18,32 +20,41 @@ import {
   exportRowsToExcel,
 } from "@/features/almox/excel";
 import { almoxTheme } from "@/features/almox/tokens";
-import { OrderItem, Priority } from "@/features/almox/types";
-import { formatDecimal } from "@/features/almox/utils";
+import { Level, OrderItem } from "@/features/almox/types";
+import { formatDecimal, paginate } from "@/features/almox/utils";
+
+const levelOrder: Level[] = ["URGENTE", "CRÍTICO", "ALTO", "MÉDIO", "BAIXO", "ESTÁVEL"];
 
 export default function OrdersScreen() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(10);
   const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } =
     useAlmoxData();
   const items = dataset.orderItems;
   const sortedItems = useMemo(
     () =>
       [...items].sort((left, right) => {
-        const priorityOrder = { URGENTE: 0, ALTA: 1, NORMAL: 2 } as const;
         return (
-          priorityOrder[left.priority] - priorityOrder[right.priority] ||
+          levelOrder.indexOf(left.level) - levelOrder.indexOf(right.level) ||
           left.sufficiency_days - right.sufficiency_days ||
           left.product_name.localeCompare(right.product_name, "pt-BR")
         );
       }),
     [items],
   );
-  const grouped: Record<Priority, OrderItem[]> = {
-    URGENTE: sortedItems.filter((item) => item.priority === "URGENTE"),
-    ALTA: sortedItems.filter((item) => item.priority === "ALTA"),
-    NORMAL: sortedItems.filter((item) => item.priority === "NORMAL"),
-  };
+  const grouped = levelOrder.reduce<Record<Level, OrderItem[]>>((accumulator, level) => {
+    accumulator[level] = sortedItems.filter((item) => item.level === level);
+    return accumulator;
+  }, {} as Record<Level, OrderItem[]>);
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageItems = paginate(sortedItems, safePage, pageSize);
+  const pageGrouped = levelOrder.reduce<Record<Level, OrderItem[]>>((accumulator, level) => {
+    accumulator[level] = pageItems.filter((item) => item.level === level);
+    return accumulator;
+  }, {} as Record<Level, OrderItem[]>);
 
   async function handleExport() {
     setExportError(null);
@@ -54,7 +65,7 @@ export default function OrdersScreen() {
         fileName: `pedidos_hmsa_${createExportTimestamp()}`,
         sheetName: "Pedidos HMSA",
         rows: sortedItems.map((item) => ({
-          Prioridade: item.priority,
+          Nível: item.level,
           Categoria: getCategoriaMaterialLabel(item.categoria_material),
           "Código do produto": item.product_code,
           Produto: item.product_name,
@@ -78,7 +89,7 @@ export default function OrdersScreen() {
     <ScreenScrollView>
       <PageHeader
         title="Pedidos"
-        subtitle="Pré-visualização do pedido automático com agrupamento por prioridade, usando a base real importada."
+        subtitle="Pré-visualização do pedido automático agrupada por nível de cobertura, usando a base real importada."
         aside={
           <View style={styles.headerActions}>
             <ActionButton
@@ -191,21 +202,14 @@ export default function OrdersScreen() {
               icon="orders"
             />
             <View style={styles.summaryRow}>
-              <SummaryMetric
-                label="Urgente"
-                value={`${grouped.URGENTE.length}`}
-                color={almoxTheme.colors.red}
-              />
-              <SummaryMetric
-                label="Alta"
-                value={`${grouped.ALTA.length}`}
-                color={almoxTheme.colors.orange}
-              />
-              <SummaryMetric
-                label="Normal"
-                value={`${grouped.NORMAL.length}`}
-                color={almoxTheme.colors.amber}
-              />
+              {levelOrder.map((level) => (
+                <SummaryMetric
+                  key={level}
+                  label={level}
+                  value={`${grouped[level].length}`}
+                  color={level === "URGENTE" || level === "CRÍTICO" ? almoxTheme.colors.red : level === "ALTO" ? almoxTheme.colors.orange : almoxTheme.colors.brand}
+                />
+              ))}
               <SummaryMetric
                 label="Qtd. total"
                 value={`${items.reduce((sum, item) => sum + item.qty_to_buy, 0)}`}
@@ -214,36 +218,51 @@ export default function OrdersScreen() {
             </View>
           </SectionCard>
 
-          {(["URGENTE", "ALTA", "NORMAL"] as const).map((priority) =>
-            grouped[priority].length > 0 ? (
-              <PrioritySection
-                key={priority}
-                priority={priority}
-                items={grouped[priority]}
+          {levelOrder.map((level) =>
+            pageGrouped[level].length > 0 ? (
+              <LevelSection
+                key={level}
+                level={level}
+                items={pageGrouped[level]}
                 showMaterialLabel={categoryFilter === "todos"}
               />
             ) : null,
           )}
+          <SectionCard>
+            <PaginationFooter
+              totalItems={sortedItems.length}
+              pageItemsCount={pageItems.length}
+              page={safePage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              itemLabel="item(ns)"
+              onPageChange={setPage}
+              onPageSizeChange={(nextPageSize) => {
+                setPageSize(nextPageSize);
+                setPage(1);
+              }}
+            />
+          </SectionCard>
         </>
       )}
     </ScreenScrollView>
   );
 }
 
-function PrioritySection({
-  priority,
+function LevelSection({
+  level,
   items,
   showMaterialLabel,
 }: {
-  priority: Priority;
+  level: Level;
   items: OrderItem[];
   showMaterialLabel: boolean;
 }) {
   return (
     <SectionCard>
       <SectionTitle
-        title={`Prioridade ${priority}`}
-        subtitle={`${items.length} item(ns) nesta faixa`}
+        title={`Nível ${level}`}
+        subtitle={`${items.length} item(ns) neste nível`}
         icon="alert"
       />
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -259,7 +278,7 @@ function PrioritySection({
             <Text style={[styles.tableHeadCell, styles.smallColumn]}>CMM</Text>
             <Text style={[styles.tableHeadCell, styles.smallColumn]}>Qtd.</Text>
             <Text style={[styles.tableHeadCell, styles.smallColumn]}>
-              Status
+              Nível
             </Text>
           </View>
           {items.map((item) => (
@@ -272,7 +291,7 @@ function PrioritySection({
                   {item.product_name}
                 </Text>
                 <Text style={styles.productMeta}>
-                  Reposição recomendada para estoque-alvo de 60 dias
+                  Reposição recomendada conforme nível de cobertura
                   {showMaterialLabel
                     ? ` • ${getCategoriaMaterialLabel(item.categoria_material)}`
                     : ""}
@@ -291,7 +310,7 @@ function PrioritySection({
                 {item.qty_to_buy}
               </Text>
               <View style={[styles.smallColumn, styles.badgeCell]}>
-                <PriorityBadge priority={priority} />
+                <LevelBadge level={item.level} />
               </View>
             </View>
           ))}

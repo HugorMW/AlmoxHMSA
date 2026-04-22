@@ -106,7 +106,7 @@ Ordem proposta na tela, de cima para baixo:
 
 - [x] **2.4.1 Bloco "Faixas de cobertura"** — 4 inputs numéricos (Crítico ≤, Alto ≤, Médio ≤, Baixo ≤) com preview inline mostrando a tabela resultante ("Crítico: 1-7 · Alto: 8-15 ..."). Validação cruzada em tempo real.
 - [x] **2.4.2 Bloco "Risco e prioridade"** — 2 inputs Risco (Alto ≤, Médio ≤) + 2 inputs Prioridade (Urgente ≤, Alta ≤).
-- [x] **2.4.3 Bloco "Regras de ação"** — dividido em grupos internos: Compra e Empréstimos. Em Empréstimos, subgrupos: Para o HMSA e Estoque com folga. Campos: Comprar quando faltar até, Pode emprestar quando tiver, Hospital que empresta precisa ter mais de, Hospital que empresta deve ficar com pelo menos, Quanto o HMSA deve pegar emprestado, Quantidade sugerida para compra.
+- [x] **2.4.3 Bloco "Regras de ação"** — dividido em grupos internos: Compra e Empréstimos. Em Empréstimos, subgrupos: Para o HMSA e Do HMSA para Demais Unidades. Campos: Comprar quando faltar até, Pode emprestar quando tiver, Hospital que empresta precisa ter mais de, Hospital que empresta deve ficar com pelo menos, Quanto o HMSA deve pegar emprestado, Quantidade sugerida para compra.
 - [x] **2.4.3.1 Remover parâmetro "Estoque alto a partir de"** — o painel "Acima da faixa" agora usa o mesmo limite de **Pode emprestar quando tiver**.
 - [x] **2.4.4 Estado local + dirty flag + botão "Salvar alterações"** no rodapé (disabled se não houver mudança ou se validação falhar). Feedback temporário de sucesso. Confirmação antes de salvar mudança de banda.
 - [x] **2.4.5 Botão "Restaurar padrões"** — reseta o formulário para os valores seed; o usuário ainda precisa salvar para persistir.

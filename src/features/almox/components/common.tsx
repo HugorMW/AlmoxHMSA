@@ -111,6 +111,12 @@ const buttonTones = {
   neutral: { background: almoxTheme.colors.surfaceRaised, foreground: almoxTheme.colors.text },
 } as const;
 
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 500] as const;
+export type PageSize = number;
+
+const MIN_CUSTOM_PAGE_SIZE = 1;
+const MAX_CUSTOM_PAGE_SIZE = 500;
+
 export function AppIcon({
   name,
   size = 16,
@@ -320,7 +326,7 @@ export function InlineTabs<T extends string>({
   onChange,
   size = 'md',
 }: {
-  options: Array<{ label: string; value: T; tooltip?: string }>;
+  options: { label: string; value: T; tooltip?: string }[];
   value: T;
   onChange: (nextValue: T) => void;
   size?: 'md' | 'sm';
@@ -340,6 +346,113 @@ export function InlineTabs<T extends string>({
           />
         );
       })}
+    </View>
+  );
+}
+
+export function PaginationFooter({
+  totalItems,
+  pageItemsCount,
+  page,
+  totalPages,
+  pageSize,
+  itemLabel = 'item(ns)',
+  onPageChange,
+  onPageSizeChange,
+}: {
+  totalItems: number;
+  pageItemsCount: number;
+  page: number;
+  totalPages: number;
+  pageSize: PageSize;
+  itemLabel?: string;
+  onPageChange: (nextPage: number) => void;
+  onPageSizeChange: (nextPageSize: PageSize) => void;
+}) {
+  const safeTotalPages = Math.max(1, totalPages);
+  const safePage = Math.min(Math.max(1, page), safeTotalPages);
+  const pageSizeValue = String(pageSize);
+  const [customPageSizeText, setCustomPageSizeText] = React.useState(pageSizeValue);
+  const customPageSize = Number(customPageSizeText);
+  const isCustomPageSizeValid =
+    Number.isInteger(customPageSize) &&
+    customPageSize >= MIN_CUSTOM_PAGE_SIZE &&
+    customPageSize <= MAX_CUSTOM_PAGE_SIZE;
+  const canApplyCustomPageSize = isCustomPageSizeValid && customPageSize !== pageSize;
+
+  React.useEffect(() => {
+    setCustomPageSizeText(pageSizeValue);
+  }, [pageSizeValue]);
+
+  function handleApplyCustomPageSize() {
+    if (isCustomPageSizeValid) {
+      onPageSizeChange(customPageSize);
+    }
+  }
+
+  return (
+    <View style={styles.paginationFooter}>
+      <View style={styles.paginationSummary}>
+        <Text style={styles.paginationText}>
+          Exibindo {pageItemsCount} de {totalItems} {itemLabel}
+        </Text>
+        <Text style={styles.paginationPageText}>
+          Página {safePage} de {safeTotalPages}
+        </Text>
+      </View>
+
+      <View style={styles.paginationPageSize}>
+        <Text style={styles.paginationControlLabel}>Itens por página</Text>
+        <InlineTabs
+          size="sm"
+          options={PAGE_SIZE_OPTIONS.map((option) => ({
+            label: String(option),
+            value: String(option),
+          }))}
+          value={pageSizeValue}
+          onChange={(nextValue) => {
+            const nextPageSize = Number(nextValue);
+            if (PAGE_SIZE_OPTIONS.some((option) => option === nextPageSize)) {
+              onPageSizeChange(nextPageSize);
+            }
+          }}
+        />
+        <View style={styles.paginationCustomSize}>
+          <TextInput
+            value={customPageSizeText}
+            onChangeText={(text) => setCustomPageSizeText(text.replace(/\D/g, '').slice(0, 3))}
+            onSubmitEditing={handleApplyCustomPageSize}
+            placeholder="Outro"
+            placeholderTextColor={almoxTheme.colors.textMuted}
+            keyboardType="number-pad"
+            style={[
+              styles.paginationCustomInput,
+              customPageSizeText && !isCustomPageSizeValid ? styles.paginationCustomInputInvalid : null,
+            ]}
+          />
+          <ActionButton
+            label="Aplicar"
+            tone="neutral"
+            disabled={!canApplyCustomPageSize}
+            onPress={handleApplyCustomPageSize}
+          />
+        </View>
+      </View>
+
+      <View style={styles.paginationActions}>
+        <ActionButton
+          label="Anterior"
+          tone="neutral"
+          disabled={safePage <= 1}
+          onPress={() => onPageChange(Math.max(1, safePage - 1))}
+        />
+        <ActionButton
+          label="Próxima"
+          tone="neutral"
+          disabled={safePage >= safeTotalPages}
+          onPress={() => onPageChange(Math.min(safeTotalPages, safePage + 1))}
+        />
+      </View>
     </View>
   );
 }
@@ -624,6 +737,65 @@ const styles = StyleSheet.create({
     color: almoxTheme.colors.text,
     fontSize: 12,
     lineHeight: 18,
+  },
+  paginationFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: almoxTheme.spacing.md,
+    paddingTop: almoxTheme.spacing.sm,
+  },
+  paginationSummary: {
+    gap: 3,
+  },
+  paginationText: {
+    color: almoxTheme.colors.textMuted,
+    fontSize: 12,
+  },
+  paginationPageText: {
+    color: almoxTheme.colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  paginationPageSize: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: almoxTheme.spacing.sm,
+    flex: 1,
+  },
+  paginationControlLabel: {
+    color: almoxTheme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  paginationCustomSize: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: almoxTheme.spacing.xs,
+  },
+  paginationCustomInput: {
+    width: 82,
+    minHeight: 42,
+    borderRadius: almoxTheme.radii.md,
+    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: almoxTheme.colors.line,
+    color: almoxTheme.colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: almoxTheme.spacing.sm,
+    paddingVertical: 0,
+    textAlign: 'center',
+  },
+  paginationCustomInputInvalid: {
+    borderColor: '#efb4c1',
+    backgroundColor: '#fff0f3',
+  },
+  paginationActions: {
+    flexDirection: 'row',
+    gap: almoxTheme.spacing.sm,
   },
   helpHintWrap: {
     position: 'relative',

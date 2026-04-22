@@ -8,7 +8,6 @@ import {
   AppIcon,
   EmptyState,
   InfoBanner,
-  InlineTabs,
   PageHeader,
   ScreenScrollView,
   SectionCard,
@@ -21,20 +20,19 @@ import { almoxTheme, levelColors } from '@/features/almox/tokens';
 import { DetailItem, Hospital, Level } from '@/features/almox/types';
 import { formatDecimal } from '@/features/almox/utils';
 
-type PanelKey = 'transfer' | 'idle' | 'rupture';
+type PanelKey = 'transfer' | 'rupture';
 
 export default function DashboardScreen() {
-  const [activeHospital, setActiveHospital] = useState<Hospital>('HMSA');
   const [activePanel, setActivePanel] = useState<PanelKey | null>('transfer');
-  const { dataset, categoryFilter, error, loading, refreshing, lastRefreshAt, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig } = useAlmoxData();
+  const { dataset, categoryFilter, error, loading, refreshing, lastRefreshAt, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig, dashboardHospital } = useAlmoxData();
   const showMaterialLabel = categoryFilter === 'todos';
   const levelRanges = getLevelRangeLabels(systemConfig);
   const levelTooltips = getLevelTooltips(systemConfig);
   const limiteCompraDias = getLimiteCompraDias(systemConfig);
+  const activeHospital = dataset.hospitals.includes(dashboardHospital) ? dashboardHospital : 'HMSA';
 
   const dashboard = dataset.dashboardByHospital[activeHospital];
   const intelligence = dataset.intelligenceDetails;
-  const hospitalOptions = dataset.hospitals;
 
   const formattedSync = dashboard.last_sync
     ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dashboard.last_sync))
@@ -59,16 +57,6 @@ export default function DashboardScreen() {
         `Conta itens do HMSA com até ${limiteCompraDias} dias de cobertura quando outro hospital tem o mesmo item com mais de ${systemConfig.doadorSeguroDias} dias e continua com pelo menos ${systemConfig.pisoDoadorAposEmprestimoDias} dias depois de emprestar.`,
     },
     {
-      key: 'idle' as const,
-      title: 'Acima da faixa',
-      value: `${dashboard.kpi.can_lend}`,
-      icon: 'lend' as const,
-      color: almoxTheme.colors.amber,
-      subtitle: 'Produtos com cobertura excedente e revisão recomendada',
-      tooltip:
-        `Mostra itens com pelo menos ${systemConfig.podeEmprestarDias} dias de cobertura. Eles podem ser analisados como estoque com folga para ajudar outras unidades.`,
-    },
-    {
       key: 'rupture' as const,
       title: 'Risco de ruptura',
       value: `${dashboard.kpi.rupture_risk_count}`,
@@ -82,7 +70,6 @@ export default function DashboardScreen() {
 
   const panelItems: Record<PanelKey, DetailItem[]> = {
     transfer: intelligence.transfer_items,
-    idle: intelligence.idle_items,
     rupture: intelligence.rupture_items,
   };
 
@@ -90,7 +77,7 @@ export default function DashboardScreen() {
     <ScreenScrollView>
       <PageHeader
         title="Dashboard"
-        subtitle={`Base operacional conectada ao Supabase. Última importação com mudança: ${formattedSync}. Última leitura do app: ${formattedRefresh}.`}
+        subtitle="Resumo calculado com a última atualização disponível."
         aside={
           <ActionButton
             label={loading ? 'Carregando...' : syncingBase ? 'Sincronizando...' : 'Atualizar estoque'}
@@ -130,40 +117,17 @@ export default function DashboardScreen() {
       {usingCachedData ? (
         <InfoBanner
           title="Base local recente em validação"
-          description="A tela abriu com a última base salva na sessão anterior. O Supabase está sendo consultado em background e os números podem mudar em instantes."
+          description="A tela abriu com a última base salva. O sistema está conferindo se existe atualização mais recente e os números podem mudar em instantes."
           tone="info"
         />
       ) : null}
 
-      <InfoBanner
-        title="Origem dos dados"
-        description={
-          loading
-            ? 'Consultando a view pública do Supabase para montar o dashboard real do almoxarifado.'
-            : 'Indicadores calculados a partir da importação mais recente do SISCORE já persistida no banco.'
-        }
-        tone={loading ? 'info' : 'success'}
+      <DataStatusStrip
+        loading={loading}
+        usingCachedData={usingCachedData}
+        formattedSync={formattedSync}
+        formattedRefresh={formattedRefresh}
       />
-
-      <SectionCard>
-        <SectionTitle
-          title="Visão por hospital"
-          subtitle="Troque a unidade para comparar cobertura e criticidade."
-          icon="hospital"
-        />
-        <InlineTabs
-          options={hospitalOptions.map((hospital) => ({ label: hospital, value: hospital }))}
-          value={activeHospital}
-          onChange={(nextHospital) => {
-            setActiveHospital(nextHospital);
-            if (nextHospital !== 'HMSA') {
-              setActivePanel(null);
-            } else if (!activePanel) {
-              setActivePanel('transfer');
-            }
-          }}
-        />
-      </SectionCard>
 
       <TotalHero
         value={dashboard.kpi.total_products}
@@ -424,6 +388,46 @@ export default function DashboardScreen() {
   );
 }
 
+function DataStatusStrip({
+  loading,
+  usingCachedData,
+  formattedSync,
+  formattedRefresh,
+}: {
+  loading: boolean;
+  usingCachedData: boolean;
+  formattedSync: string;
+  formattedRefresh: string;
+}) {
+  return (
+    <View style={styles.dataStatusStrip}>
+      <View style={styles.dataStatusItem}>
+        <Text style={styles.dataStatusLabel}>Dados usados</Text>
+        <Text style={styles.dataStatusValue}>
+          {loading ? 'Atualizando informações' : 'Última importação do SISCORE'}
+        </Text>
+      </View>
+      <View style={styles.dataStatusItem}>
+        <Text style={styles.dataStatusLabel}>Base atualizada em</Text>
+        <Text style={styles.dataStatusValue}>{formattedSync}</Text>
+      </View>
+      <View style={styles.dataStatusItem}>
+        <Text style={styles.dataStatusLabel}>Tela atualizada em</Text>
+        <Text style={styles.dataStatusValue}>{formattedRefresh}</Text>
+      </View>
+      {usingCachedData ? (
+        <View style={[styles.dataStatusPill, styles.dataStatusPillWarning]}>
+          <Text style={styles.dataStatusPillText}>Mostrando cópia temporária</Text>
+        </View>
+      ) : (
+        <View style={styles.dataStatusPill}>
+          <Text style={styles.dataStatusPillText}>Dados salvos no sistema</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function MetricCard({
   label,
   value,
@@ -582,6 +586,53 @@ function CardTooltip({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
+  dataStatusStrip: {
+    minHeight: 58,
+    borderRadius: almoxTheme.radii.md,
+    borderWidth: 1,
+    borderColor: almoxTheme.colors.line,
+    backgroundColor: almoxTheme.colors.surface,
+    paddingHorizontal: almoxTheme.spacing.md,
+    paddingVertical: almoxTheme.spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: almoxTheme.spacing.md,
+  },
+  dataStatusItem: {
+    gap: 2,
+    minWidth: 180,
+  },
+  dataStatusLabel: {
+    color: almoxTheme.colors.brand,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  dataStatusValue: {
+    color: almoxTheme.colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dataStatusPill: {
+    marginLeft: 'auto',
+    borderRadius: almoxTheme.radii.pill,
+    borderWidth: 1,
+    borderColor: '#bce4cc',
+    backgroundColor: '#edf9f2',
+    paddingHorizontal: almoxTheme.spacing.md,
+    paddingVertical: 7,
+  },
+  dataStatusPillWarning: {
+    borderColor: '#f5ca8f',
+    backgroundColor: '#fff5e7',
+  },
+  dataStatusPillText: {
+    color: almoxTheme.colors.text,
+    fontSize: 11,
+    fontWeight: '800',
+  },
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

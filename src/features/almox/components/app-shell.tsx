@@ -1,21 +1,21 @@
 import { usePathname, Href, Slot, useRouter } from 'expo-router';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { useAlmoxData } from '@/features/almox/almox-provider';
 import { AppIcon } from '@/features/almox/components/common';
 import { almoxTheme } from '@/features/almox/tokens';
-import { FiltroCategoriaMaterial } from '@/features/almox/types';
+import { FiltroCategoriaMaterial, Hospital } from '@/features/almox/types';
 
-const navigationItems: Array<{
+const navigationItems: {
   href: Href;
   label: string;
   hint: string;
   match: string;
   icon: Parameters<typeof AppIcon>[0]['name'];
-}> = [
+}[] = [
   { href: '/' as Href, label: 'Dashboard', hint: 'Visão geral', match: '/', icon: 'dashboard' },
   { href: '/products' as Href, label: 'Produtos', hint: 'Carteira', match: '/products', icon: 'products' },
   { href: '/loans' as Href, label: 'Emprést.', hint: 'Redistribuição', match: '/loans', icon: 'loans' },
@@ -31,8 +31,9 @@ export function AppShell() {
   const pathname = usePathname();
   const router = useRouter();
   const { logout, session } = useAuth();
-  const { categoryFilter, setCategoryFilter } = useAlmoxData();
+  const { categoryFilter, setCategoryFilter, dashboardHospital, setDashboardHospital, dataset } = useAlmoxData();
   const { width } = useWindowDimensions();
+  const [isHospitalMenuOpen, setHospitalMenuOpen] = React.useState(false);
   const [isCategoryMenuOpen, setCategoryMenuOpen] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const isHeaderStacked = width < 820;
@@ -47,13 +48,15 @@ export function AppShell() {
   const currentItem =
     navigationItems.find((item) => pathname === item.match || (item.match !== '/' && pathname.startsWith(item.match))) ??
     navigationItems[0];
-  const materialOptions: Array<{ label: string; value: FiltroCategoriaMaterial }> = [
+  const materialOptions: { label: string; value: FiltroCategoriaMaterial }[] = [
     { label: 'Todos', value: 'todos' },
     { label: 'Hospitalar', value: 'material_hospitalar' },
     { label: 'Farmacológico', value: 'material_farmacologico' },
   ];
   const currentFilterLabel =
     materialOptions.find((option) => option.value === categoryFilter)?.label ?? 'Todos';
+  const hospitalOptions = dataset.hospitals.length > 0 ? dataset.hospitals : (['HMSA', 'HEC', 'HDDS', 'HABF'] as Hospital[]);
+  const currentHospitalLabel = hospitalOptions.includes(dashboardHospital) ? dashboardHospital : 'HMSA';
 
   React.useEffect(() => {
     if (width < 920) {
@@ -81,8 +84,14 @@ export function AppShell() {
       <View style={styles.root}>
         <View pointerEvents="none" style={[styles.glow, styles.glowTop]} />
         <View pointerEvents="none" style={[styles.glow, styles.glowBottom]} />
-        {isCategoryMenuOpen ? (
-          <Pressable style={styles.dropdownBackdrop} onPress={() => setCategoryMenuOpen(false)} />
+        {isHospitalMenuOpen || isCategoryMenuOpen ? (
+          <Pressable
+            style={styles.dropdownBackdrop}
+            onPress={() => {
+              setHospitalMenuOpen(false);
+              setCategoryMenuOpen(false);
+            }}
+          />
         ) : null}
 
         <View style={[styles.headerShell, { paddingHorizontal: shellHorizontalPadding }]}>
@@ -107,9 +116,61 @@ export function AppShell() {
             <View style={[styles.headerMeta, isHeaderStacked ? styles.headerMetaStacked : null]}>
               <View style={[styles.headerControls, isHeaderStacked ? styles.headerControlsStacked : null]}>
                 <View style={[styles.headerChipRow, isHeaderStacked ? styles.headerChipRowStacked : null]}>
-                  <View style={styles.headerChip}>
-                    <Text style={styles.headerChipEyebrow}>Base</Text>
-                    <Text style={styles.headerChipValue}>{currentFilterLabel}</Text>
+                  <View style={[styles.headerDropdownWrap, isHospitalMenuOpen ? styles.headerDropdownWrapOpen : null]}>
+                    <Pressable
+                      onPress={() => {
+                        setHospitalMenuOpen((current) => !current);
+                        setCategoryMenuOpen(false);
+                      }}
+                      style={({ pressed }) => [
+                        styles.headerChip,
+                        styles.headerDropdownTrigger,
+                        isHospitalMenuOpen ? styles.headerDropdownTriggerOpen : null,
+                        pressed ? styles.headerDropdownTriggerPressed : null,
+                      ]}>
+                      <View style={styles.headerDropdownLabelWrap}>
+                        <Text style={styles.headerChipEyebrow}>Base</Text>
+                        <Text style={styles.headerChipValue}>{currentHospitalLabel}</Text>
+                      </View>
+                      <AppIcon
+                        name={isHospitalMenuOpen ? 'chevronUp' : 'chevronDown'}
+                        size={18}
+                        color={almoxTheme.colors.textMuted}
+                      />
+                    </Pressable>
+
+                    {isHospitalMenuOpen ? (
+                      <View style={styles.headerDropdownMenu}>
+                        {hospitalOptions.map((option) => {
+                          const isActive = option === currentHospitalLabel;
+
+                          return (
+                            <Pressable
+                              key={option}
+                              onPress={() => {
+                                setDashboardHospital(option);
+                                setHospitalMenuOpen(false);
+                              }}
+                              style={({ pressed }) => [
+                                styles.headerDropdownOption,
+                                isActive ? styles.headerDropdownOptionActive : null,
+                                pressed ? styles.headerDropdownOptionPressed : null,
+                              ]}>
+                              <Text
+                                style={[
+                                  styles.headerDropdownOptionText,
+                                  isActive ? styles.headerDropdownOptionTextActive : null,
+                                ]}>
+                                {option}
+                              </Text>
+                              {isActive ? (
+                                <AppIcon name="check" size={16} color={almoxTheme.colors.brand} />
+                              ) : null}
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : null}
                   </View>
                   {session?.usuario ? (
                     <View style={styles.headerChip}>
@@ -119,7 +180,10 @@ export function AppShell() {
                   ) : null}
                   <View style={[styles.headerDropdownWrap, isCategoryMenuOpen ? styles.headerDropdownWrapOpen : null]}>
                     <Pressable
-                      onPress={() => setCategoryMenuOpen((current) => !current)}
+                      onPress={() => {
+                        setCategoryMenuOpen((current) => !current);
+                        setHospitalMenuOpen(false);
+                      }}
                       style={({ pressed }) => [
                         styles.headerChip,
                         styles.headerDropdownTrigger,
@@ -222,7 +286,11 @@ export function AppShell() {
                 </Pressable>
               </View>
 
-              <View style={styles.sidebarNav}>
+              <ScrollView
+                style={styles.sidebarNav}
+                contentContainerStyle={styles.sidebarNavContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled">
                 {navigationItems.map((item) => {
                   const isActive =
                     pathname === item.match || (item.match !== '/' && pathname.startsWith(item.match));
@@ -260,7 +328,7 @@ export function AppShell() {
                     </Pressable>
                   );
                 })}
-              </View>
+              </ScrollView>
 
               <View style={[styles.sidebarFoot, sidebarCollapsed ? styles.sidebarFootCollapsed : null]}>
                 {!sidebarCollapsed ? (
@@ -612,7 +680,11 @@ const styles = StyleSheet.create({
   },
   sidebarNav: {
     flex: 1,
+    minHeight: 0,
+  },
+  sidebarNavContent: {
     gap: almoxTheme.spacing.xs,
+    paddingBottom: almoxTheme.spacing.xs,
   },
   sidebarItem: {
     minHeight: 56,

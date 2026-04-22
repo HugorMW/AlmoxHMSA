@@ -7,6 +7,8 @@ import {
   EmptyState,
   InfoBanner,
   PageHeader,
+  PageSize,
+  PaginationFooter,
   ScreenScrollView,
   SearchField,
   SectionCard,
@@ -15,7 +17,7 @@ import {
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
 import { almoxTheme } from '@/features/almox/tokens';
 import { CategoriaMaterial } from '@/features/almox/types';
-import { formatDecimal, matchesQuery } from '@/features/almox/utils';
+import { formatDecimal, matchesQuery, paginate } from '@/features/almox/utils';
 import { getSupabaseClient } from '@/lib/supabase';
 
 type ConsumoRow = {
@@ -55,6 +57,8 @@ export default function ConsumoScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(10);
   const deferredSearch = useDeferredValue(search);
 
   const loadConsumo = useCallback(async () => {
@@ -81,6 +85,10 @@ export default function ConsumoScreen() {
     void loadConsumo();
   }, [loadConsumo]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [categoryFilter]);
+
   const filteredRows = useMemo(() => {
     const hmsaRows = rows.filter((row) => rowIsHmsa(row.codigo_unidade));
     const categorizedRows =
@@ -106,6 +114,9 @@ export default function ConsumoScreen() {
   }, [rows, categoryFilter, deferredSearch]);
 
   const hasAnySnapshot = rows.some((row) => row.data_snapshot_inicio != null);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = paginate(filteredRows, safePage, pageSize);
 
   return (
     <ScreenScrollView>
@@ -156,7 +167,14 @@ export default function ConsumoScreen() {
           subtitle={`${filteredRows.length} produto(s) com consumo acumulado acima da média mensal`}
           icon="consumo"
         />
-        <SearchField value={search} onChangeText={setSearch} placeholder="Buscar produto ou código..." />
+        <SearchField
+          value={search}
+          onChangeText={(value) => {
+            setSearch(value);
+            setPage(1);
+          }}
+          placeholder="Buscar produto ou código..."
+        />
 
         {loading ? (
           <EmptyState title="Carregando apuração" description="Consultando snapshot do mês e estoque atual." />
@@ -182,7 +200,7 @@ export default function ConsumoScreen() {
                 <Text style={[styles.tableHeadCell, styles.smallColumn]}>% CMM</Text>
                 <Text style={[styles.tableHeadCell, styles.smallColumn]}>Dias</Text>
               </View>
-              {filteredRows.map((row) => {
+              {pageRows.map((row) => {
                 const consumoMes = toNumber(row.consumo_mes_ate_hoje);
                 const consumoMedio = toNumber(row.consumo_medio);
                 const percentual = toNumber(row.percentual_consumido) * 100;
@@ -224,6 +242,21 @@ export default function ConsumoScreen() {
             </View>
           </ScrollView>
         )}
+        {filteredRows.length > 0 ? (
+          <PaginationFooter
+            totalItems={filteredRows.length}
+            pageItemsCount={pageRows.length}
+            page={safePage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            itemLabel="produto(s)"
+            onPageChange={setPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize);
+              setPage(1);
+            }}
+          />
+        ) : null}
       </SectionCard>
     </ScreenScrollView>
   );

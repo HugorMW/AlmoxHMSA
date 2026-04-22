@@ -8,6 +8,8 @@ import {
   InfoBanner,
   InlineTabs,
   PageHeader,
+  PageSize,
+  PaginationFooter,
   ScreenScrollView,
   SearchField,
   SectionCard,
@@ -17,13 +19,15 @@ import { useAlmoxData } from '@/features/almox/almox-provider';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
 import { almoxTheme } from '@/features/almox/tokens';
 import { Product } from '@/features/almox/types';
-import { formatDecimal, matchesQuery } from '@/features/almox/utils';
+import { formatDecimal, matchesQuery, paginate } from '@/features/almox/utils';
 
 type LoanTab = 'need' | 'lend';
 
 export default function LoansScreen() {
   const [activeTab, setActiveTab] = useState<LoanTab>('need');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(10);
   const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
   const deferredSearch = useDeferredValue(search);
 
@@ -35,6 +39,9 @@ export default function LoansScreen() {
   );
 
   const activeItems = activeTab === 'need' ? needItems : lendItems;
+  const totalPages = Math.max(1, Math.ceil(activeItems.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageItems = paginate(activeItems, safePage, pageSize);
 
   return (
     <ScreenScrollView>
@@ -96,11 +103,17 @@ export default function LoansScreen() {
             { label: `Pode emprestar (${lendItems.length})`, value: 'lend' as const },
           ]}
           value={activeTab}
-          onChange={setActiveTab}
+          onChange={(nextTab) => {
+            setActiveTab(nextTab);
+            setPage(1);
+          }}
         />
         <SearchField
           value={search}
-          onChangeText={setSearch}
+          onChangeText={(value) => {
+            setSearch(value);
+            setPage(1);
+          }}
           placeholder="Buscar produto, código ou hospital..."
         />
         <View style={activeTab === 'need' ? styles.needBanner : styles.lendBanner}>
@@ -131,12 +144,27 @@ export default function LoansScreen() {
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {activeTab === 'need' ? (
-              <NeedTable items={needItems} showMaterialLabel={categoryFilter === 'todos'} />
+              <NeedTable items={pageItems} showMaterialLabel={categoryFilter === 'todos'} />
             ) : (
-              <LendTable items={lendItems} showMaterialLabel={categoryFilter === 'todos'} />
+              <LendTable items={pageItems} showMaterialLabel={categoryFilter === 'todos'} />
             )}
           </ScrollView>
         )}
+        {activeItems.length > 0 ? (
+          <PaginationFooter
+            totalItems={activeItems.length}
+            pageItemsCount={pageItems.length}
+            page={safePage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            itemLabel="item(ns)"
+            onPageChange={setPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize);
+              setPage(1);
+            }}
+          />
+        ) : null}
       </SectionCard>
     </ScreenScrollView>
   );

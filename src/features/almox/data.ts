@@ -156,7 +156,7 @@ function baseActionForHospital(item: EnrichedProduct, config: ConfiguracaoSistem
   return 'OK' as const;
 }
 
-function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema) {
+function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema, cmmExceptionCodes: Set<string>) {
   const products = rows
     .map<EnrichedProduct | null>((row) => {
       const hospital = mapHospital(row.codigo_unidade);
@@ -164,8 +164,10 @@ function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema)
         return null;
       }
 
+      const productCode = String(row.codigo_produto ?? '').trim();
       const avgMonthlyConsumption = parseNumber(row.consumo_medio);
-      if (config.excluirCmmMenorQueUm && avgMonthlyConsumption < 1) {
+      const isLowConsumptionException = hospital === 'HMSA' && cmmExceptionCodes.has(productCode);
+      if (config.excluirCmmMenorQueUm && avgMonthlyConsumption < 1 && !isLowConsumptionException) {
         return null;
       }
 
@@ -178,7 +180,7 @@ function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema)
       const product: EnrichedProduct = {
         hospital,
         categoria_material: categoriaMaterial,
-        product_code: String(row.codigo_produto),
+        product_code: productCode,
         product_name: row.nome_produto,
         produto_referencia_id: row.produto_referencia_id,
         codigo_produto_referencia: row.codigo_produto_referencia,
@@ -462,8 +464,12 @@ export function createEmptyDataset(config: ConfiguracaoSistema = configuracaoSis
   };
 }
 
-export function hydrateDataset(rows: EstoqueAtualRow[], config: ConfiguracaoSistema = configuracaoSistemaPadrao): AlmoxDataset {
-  const baseProducts = buildBaseProducts(rows, config);
+export function hydrateDataset(
+  rows: EstoqueAtualRow[],
+  config: ConfiguracaoSistema = configuracaoSistemaPadrao,
+  options: { cmmExceptionCodes?: Set<string> } = {}
+): AlmoxDataset {
+  const baseProducts = buildBaseProducts(rows, config, options.cmmExceptionCodes ?? new Set());
   const enrichedProducts = enrichProducts(baseProducts, config);
   const productsByHospital = hospitalOrder.reduce<Record<Hospital, Product[]>>((accumulator, hospital) => {
     accumulator[hospital] = enrichedProducts[hospital];

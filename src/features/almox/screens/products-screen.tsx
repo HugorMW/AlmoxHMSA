@@ -9,6 +9,8 @@ import {
   InfoBanner,
   InlineTabs,
   PageHeader,
+  PageSize,
+  PaginationFooter,
   ScreenScrollView,
   SearchField,
   SectionCard,
@@ -22,7 +24,6 @@ import { almoxTheme } from '@/features/almox/tokens';
 import { Hospital, Product } from '@/features/almox/types';
 import { formatDecimal, paginate, matchesQuery } from '@/features/almox/utils';
 
-const PAGE_SIZE = 8;
 type ActionFilter = 'all' | 'COMPRAR' | 'PEGAR EMPRESTADO' | 'AVALIAR';
 type LevelFilter = 'all' | 'URGENTE' | 'CRÍTICO' | 'ALTO' | 'MÉDIO' | 'BAIXO' | 'ESTÁVEL';
 type SortOption = 'dias_asc' | 'dias_desc' | 'nome_asc' | 'codigo_asc';
@@ -34,6 +35,7 @@ export default function ProductsScreen() {
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('all');
   const [sortOption, setSortOption] = useState<SortOption>('dias_asc');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(10);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig } = useAlmoxData();
@@ -76,9 +78,9 @@ export default function ProductsScreen() {
     return nextItems;
   }, [items, actionFilter, levelFilter, deferredSearch, sortOption]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageItems = paginate(filteredItems, safePage, PAGE_SIZE);
+  const pageItems = paginate(filteredItems, safePage, pageSize);
 
   const showActionColumns = activeHospital === 'HMSA';
 
@@ -388,25 +390,19 @@ export default function ProductsScreen() {
           </ScrollView>
         )}
 
-        <View style={styles.paginationRow}>
-          <Text style={styles.paginationText}>
-            Exibindo {pageItems.length} de {filteredItems.length} itens
-          </Text>
-          <View style={styles.paginationActions}>
-            <ActionButton
-              label="Anterior"
-              tone="neutral"
-              disabled={safePage <= 1}
-              onPress={() => setPage((current) => Math.max(1, current - 1))}
-            />
-            <ActionButton
-              label="Próxima"
-              tone="neutral"
-              disabled={safePage >= totalPages}
-              onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
-            />
-          </View>
-        </View>
+        <PaginationFooter
+          totalItems={filteredItems.length}
+          pageItemsCount={pageItems.length}
+          page={safePage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          itemLabel="produto(s)"
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
       </SectionCard>
     </ScreenScrollView>
   );
@@ -585,21 +581,6 @@ const styles = StyleSheet.create({
   productMeta: {
     color: almoxTheme.colors.textMuted,
     fontSize: 11,
-  },
-  paginationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
-  },
-  paginationText: {
-    color: almoxTheme.colors.textMuted,
-    fontSize: 12,
-  },
-  paginationActions: {
-    flexDirection: 'row',
-    gap: almoxTheme.spacing.sm,
   },
   tooltipAnchor: {
     position: 'relative',

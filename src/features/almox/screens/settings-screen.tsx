@@ -133,12 +133,6 @@ const actionFieldGroups: ConfigFieldGroup[] = [
             helper: 'Outro hospital só pode ajudar se tiver cobertura acima desse valor.',
           },
           {
-            key: 'pisoDoadorAposEmprestimoDias',
-            label: 'Depois de emprestar, deve ficar com',
-            suffix: 'dias',
-            helper: 'Cobertura mínima que o hospital que emprestou precisa manter depois da transferência.',
-          },
-          {
             key: 'alvoTransferenciaCmm',
             label: 'Quanto o HMSA deve pegar emprestado',
             suffix: 'vezes o consumo mensal',
@@ -148,7 +142,7 @@ const actionFieldGroups: ConfigFieldGroup[] = [
         ],
       },
       {
-        title: 'Estoque com folga',
+        title: 'Do HMSA para Demais Unidades',
         subtitle: 'Quando o HMSA pode ser analisado como origem de ajuda para outras unidades.',
         fields: [
           {
@@ -156,6 +150,12 @@ const actionFieldGroups: ConfigFieldGroup[] = [
             label: 'Pode emprestar quando tiver',
             suffix: 'dias',
             helper: 'Itens com essa cobertura ou mais aparecem como estoque com folga e podem ser avaliados para emprestar.',
+          },
+          {
+            key: 'pisoDoadorAposEmprestimoDias',
+            label: 'Depois de emprestar, deve ficar com',
+            suffix: 'dias',
+            helper: 'Cobertura mínima que o HMSA deve manter depois de emprestar para outra unidade.',
           },
         ],
       },
