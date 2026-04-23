@@ -224,6 +224,7 @@ export default function SettingsScreen() {
   const {
     dataset,
     error,
+    warning,
     loading,
     refreshing,
     syncError,
@@ -335,6 +336,8 @@ export default function SettingsScreen() {
           tone="danger"
         />
       ) : null}
+
+      {warning ? <InfoBanner title="Atualização parcial da base" description={warning} tone="warning" /> : null}
 
       {syncError ? (
         <InfoBanner

@@ -14,28 +14,28 @@ import { ConfiguracaoSistema, configuracaoSistemaPadrao, getLimiteCompraDias } f
 
 export interface EstoqueAtualRow {
   categoria_material?: CategoriaMaterial | string | null;
-  estoque_importado_id: string;
-  lote_importacao_id: string;
-  data_referencia: string | null;
+  estoque_importado_id?: string;
+  lote_importacao_id?: string;
+  data_referencia?: string | null;
   importado_em: string;
-  unidade_id: string;
+  unidade_id?: string;
   codigo_unidade: string;
-  nome_unidade: string;
+  nome_unidade?: string;
   produto_referencia_id: string | null;
   codigo_produto_referencia: string | null;
   nome_produto_referencia: string | null;
-  unidade_medida_referencia: string | null;
-  especie_padrao: string | null;
-  produto_unidade_id: string;
+  unidade_medida_referencia?: string | null;
+  especie_padrao?: string | null;
+  produto_unidade_id?: string;
   codigo_produto: string;
   nome_produto: string;
-  unidade_medida_produto: string | null;
+  unidade_medida_produto?: string | null;
   suficiencia_em_dias: number | string | null;
   data_ultima_entrada: string | null;
-  valor_custo_medio: number | string | null;
+  valor_custo_medio?: number | string | null;
   consumo_medio: number | string | null;
   estoque_atual: number | string | null;
-  criado_em: string;
+  criado_em?: string;
 }
 
 interface EnrichedProduct extends Product {

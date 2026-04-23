@@ -28,7 +28,7 @@ export default function LoansScreen() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(10);
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
+  const { dataset, categoryFilter, error, warning, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
   const deferredSearch = useDeferredValue(search);
 
   const needItems = dataset.loansNeeded.filter((item) =>
@@ -66,6 +66,8 @@ export default function LoansScreen() {
           tone="danger"
         />
       ) : null}
+
+      {warning ? <InfoBanner title="Atualização parcial da base" description={warning} tone="warning" /> : null}
 
       {syncError ? (
         <InfoBanner

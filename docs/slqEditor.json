@@ -1,0 +1,224 @@
+[
+{
+"QUERY PLAN": "Limit (cost=32651.79..32654.29 rows=1000 width=183) (actual time=4034.456..4034.618 rows=1000 loops=1)"
+},
+{
+"QUERY PLAN": " Output: v_estoque_atual.categoria_material, v_estoque_atual.importado_em, v_estoque_atual.codigo_unidade, v_estoque_atual.produto_referencia_id, v_estoque_atual.codigo_produto_referencia, v_estoque_atual.nome_produto_referencia, v_estoque_atual.codigo_produto, v_estoque_atual.nome_produto, v_estoque_atual.suficiencia_em_dias, v_estoque_atual.data_ultima_entrada, v_estoque_atual.consumo_medio, v_estoque_atual.estoque_atual"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=376953"
+},
+{
+"QUERY PLAN": " -> Sort (cost=32651.79..32677.72 rows=10372 width=183) (actual time=4034.454..4034.522 rows=1000 loops=1)"
+},
+{
+"QUERY PLAN": " Output: v_estoque_atual.categoria_material, v_estoque_atual.importado_em, v_estoque_atual.codigo_unidade, v_estoque_atual.produto_referencia_id, v_estoque_atual.codigo_produto_referencia, v_estoque_atual.nome_produto_referencia, v_estoque_atual.codigo_produto, v_estoque_atual.nome_produto, v_estoque_atual.suficiencia_em_dias, v_estoque_atual.data_ultima_entrada, v_estoque_atual.consumo_medio, v_estoque_atual.estoque_atual"
+},
+{
+"QUERY PLAN": " Sort Key: v_estoque_atual.categoria_material, v_estoque_atual.codigo_unidade, v_estoque_atual.codigo_produto"
+},
+{
+"QUERY PLAN": " Sort Method: top-N heapsort Memory: 421kB"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=376953"
+},
+{
+"QUERY PLAN": " -> Subquery Scan on v_estoque_atual (cost=13.91..32083.10 rows=10372 width=183) (actual time=2.095..4000.854 rows=11002 loops=1)"
+},
+{
+"QUERY PLAN": " Output: v_estoque_atual.categoria_material, v_estoque_atual.importado_em, v_estoque_atual.codigo_unidade, v_estoque_atual.produto_referencia_id, v_estoque_atual.codigo_produto_referencia, v_estoque_atual.nome_produto_referencia, v_estoque_atual.codigo_produto, v_estoque_atual.nome_produto, v_estoque_atual.suficiencia_em_dias, v_estoque_atual.data_ultima_entrada, v_estoque_atual.consumo_medio, v_estoque_atual.estoque_atual"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=376950"
+},
+{
+"QUERY PLAN": " -> Unique (cost=13.91..31979.38 rows=10372 width=423) (actual time=2.093..3996.161 rows=11002 loops=1)"
+},
+{
+"QUERY PLAN": " Output: li.categoria_material, NULL::uuid, NULL::uuid, NULL::date, li.importado_em, NULL::uuid, u.codigo_unidade, NULL::text, pr.id, pr.codigo_produto_referencia, pr.nome_produto_referencia, NULL::text, NULL::text, NULL::uuid, pu.codigo_produto, pu.nome_produto, NULL::text, ei.suficiencia_em_dias, ei.data_ultima_entrada, NULL::numeric(18,6), ei.consumo_medio, ei.estoque_atual, ei.criado_em, ei.produto_unidade_id"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=376950"
+},
+{
+"QUERY PLAN": " -> Nested Loop (cost=13.91..31080.70 rows=359473 width=423) (actual time=2.092..3961.254 rows=359518 loops=1)"
+},
+{
+"QUERY PLAN": " Output: li.categoria_material, NULL::uuid, NULL::uuid, NULL::date, li.importado_em, NULL::uuid, u.codigo_unidade, NULL::text, pr.id, pr.codigo_produto_referencia, pr.nome_produto_referencia, NULL::text, NULL::text, NULL::uuid, pu.codigo_produto, pu.nome_produto, NULL::text, ei.suficiencia_em_dias, ei.data_ultima_entrada, NULL::numeric(18,6), ei.consumo_medio, ei.estoque_atual, ei.criado_em, ei.produto_unidade_id"
+},
+{
+"QUERY PLAN": " Inner Unique: true"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=376950"
+},
+{
+"QUERY PLAN": " -> Merge Join (cost=13.76..22150.08 rows=359473 width=194) (actual time=0.940..3754.882 rows=359518 loops=1)"
+},
+{
+"QUERY PLAN": " Output: ei.suficiencia_em_dias, ei.data_ultima_entrada, ei.consumo_medio, ei.estoque_atual, ei.criado_em, ei.produto_unidade_id, ei.lote_importacao_id, pu.codigo_produto, pu.nome_produto, u.codigo_unidade, pr.id, pr.codigo_produto_referencia, pr.nome_produto_referencia"
+},
+{
+"QUERY PLAN": " Merge Cond: (ei.produto_unidade_id = pu.id)"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=376800"
+},
+{
+"QUERY PLAN": " -> Index Scan using estoque_importado_atual_idx on almox.estoque_importado ei (cost=0.42..14232.10 rows=359473 width=56) (actual time=0.013..3296.111 rows=359518 loops=1)"
+},
+{
+"QUERY PLAN": " Output: ei.id, ei.lote_importacao_id, ei.produto_unidade_id, ei.suficiencia_em_dias, ei.data_ultima_entrada, ei.valor_custo_medio, ei.consumo_medio, ei.estoque_atual, ei.criado_em"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=362521"
+},
+{
+"QUERY PLAN": " -> Materialize (cost=0.72..1654.71 rows=11002 width=154) (actual time=0.462..299.266 rows=359481 loops=1)"
+},
+{
+"QUERY PLAN": " Output: pu.codigo_produto, pu.nome_produto, pu.id, u.codigo_unidade, pr.id, pr.codigo_produto_referencia, pr.nome_produto_referencia"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=14279"
+},
+{
+"QUERY PLAN": " -> Nested Loop Left Join (cost=0.72..1627.20 rows=11002 width=154) (actual time=0.458..269.058 rows=11002 loops=1)"
+},
+{
+"QUERY PLAN": " Output: pu.codigo_produto, pu.nome_produto, pu.id, u.codigo_unidade, pr.id, pr.codigo_produto_referencia, pr.nome_produto_referencia"
+},
+{
+"QUERY PLAN": " Inner Unique: true"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=14279"
+},
+{
+"QUERY PLAN": " -> Nested Loop (cost=0.43..1027.54 rows=11002 width=84) (actual time=0.437..227.604 rows=11002 loops=1)"
+},
+{
+"QUERY PLAN": " Output: pu.codigo_produto, pu.nome_produto, pu.id, pu.produto_referencia_id, u.codigo_unidade"
+},
+{
+"QUERY PLAN": " Inner Unique: true"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=11048"
+},
+{
+"QUERY PLAN": " -> Index Scan using produto_unidade_pkey on almox.produto_unidade pu (cost=0.29..773.61 rows=11002 width=95) (actual time=0.405..218.250 rows=11002 loops=1)"
+},
+{
+"QUERY PLAN": " Output: pu.id, pu.unidade_id, pu.produto_referencia_id, pu.codigo_produto, pu.nome_produto, pu.unidade_medida_produto, pu.criado_em, pu.atualizado_em, pu.categoria_material"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=11038"
+},
+{
+"QUERY PLAN": " -> Memoize (cost=0.14..0.16 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=11002)"
+},
+{
+"QUERY PLAN": " Output: u.codigo_unidade, u.id"
+},
+{
+"QUERY PLAN": " Cache Key: pu.unidade_id"
+},
+{
+"QUERY PLAN": " Cache Mode: logical"
+},
+{
+"QUERY PLAN": " Hits: 10997 Misses: 5 Evictions: 0 Overflows: 0 Memory Usage: 1kB"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=10"
+},
+{
+"QUERY PLAN": " -> Index Scan using unidade_pkey on almox.unidade u (cost=0.13..0.15 rows=1 width=21) (actual time=0.011..0.011 rows=1 loops=5)"
+},
+{
+"QUERY PLAN": " Output: u.codigo_unidade, u.id"
+},
+{
+"QUERY PLAN": " Index Cond: (u.id = pu.unidade_id)"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=10"
+},
+{
+"QUERY PLAN": " -> Memoize (cost=0.29..0.31 rows=1 width=86) (actual time=0.003..0.003 rows=0 loops=11002)"
+},
+{
+"QUERY PLAN": " Output: pr.id, pr.codigo_produto_referencia, pr.nome_produto_referencia"
+},
+{
+"QUERY PLAN": " Cache Key: pu.produto_referencia_id"
+},
+{
+"QUERY PLAN": " Cache Mode: logical"
+},
+{
+"QUERY PLAN": " Hits: 9924 Misses: 1078 Evictions: 0 Overflows: 0 Memory Usage: 210kB"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=3231"
+},
+{
+"QUERY PLAN": " -> Index Scan using produto_referencia_pkey on almox.produto_referencia pr (cost=0.28..0.30 rows=1 width=86) (actual time=0.029..0.029 rows=1 loops=1078)"
+},
+{
+"QUERY PLAN": " Output: pr.id, pr.codigo_produto_referencia, pr.nome_produto_referencia"
+},
+{
+"QUERY PLAN": " Index Cond: (pr.id = pu.produto_referencia_id)"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=3231"
+},
+{
+"QUERY PLAN": " -> Memoize (cost=0.15..0.17 rows=1 width=45) (actual time=0.000..0.000 rows=1 loops=359518)"
+},
+{
+"QUERY PLAN": " Output: li.categoria_material, li.importado_em, li.id"
+},
+{
+"QUERY PLAN": " Cache Key: ei.lote_importacao_id"
+},
+{
+"QUERY PLAN": " Cache Mode: logical"
+},
+{
+"QUERY PLAN": " Hits: 359443 Misses: 75 Evictions: 0 Overflows: 0 Memory Usage: 12kB"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=150"
+},
+{
+"QUERY PLAN": " -> Index Scan using lote_importacao_pkey on almox.lote_importacao li (cost=0.14..0.16 rows=1 width=45) (actual time=0.047..0.047 rows=1 loops=75)"
+},
+{
+"QUERY PLAN": " Output: li.categoria_material, li.importado_em, li.id"
+},
+{
+"QUERY PLAN": " Index Cond: (li.id = ei.lote_importacao_id)"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=150"
+},
+{
+"QUERY PLAN": "Query Identifier: -6002909017950546295"
+},
+{
+"QUERY PLAN": "Planning:"
+},
+{
+"QUERY PLAN": " Buffers: shared hit=578"
+},
+{
+"QUERY PLAN": "Planning Time: 44.023 ms"
+},
+{
+"QUERY PLAN": "Execution Time: 4035.574 ms"
+}
+]

@@ -59,6 +59,7 @@ export default function BlacklistScreen() {
     addCmmExceptionItem,
     removeCmmExceptionItem,
     usingCachedData,
+    warning,
     systemConfig,
     systemConfigLoading,
     systemConfigSaving,
@@ -269,6 +270,8 @@ export default function BlacklistScreen() {
           tone="info"
         />
       ) : null}
+
+      {warning ? <InfoBanner title="Atualização parcial da base" description={warning} tone="warning" /> : null}
 
       {systemConfigError ? (
         <InfoBanner

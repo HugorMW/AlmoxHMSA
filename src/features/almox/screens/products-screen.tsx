@@ -38,7 +38,7 @@ export default function ProductsScreen() {
   const [pageSize, setPageSize] = useState<PageSize>(10);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig } = useAlmoxData();
+  const { dataset, categoryFilter, error, warning, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig } = useAlmoxData();
   const levelTooltips = useMemo(() => getLevelTooltips(systemConfig), [systemConfig]);
   const actionTooltips = useMemo(() => getActionTooltips(systemConfig), [systemConfig]);
   const levelRanges = useMemo(() => getLevelRangeLabels(systemConfig), [systemConfig]);
@@ -174,6 +174,8 @@ export default function ProductsScreen() {
           tone="danger"
         />
       ) : null}
+
+      {warning ? <InfoBanner title="Atualização parcial da base" description={warning} tone="warning" /> : null}
 
       {usingCachedData ? (
         <InfoBanner

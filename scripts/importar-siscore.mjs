@@ -733,7 +733,7 @@ async function inserirEstoqueImportado(client, loteId, rows, unidadeMap, produto
 
 function obterModoPersistenciaEstoque(env) {
   const modo = String(env.SISCORE_ESTOQUE_MODO ?? '').trim().toLowerCase();
-  return modo === 'rpc' ? 'rpc' : 'legacy';
+  return modo === 'legacy' ? 'legacy' : 'rpc';
 }
 
 async function persistirEstoqueLegado({ connectionString, rows, nomeArquivo, categoriaMaterial, exportacaoUrl }) {

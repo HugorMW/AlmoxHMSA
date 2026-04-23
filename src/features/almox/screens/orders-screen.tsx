@@ -30,7 +30,7 @@ export default function OrdersScreen() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(10);
-  const { dataset, categoryFilter, error, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } =
+  const { dataset, categoryFilter, error, warning, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } =
     useAlmoxData();
   const items = dataset.orderItems;
   const sortedItems = useMemo(
@@ -142,6 +142,8 @@ export default function OrdersScreen() {
           tone="danger"
         />
       ) : null}
+
+      {warning ? <InfoBanner title="Atualização parcial da base" description={warning} tone="warning" /> : null}
 
       {usingCachedData ? (
         <InfoBanner

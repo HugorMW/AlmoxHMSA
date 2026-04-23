@@ -33,7 +33,25 @@ const PAGE_SIZE = 1000;
 const ALMOX_CACHE_KEY = 'almox:base:v1';
 const ALMOX_SESSION_KEY = 'almox:base:session:v1';
 const ALMOX_CACHE_TTL_MS = 5 * 60 * 1000;
+const ALMOX_CONFIG_CACHE_KEY = 'almox:config:v1';
+const ALMOX_CONFIG_CACHE_TTL_MS = 30 * 60 * 1000;
+const ALMOX_PROCESS_CACHE_KEY = 'almox:processes:v1';
+const ALMOX_PROCESS_CACHE_TTL_MS = 5 * 60 * 1000;
 const SYNC_STATUS_MAX_WAIT_MS = 10 * 60 * 1000;
+const ESTOQUE_ATUAL_SELECT_COLUMNS = [
+  'categoria_material',
+  'importado_em',
+  'codigo_unidade',
+  'produto_referencia_id',
+  'codigo_produto_referencia',
+  'nome_produto_referencia',
+  'codigo_produto',
+  'nome_produto',
+  'suficiencia_em_dias',
+  'data_ultima_entrada',
+  'consumo_medio',
+  'estoque_atual',
+].join(',');
 const emailConfig = getEmailConfig();
 export const ALMOX_SYNC_COMPLETED_EVENT = 'almox:sync-completed';
 export const ALMOX_CONFIG_UPDATED_EVENT = 'almox:config-updated';
@@ -67,6 +85,7 @@ type AlmoxDataContextValue = {
   syncNotice: string | null;
   usingCachedData: boolean;
   error: string | null;
+  warning: string | null;
   categoryFilter: FiltroCategoriaMaterial;
   setCategoryFilter: (nextFilter: FiltroCategoriaMaterial) => void;
   dashboardHospital: Hospital;
@@ -84,6 +103,9 @@ type AlmoxDataContextValue = {
     candidates: number;
   };
   processItems: ProcessoAcompanhamento[];
+  processItemsLoading: boolean;
+  processItemsError: string | null;
+  refreshProcessItems: (options?: { force?: boolean }) => Promise<void>;
   systemConfig: ConfiguracaoSistema;
   systemConfigLoading: boolean;
   systemConfigSaving: boolean;
@@ -119,17 +141,17 @@ async function loadEstoqueAtualRows() {
     const end = start + PAGE_SIZE - 1;
     const { data, error } = await supabase
       .from('almox_estoque_atual')
-      .select('*')
+      .select(ESTOQUE_ATUAL_SELECT_COLUMNS)
       .order('categoria_material', { ascending: true })
       .order('codigo_unidade', { ascending: true })
       .order('codigo_produto', { ascending: true })
       .range(start, end);
 
     if (error) {
-      throw error;
+      throw createScopedError(`almox_estoque_atual [${start}-${end}]`, error);
     }
 
-    const pageRows = (data ?? []) as EstoqueAtualRow[];
+    const pageRows = (data ?? []) as unknown as EstoqueAtualRow[];
     rows.push(...pageRows);
 
     if (pageRows.length < PAGE_SIZE) {
@@ -149,7 +171,7 @@ async function loadBlacklistItems() {
     .order('cd_produto', { ascending: true });
 
   if (error) {
-    throw error;
+    throw createScopedError('almox_exclusoes_hmsa', error);
   }
 
   return (data ?? []) as BlacklistItem[];
@@ -164,7 +186,7 @@ async function loadCmmExceptionItems() {
     .order('cd_produto', { ascending: true });
 
   if (error) {
-    throw error;
+    throw createScopedError('almox_excecoes_cmm_hmsa', error);
   }
 
   return (data ?? []) as CmmExceptionItem[];
@@ -201,13 +223,17 @@ async function loadProcessItems() {
     .order('numero_processo', { ascending: true });
 
   if (error) {
-    throw error;
+    throw createScopedError('almox_processos_acompanhamento', error);
   }
 
   return ((data ?? []) as ProcessoAcompanhamento[]).map(normalizarProcessoItem);
 }
 
 function formatLoadError(error: unknown) {
+  return getErrorMessage(error, 'Falha ao consultar a base do Supabase.');
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) {
     return error.message;
   }
@@ -219,7 +245,67 @@ function formatLoadError(error: unknown) {
     }
   }
 
-  return 'Falha ao consultar a base do Supabase.';
+  return fallback;
+}
+
+function createScopedError(scope: string, error: unknown) {
+  if (error instanceof Error && error.message.startsWith(`${scope}:`)) {
+    return error;
+  }
+
+  const code =
+    typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>).code === 'string'
+      ? String((error as Record<string, unknown>).code)
+      : '';
+  const details =
+    typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>).details === 'string'
+      ? String((error as Record<string, unknown>).details).trim()
+      : '';
+  const hint =
+    typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>).hint === 'string'
+      ? String((error as Record<string, unknown>).hint).trim()
+      : '';
+  const message = getErrorMessage(error, 'Falha sem mensagem adicional.');
+  const prefix = code ? `${scope}: ${code} ${message}` : `${scope}: ${message}`;
+  const suffix = [details, hint].filter(Boolean).join(' | ');
+  return new Error(suffix ? `${prefix} | ${suffix}` : prefix);
+}
+
+function logScopedError(scope: string, error: unknown) {
+  console.error(`[almox] ${scope}`, {
+    message: getErrorMessage(error, 'Falha sem mensagem adicional.'),
+    code:
+      typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>).code === 'string'
+        ? (error as Record<string, unknown>).code
+        : null,
+    details:
+      typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>).details === 'string'
+        ? (error as Record<string, unknown>).details
+        : null,
+    hint:
+      typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>).hint === 'string'
+        ? (error as Record<string, unknown>).hint
+        : null,
+    error,
+  });
+}
+
+function formatAuxiliaryRefreshWarning(failedSources: string[]) {
+  if (failedSources.length === 0) {
+    return null;
+  }
+
+  if (failedSources.length === 1) {
+    return `A base principal foi atualizada, mas não foi possível atualizar ${failedSources[0]}. O app manteve a última versão válida desse apoio.`;
+  }
+
+  if (failedSources.length === 2) {
+    return `A base principal foi atualizada, mas não foi possível atualizar ${failedSources[0]} e ${failedSources[1]}. O app manteve a última versão válida desses apoios.`;
+  }
+
+  const lastSource = failedSources[failedSources.length - 1];
+  const leadingSources = failedSources.slice(0, -1).join(', ');
+  return `A base principal foi atualizada, mas não foi possível atualizar ${leadingSources} e ${lastSource}. O app manteve a última versão válida desses apoios.`;
 }
 
 function getSyncJobLabel(job: SyncTrackedJob) {
@@ -417,11 +503,22 @@ type AlmoxBaseCache = {
   processItems?: ProcessoAcompanhamento[];
 };
 
+type AlmoxConfigCache = {
+  config: ConfiguracaoSistema;
+  updatedAt: string | null;
+};
+
+type AlmoxProcessCache = {
+  processItems: ProcessoAcompanhamento[];
+};
+
 export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [rows, setRows] = useState<EstoqueAtualRow[]>([]);
   const [blacklistItems, setBlacklistItems] = useState<BlacklistItem[]>([]);
   const [cmmExceptionItems, setCmmExceptionItems] = useState<CmmExceptionItem[]>([]);
   const [processItems, setProcessItems] = useState<ProcessoAcompanhamento[]>([]);
+  const [processItemsLoading, setProcessItemsLoading] = useState(false);
+  const [processItemsError, setProcessItemsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncingBase, setSyncingBase] = useState(false);
@@ -430,6 +527,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [usingCachedData, setUsingCachedData] = useState(false);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<FiltroCategoriaMaterial>('todos');
   const [dashboardHospital, setDashboardHospital] = useState<Hospital>('HMSA');
   const [pendingSync, setPendingSync] = useState<PendingSyncState | null>(null);
@@ -441,6 +539,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [systemConfigUpdatedAt, setSystemConfigUpdatedAt] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const hasLoadedRef = useRef(false);
+  const processItemsLoadedRef = useRef(false);
 
   const dataset = useMemo<AlmoxDataset>(() => {
     const blacklistSet = new Set(blacklistItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
@@ -568,16 +667,18 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       });
       setSystemConfigUpdatedAt(typeof data?.atualizadoEm === 'string' ? data.atualizadoEm : null);
       setSystemConfigError(null);
+      writeCachedValue<AlmoxConfigCache>(ALMOX_CONFIG_CACHE_KEY, {
+        config: nextConfig,
+        updatedAt: typeof data?.atualizadoEm === 'string' ? data.atualizadoEm : null,
+      });
     } catch (configError) {
       if (!mountedRef.current) {
         return;
       }
 
-      const message =
-        configError instanceof Error && configError.message
-          ? configError.message
-          : 'Falha ao carregar os parametros do sistema.';
-      setSystemConfigError(message);
+      const scopedError = createScopedError('/api/configuracao [GET]', configError);
+      logScopedError('/api/configuracao [GET]', configError);
+      setSystemConfigError(scopedError.message);
     } finally {
       if (!mountedRef.current) {
         return;
@@ -615,9 +716,14 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       startTransition(() => {
         setSystemConfig(savedConfig);
       });
-      setSystemConfigUpdatedAt(typeof data?.atualizadoEm === 'string' ? data.atualizadoEm : new Date().toISOString());
+      const nextUpdatedAt = typeof data?.atualizadoEm === 'string' ? data.atualizadoEm : new Date().toISOString();
+      setSystemConfigUpdatedAt(nextUpdatedAt);
       setSystemConfigNotice('Parâmetros do sistema salvos com sucesso.');
       removeCachedValue(ALMOX_CACHE_KEY);
+      writeCachedValue<AlmoxConfigCache>(ALMOX_CONFIG_CACHE_KEY, {
+        config: savedConfig,
+        updatedAt: nextUpdatedAt,
+      });
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(ALMOX_CONFIG_UPDATED_EVENT));
@@ -627,18 +733,72 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const message =
-        configError instanceof Error && configError.message
-          ? configError.message
-          : 'Falha ao salvar os parametros do sistema.';
-      setSystemConfigError(message);
-      throw configError;
+      const scopedError = createScopedError('/api/configuracao [PUT]', configError);
+      logScopedError('/api/configuracao [PUT]', configError);
+      setSystemConfigError(scopedError.message);
+      throw scopedError;
     } finally {
       if (!mountedRef.current) {
         return;
       }
 
       setSystemConfigSaving(false);
+    }
+  }, []);
+
+  const refreshProcessItems = useCallback(async function refreshProcessItems(options?: { force?: boolean }) {
+    const force = options?.force === true;
+
+    if (!mountedRef.current) {
+      return;
+    }
+
+    setProcessItemsError(null);
+
+    if (!force) {
+      const cached = readCachedValue<AlmoxProcessCache>(ALMOX_PROCESS_CACHE_KEY, ALMOX_PROCESS_CACHE_TTL_MS);
+      if (cached?.isFresh) {
+        processItemsLoadedRef.current = true;
+        setProcessItemsError(null);
+        startTransition(() => {
+          setProcessItems(cached.value.processItems);
+        });
+        return;
+      }
+    }
+
+    setProcessItemsLoading(true);
+
+    try {
+      const nextProcessItems = await loadProcessItems();
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      startTransition(() => {
+        setProcessItems(nextProcessItems);
+      });
+      processItemsLoadedRef.current = true;
+      setProcessItemsError(null);
+      writeCachedValue<AlmoxProcessCache>(ALMOX_PROCESS_CACHE_KEY, {
+        processItems: nextProcessItems,
+      });
+    } catch (processLoadError) {
+      if (!mountedRef.current) {
+        throw processLoadError;
+      }
+
+      const scopedError = createScopedError('almox_processos_acompanhamento', processLoadError);
+      logScopedError('almox_processos_acompanhamento', processLoadError);
+      setProcessItemsError(scopedError.message);
+      throw scopedError;
+    } finally {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setProcessItemsLoading(false);
     }
   }, []);
 
@@ -650,6 +810,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     setError(null);
+    setWarning(null);
 
     if (isInitialLoad) {
       setLoading(true);
@@ -658,24 +819,47 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const [nextRows, nextBlacklistItems, nextCmmExceptionItems, nextProcessItems] = await Promise.all([
+      const [rowsResult, blacklistResult, cmmExceptionResult] = await Promise.allSettled([
         loadEstoqueAtualRows(),
         loadBlacklistItems(),
         loadCmmExceptionItems(),
-        loadProcessItems(),
       ]);
+
+      if (rowsResult.status === 'rejected') {
+        throw rowsResult.reason;
+      }
 
       if (!mountedRef.current) {
         return;
       }
 
+      const failedSources: string[] = [];
+      const nextBlacklistItems =
+        blacklistResult.status === 'fulfilled'
+          ? blacklistResult.value
+          : (() => {
+              failedSources.push('a lista de exclusões manuais');
+              return null;
+            })();
+      const nextCmmExceptionItems =
+        cmmExceptionResult.status === 'fulfilled'
+          ? cmmExceptionResult.value
+          : (() => {
+              failedSources.push('a lista de exceções de CMM');
+              return null;
+            })();
+
       startTransition(() => {
-        setRows(nextRows);
-        setBlacklistItems(nextBlacklistItems);
-        setCmmExceptionItems(nextCmmExceptionItems);
-        setProcessItems(nextProcessItems);
+        setRows(rowsResult.value);
+        if (nextBlacklistItems) {
+          setBlacklistItems(nextBlacklistItems);
+        }
+        if (nextCmmExceptionItems) {
+          setCmmExceptionItems(nextCmmExceptionItems);
+        }
       });
       setError(null);
+      setWarning(formatAuxiliaryRefreshWarning(failedSources));
       setUsingCachedData(false);
       setLastRefreshAt(new Date().toISOString());
       hasLoadedRef.current = true;
@@ -685,6 +869,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      logScopedError('refresh base operacional', loadError);
       setError(formatLoadError(loadError));
     } finally {
       if (!mountedRef.current) {
@@ -879,7 +1064,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (lookupError) {
-        throw lookupError;
+        throw createScopedError(`almox_estoque_atual lookup HMSASOUL ${codigoNormalizado}`, lookupError);
       }
 
       if (!data) {
@@ -1108,21 +1293,49 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
     const sessionLoaded = readSessionFlag(ALMOX_SESSION_KEY);
     const cached = readCachedValue<AlmoxBaseCache>(ALMOX_CACHE_KEY, ALMOX_CACHE_TTL_MS);
+    const cachedConfig = readCachedValue<AlmoxConfigCache>(ALMOX_CONFIG_CACHE_KEY, ALMOX_CONFIG_CACHE_TTL_MS);
+    const cachedProcesses = readCachedValue<AlmoxProcessCache>(ALMOX_PROCESS_CACHE_KEY, ALMOX_PROCESS_CACHE_TTL_MS);
+
     if (sessionLoaded && cached) {
       hasLoadedRef.current = true;
       startTransition(() => {
         setRows(cached.value.rows);
         setBlacklistItems(cached.value.blacklistItems);
         setCmmExceptionItems(cached.value.cmmExceptionItems ?? []);
-        setProcessItems(cached.value.processItems ?? []);
       });
-      setUsingCachedData(true);
       setLastRefreshAt(new Date(cached.savedAt).toISOString());
       setLoading(false);
+
+      if (cached.isFresh) {
+        setUsingCachedData(false);
+      } else {
+        setUsingCachedData(true);
+        void refresh();
+      }
+    } else {
+      void refresh();
     }
 
-    void refresh();
-    void refreshSystemConfig();
+    if (cachedProcesses) {
+      processItemsLoadedRef.current = true;
+      startTransition(() => {
+        setProcessItems(cachedProcesses.value.processItems ?? []);
+      });
+    }
+
+    if (cachedConfig) {
+      startTransition(() => {
+        setSystemConfig(normalizarConfiguracaoSistema(cachedConfig.value.config));
+      });
+      setSystemConfigUpdatedAt(cachedConfig.value.updatedAt);
+      setSystemConfigLoading(false);
+
+      if (!cachedConfig.isFresh) {
+        void refreshSystemConfig();
+      }
+    } else {
+      void refreshSystemConfig();
+    }
 
     return () => {
       mountedRef.current = false;
@@ -1255,9 +1468,18 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       rows,
       blacklistItems,
       cmmExceptionItems,
+    });
+  }, [rows, blacklistItems, cmmExceptionItems]);
+
+  useEffect(() => {
+    if (!processItemsLoadedRef.current) {
+      return;
+    }
+
+    writeCachedValue<AlmoxProcessCache>(ALMOX_PROCESS_CACHE_KEY, {
       processItems,
     });
-  }, [rows, blacklistItems, cmmExceptionItems, processItems]);
+  }, [processItems]);
 
   return (
     <AlmoxDataContext.Provider
@@ -1271,6 +1493,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         syncNotice,
         usingCachedData,
         error,
+        warning,
         categoryFilter,
         setCategoryFilter,
         dashboardHospital,
@@ -1281,6 +1504,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         lowConsumptionCandidates,
         cmmExceptionSummary,
         processItems,
+        processItemsLoading,
+        processItemsError,
+        refreshProcessItems,
         systemConfig,
         systemConfigLoading,
         systemConfigSaving,

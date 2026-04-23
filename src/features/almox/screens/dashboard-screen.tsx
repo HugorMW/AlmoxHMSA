@@ -24,7 +24,7 @@ type PanelKey = 'transfer' | 'rupture';
 
 export default function DashboardScreen() {
   const [activePanel, setActivePanel] = useState<PanelKey | null>('transfer');
-  const { dataset, categoryFilter, error, loading, refreshing, lastRefreshAt, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig, dashboardHospital } = useAlmoxData();
+  const { dataset, categoryFilter, error, warning, loading, refreshing, lastRefreshAt, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig, dashboardHospital } = useAlmoxData();
   const showMaterialLabel = categoryFilter === 'todos';
   const levelRanges = getLevelRangeLabels(systemConfig);
   const levelTooltips = getLevelTooltips(systemConfig);
@@ -97,6 +97,8 @@ export default function DashboardScreen() {
           tone="danger"
         />
       ) : null}
+
+      {warning ? <InfoBanner title="Atualização parcial da base" description={warning} tone="warning" /> : null}
 
       {syncError ? (
         <InfoBanner

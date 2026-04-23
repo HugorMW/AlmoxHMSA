@@ -213,7 +213,9 @@ function getProcessTypeColor(tipo: ProcessoTipo) {
 export default function ProcessesScreen() {
   const {
     processItems,
-    loading,
+    processItemsLoading,
+    processItemsError,
+    refreshProcessItems,
     error,
     systemConfig,
     findHmsaProductByBionexoCode,
@@ -231,6 +233,23 @@ export default function ProcessesScreen() {
   const [showIgnored, setShowIgnored] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger' | 'info'; message: string } | null>(null);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    void refreshProcessItems()
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setInitialLoadDone(true);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [refreshProcessItems]);
 
   const enrichedItems = useMemo<ProcessoEnriquecido[]>(
     () =>
@@ -360,6 +379,14 @@ export default function ProcessesScreen() {
           />
         ) : null}
 
+        {processItemsError ? (
+          <DarkNotice
+            title="Falha ao carregar processos"
+            description={processItemsError}
+            tone="danger"
+          />
+        ) : null}
+
         {feedback ? (
           <DarkNotice
             title={feedback.tone === 'success' ? 'Processo atualizado' : 'Atenção'}
@@ -460,7 +487,7 @@ export default function ProcessesScreen() {
           />
         ) : null}
 
-        {loading && processItems.length === 0 ? (
+        {!initialLoadDone || (processItemsLoading && processItems.length === 0) ? (
           <DarkEmptyState
             title="Carregando processos"
             description="Consultando processos cadastrados no Supabase."
