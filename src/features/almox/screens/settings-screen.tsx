@@ -16,11 +16,15 @@ import {
   ConfiguracaoSistema,
   ConfiguracaoSistemaKey,
   ConfiguracaoSistemaValidationIssue,
+  PROCESSO_TOTAL_PARCELAS_MAX,
   configuracaoSistemaIgual,
   configuracaoSistemaKeys,
   configuracaoSistemaPadrao,
   getLevelRangeLabels,
   normalizarConfiguracaoSistema,
+  processoPrazoCategorias,
+  processoPrazoParcelaDefinitions,
+  processoPrazoTipos,
   validarConfiguracaoSistema,
 } from '@/features/almox/configuracao';
 import { almoxTheme, levelColors } from '@/features/almox/tokens';
@@ -162,6 +166,20 @@ const actionFieldGroups: ConfigFieldGroup[] = [
     ],
   },
 ];
+
+function getProcessDeadlineFields(
+  categoria: (typeof processoPrazoCategorias)[number]['categoria'],
+  tipo: (typeof processoPrazoTipos)[number]['tipo']
+): ConfigFieldDefinition[] {
+  return processoPrazoParcelaDefinitions
+    .filter((definition) => definition.categoria === categoria && definition.tipo === tipo)
+    .map((definition) => ({
+      key: definition.key,
+      label: `Parcela ${definition.parcela}`,
+      suffix: 'dias úteis',
+      helper: `Vencimento padrão da parcela ${definition.parcela} contado a partir da data de resgate.`,
+    }));
+}
 
 const levelOrder: { level: Level; label: string }[] = [
   { level: 'URGENTE', label: 'Urgente' },
@@ -472,6 +490,59 @@ export default function SettingsScreen() {
         <InfoBanner
           title="Quando o item entra em compra ou empréstimo"
           description={`Com os valores atuais, o item entra em compra ou empréstimo quando tiver até ${draftConfig.comprarDias} dias de cobertura.`}
+          tone="info"
+        />
+      </SectionCard>
+
+      <SectionCard>
+        <SectionTitle
+          title="Processos"
+          subtitle="Prazos padrão por classificação e tipo de processo."
+          icon="processes"
+          tooltip="Cada prazo é contado em dias úteis a partir da data de resgate informada no processo."
+        />
+        <View style={styles.actionGroups}>
+          {processoPrazoCategorias.map((categoria, index) => (
+            <View
+              key={categoria.categoria}
+              style={[styles.actionGroup, index > 0 ? styles.actionGroupSeparated : null]}>
+              <View style={styles.actionGroupHeader}>
+                <Text style={styles.actionGroupTitle}>{categoria.label}</Text>
+                <Text style={styles.actionGroupSubtitle}>
+                  Prazos usados nos processos cadastrados como {categoria.label.toLowerCase()}.
+                </Text>
+              </View>
+              <View style={styles.actionSubgroups}>
+                {processoPrazoTipos.map((tipo) => (
+                  <View key={`${categoria.categoria}-${tipo.tipo}`} style={styles.actionSubgroup}>
+                    <View style={styles.actionSubgroupHeader}>
+                      <Text style={styles.actionSubgroupTitle}>{tipo.label}</Text>
+                      <Text style={styles.actionGroupSubtitle}>
+                        Vencimento padrão de cada parcela desse tipo de processo.
+                      </Text>
+                    </View>
+                    <View style={styles.formGrid}>
+                      {getProcessDeadlineFields(categoria.categoria, tipo.tipo).map((field) => (
+                        <ConfigNumberField
+                          key={field.key}
+                          field={field}
+                          value={String(draft[field.key])}
+                          issue={getIssueForField(validationIssues, field.key)}
+                          disabled={systemConfigSaving}
+                          onChange={updateDraft}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <InfoBanner
+          title="Parcelas dos processos"
+          description={`Novos processos podem ter de 1 a ${PROCESSO_TOTAL_PARCELAS_MAX} parcelas. Os prazos acima recalculam a situação e os vencimentos exibidos na tela de Processos.`}
           tone="info"
         />
       </SectionCard>

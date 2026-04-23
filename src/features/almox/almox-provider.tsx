@@ -10,7 +10,12 @@ import {
   hydrateDataset,
 } from './data';
 import { readCachedValue, readSessionFlag, removeCachedValue, writeCachedValue, writeSessionFlag } from './cache';
-import { ConfiguracaoSistema, configuracaoSistemaPadrao, normalizarConfiguracaoSistema } from './configuracao';
+import {
+  ConfiguracaoSistema,
+  PROCESSO_TOTAL_PARCELAS_MAX,
+  configuracaoSistemaPadrao,
+  normalizarConfiguracaoSistema,
+} from './configuracao';
 import {
   BlacklistItem,
   CategoriaMaterial,
@@ -19,6 +24,9 @@ import {
   FiltroCategoriaMaterial,
   Hospital,
   LowConsumptionCandidate,
+  ProcessoAcompanhamento,
+  ProcessoProdutoLookup,
+  ProcessoSaveInput,
 } from './types';
 
 const PAGE_SIZE = 1000;
@@ -75,6 +83,7 @@ type AlmoxDataContextValue = {
     farmacologico: number;
     candidates: number;
   };
+  processItems: ProcessoAcompanhamento[];
   systemConfig: ConfiguracaoSistema;
   systemConfigLoading: boolean;
   systemConfigSaving: boolean;
@@ -85,10 +94,16 @@ type AlmoxDataContextValue = {
   saveSystemConfig: (nextConfig: ConfiguracaoSistema) => Promise<void>;
   findHmsaProductNameByCode: (cdProduto: string) => string | null;
   findHmsaProductCategoryByCode: (cdProduto: string) => CategoriaMaterial | null;
+  findHmsaProductByBionexoCode: (codBionexo: string) => ProcessoProdutoLookup | null;
+  lookupHmsaProductByBionexoCode: (codBionexo: string) => Promise<ProcessoProdutoLookup | null>;
   addBlacklistItem: (input: { cd_produto: string; ds_produto?: string }) => Promise<void>;
   removeBlacklistItem: (id: string) => Promise<void>;
   addCmmExceptionItem: (input: { cd_produto: string; ds_produto?: string; categoria_material?: CategoriaMaterial }) => Promise<void>;
   removeCmmExceptionItem: (id: string) => Promise<void>;
+  saveProcessItem: (input: ProcessoSaveInput) => Promise<void>;
+  updateProcessParcelas: (id: string, parcelasEntregues: boolean[]) => Promise<void>;
+  setProcessIgnored: (id: string, ignorado: boolean) => Promise<void>;
+  deleteProcessItem: (id: string) => Promise<void>;
   emailConfig: EmailConfig;
   refresh: () => Promise<void>;
   syncBase: (scope: 'estoque' | 'notas_fiscais') => Promise<void>;
@@ -153,6 +168,43 @@ async function loadCmmExceptionItems() {
   }
 
   return (data ?? []) as CmmExceptionItem[];
+}
+
+function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanhamento {
+  const parcelasRaw = Array.isArray(item.parcelas_entregues) ? item.parcelas_entregues : [];
+  const totalParcelas = Math.min(Math.max(Number(item.total_parcelas) || 3, 1), PROCESSO_TOTAL_PARCELAS_MAX);
+
+  return {
+    ...item,
+    total_parcelas: totalParcelas,
+    ds_produto: normalizarTextoProcesso(item.ds_produto),
+    edocs: item.edocs ?? '',
+    marca: item.marca ?? '',
+    fornecedor: item.fornecedor ?? '',
+    data_resgate: item.data_resgate ?? null,
+    parcelas_entregues: Array.from({ length: totalParcelas }, (_, index) => parcelasRaw[index] === true),
+    critico: item.critico === true,
+    ignorado: item.ignorado === true,
+  };
+}
+
+async function loadProcessItems() {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('almox_processos_acompanhamento')
+    .select(
+      'id, categoria_material, cod_bionexo, cd_produto, ds_produto, numero_processo, edocs, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, critico, ignorado, ativo, criado_em, atualizado_em'
+    )
+    .eq('ativo', true)
+    .order('critico', { ascending: false })
+    .order('data_resgate', { ascending: true, nullsFirst: false })
+    .order('numero_processo', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return ((data ?? []) as ProcessoAcompanhamento[]).map(normalizarProcessoItem);
 }
 
 function formatLoadError(error: unknown) {
@@ -296,6 +348,55 @@ function normalizarCodigoProduto(value: string) {
   return String(value ?? '').trim();
 }
 
+function normalizarTextoProcesso(value: string | null | undefined) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizarCodBionexo(value: string) {
+  const trimmed = String(value ?? '').trim().toUpperCase();
+  if (!trimmed) {
+    return '';
+  }
+
+  const withoutPrefix = trimmed.replace(/^I\s*-\s*/i, '').trim();
+  return withoutPrefix ? `I-${withoutPrefix}` : '';
+}
+
+type ProcessoProdutoLookupRow = Pick<
+  EstoqueAtualRow,
+  | 'categoria_material'
+  | 'codigo_produto'
+  | 'codigo_produto_referencia'
+  | 'estoque_atual'
+  | 'nome_produto'
+  | 'nome_produto_referencia'
+  | 'suficiencia_em_dias'
+>;
+
+function criarLookupProdutoProcesso(row: ProcessoProdutoLookupRow, codBionexo: string): ProcessoProdutoLookup {
+  return {
+    cod_bionexo: codBionexo,
+    cd_produto: normalizarCodigoProduto(row.codigo_produto),
+    ds_produto: String(row.nome_produto_referencia ?? '').trim() || row.nome_produto,
+    categoria_material: normalizeCategory(row.categoria_material),
+    estoque_atual: parseNumericRowValue(row.estoque_atual),
+    suficiencia_em_dias: parseNumericRowValue(row.suficiencia_em_dias),
+  };
+}
+
+function normalizarParcelasEntregues(value: boolean[], totalParcelas: number) {
+  return Array.from({ length: totalParcelas }, (_, index) => value[index] === true);
+}
+
+function ordenarProcessos(items: ProcessoAcompanhamento[]) {
+  return [...items].sort(
+    (left, right) =>
+      Number(right.critico) - Number(left.critico) ||
+      String(left.data_resgate ?? '9999-12-31').localeCompare(String(right.data_resgate ?? '9999-12-31')) ||
+      left.numero_processo.localeCompare(right.numero_processo, 'pt-BR')
+  );
+}
+
 function parseNumericRowValue(value: number | string | null | undefined) {
   if (value == null || value === '') {
     return 0;
@@ -313,12 +414,14 @@ type AlmoxBaseCache = {
   rows: EstoqueAtualRow[];
   blacklistItems: BlacklistItem[];
   cmmExceptionItems: CmmExceptionItem[];
+  processItems?: ProcessoAcompanhamento[];
 };
 
 export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [rows, setRows] = useState<EstoqueAtualRow[]>([]);
   const [blacklistItems, setBlacklistItems] = useState<BlacklistItem[]>([]);
   const [cmmExceptionItems, setCmmExceptionItems] = useState<CmmExceptionItem[]>([]);
+  const [processItems, setProcessItems] = useState<ProcessoAcompanhamento[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncingBase, setSyncingBase] = useState(false);
@@ -555,10 +658,11 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const [nextRows, nextBlacklistItems, nextCmmExceptionItems] = await Promise.all([
+      const [nextRows, nextBlacklistItems, nextCmmExceptionItems, nextProcessItems] = await Promise.all([
         loadEstoqueAtualRows(),
         loadBlacklistItems(),
         loadCmmExceptionItems(),
+        loadProcessItems(),
       ]);
 
       if (!mountedRef.current) {
@@ -569,6 +673,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         setRows(nextRows);
         setBlacklistItems(nextBlacklistItems);
         setCmmExceptionItems(nextCmmExceptionItems);
+        setProcessItems(nextProcessItems);
       });
       setError(null);
       setUsingCachedData(false);
@@ -725,6 +830,67 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     [rows]
   );
 
+  const findHmsaProductByBionexoCode = useCallback(
+    (codBionexo: string): ProcessoProdutoLookup | null => {
+      const codigoNormalizado = normalizarCodBionexo(codBionexo);
+
+      if (!codigoNormalizado) {
+        return null;
+      }
+
+      const row = rows.find(
+        (current) =>
+          rowEhDoHmsa(current) &&
+          normalizarCodBionexo(current.codigo_produto_referencia ?? '') === codigoNormalizado
+      );
+
+      if (!row) {
+        return null;
+      }
+
+      return criarLookupProdutoProcesso(row, codigoNormalizado);
+    },
+    [rows]
+  );
+
+  const lookupHmsaProductByBionexoCode = useCallback(
+    async (codBionexo: string): Promise<ProcessoProdutoLookup | null> => {
+      const localProduct = findHmsaProductByBionexoCode(codBionexo);
+
+      if (localProduct) {
+        return localProduct;
+      }
+
+      const codigoNormalizado = normalizarCodBionexo(codBionexo);
+
+      if (!codigoNormalizado) {
+        return null;
+      }
+
+      const supabase = getSupabaseClient();
+      const { data, error: lookupError } = await supabase
+        .from('almox_estoque_atual')
+        .select(
+          'categoria_material,codigo_produto,codigo_produto_referencia,estoque_atual,nome_produto,nome_produto_referencia,suficiencia_em_dias'
+        )
+        .eq('codigo_unidade', 'HMSASOUL')
+        .ilike('codigo_produto_referencia', codigoNormalizado)
+        .limit(1)
+        .maybeSingle();
+
+      if (lookupError) {
+        throw lookupError;
+      }
+
+      if (!data) {
+        return null;
+      }
+
+      return criarLookupProdutoProcesso(data, codigoNormalizado);
+    },
+    [findHmsaProductByBionexoCode]
+  );
+
   async function removeBlacklistItem(id: string) {
     const supabase = getSupabaseClient();
     const { error: updateError } = await supabase
@@ -814,6 +980,129 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
+  async function saveProcessItem(input: ProcessoSaveInput) {
+    const supabase = getSupabaseClient();
+    const codBionexo = normalizarCodBionexo(input.cod_bionexo);
+    const cdProduto = normalizarCodigoProduto(input.cd_produto);
+    const dsProduto = normalizarTextoProcesso(input.ds_produto);
+    const numeroProcesso = String(input.numero_processo ?? '').trim();
+    const totalParcelas = Math.min(Math.max(Number(input.total_parcelas) || 3, 1), PROCESSO_TOTAL_PARCELAS_MAX);
+    const parcelasEntregues = normalizarParcelasEntregues(input.parcelas_entregues ?? [], totalParcelas);
+
+    if (!codBionexo) {
+      throw new Error('Informe o Cod. Bionexo do processo.');
+    }
+
+    if (!cdProduto || !dsProduto) {
+      throw new Error('Localize um produto da base HMSA antes de salvar o processo.');
+    }
+
+    if (!numeroProcesso) {
+      throw new Error('Informe o número do pedido.');
+    }
+
+    const payload = {
+      categoria_material: input.categoria_material,
+      cod_bionexo: codBionexo,
+      cd_produto: cdProduto,
+      ds_produto: dsProduto,
+      numero_processo: numeroProcesso,
+      edocs: String(input.edocs ?? '').trim(),
+      marca: String(input.marca ?? '').trim(),
+      tipo_processo: input.tipo_processo,
+      fornecedor: String(input.fornecedor ?? '').trim(),
+      data_resgate: input.data_resgate || null,
+      total_parcelas: totalParcelas,
+      parcelas_entregues: parcelasEntregues,
+      critico: input.critico === true,
+      ignorado: input.ignorado === true,
+      ativo: true,
+    };
+
+    const query = input.id
+      ? supabase
+          .from('almox_processos_acompanhamento')
+          .update(payload)
+          .eq('id', input.id)
+      : supabase.from('almox_processos_acompanhamento').insert(payload);
+
+    const { data, error: saveError } = await query
+      .select(
+        'id, categoria_material, cod_bionexo, cd_produto, ds_produto, numero_processo, edocs, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, critico, ignorado, ativo, criado_em, atualizado_em'
+      )
+      .single();
+
+    if (saveError) {
+      throw saveError;
+    }
+
+    const nextItem = normalizarProcessoItem(data as ProcessoAcompanhamento);
+
+    startTransition(() => {
+      setProcessItems((current) => {
+        const withoutCurrent = current.filter((item) => item.id !== nextItem.id);
+        return ordenarProcessos([...withoutCurrent, nextItem]);
+      });
+    });
+  }
+
+  async function updateProcessParcelas(id: string, parcelasEntregues: boolean[]) {
+    const supabase = getSupabaseClient();
+    const currentItem = processItems.find((item) => item.id === id);
+
+    if (!currentItem) {
+      throw new Error('Processo não encontrado na lista atual.');
+    }
+
+    const normalized = normalizarParcelasEntregues(parcelasEntregues, currentItem.total_parcelas);
+    const { error: updateError } = await supabase
+      .from('almox_processos_acompanhamento')
+      .update({ parcelas_entregues: normalized })
+      .eq('id', id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    startTransition(() => {
+      setProcessItems((current) =>
+        current.map((item) => (item.id === id ? { ...item, parcelas_entregues: normalized } : item))
+      );
+    });
+  }
+
+  async function setProcessIgnored(id: string, ignorado: boolean) {
+    const supabase = getSupabaseClient();
+    const { error: updateError } = await supabase
+      .from('almox_processos_acompanhamento')
+      .update({ ignorado })
+      .eq('id', id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    startTransition(() => {
+      setProcessItems((current) => current.map((item) => (item.id === id ? { ...item, ignorado } : item)));
+    });
+  }
+
+  async function deleteProcessItem(id: string) {
+    const supabase = getSupabaseClient();
+    const { error: updateError } = await supabase
+      .from('almox_processos_acompanhamento')
+      .update({ ativo: false })
+      .eq('id', id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    startTransition(() => {
+      setProcessItems((current) => current.filter((item) => item.id !== id));
+    });
+  }
+
   useEffect(() => {
     mountedRef.current = true;
 
@@ -825,6 +1114,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         setRows(cached.value.rows);
         setBlacklistItems(cached.value.blacklistItems);
         setCmmExceptionItems(cached.value.cmmExceptionItems ?? []);
+        setProcessItems(cached.value.processItems ?? []);
       });
       setUsingCachedData(true);
       setLastRefreshAt(new Date(cached.savedAt).toISOString());
@@ -965,8 +1255,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       rows,
       blacklistItems,
       cmmExceptionItems,
+      processItems,
     });
-  }, [rows, blacklistItems, cmmExceptionItems]);
+  }, [rows, blacklistItems, cmmExceptionItems, processItems]);
 
   return (
     <AlmoxDataContext.Provider
@@ -989,6 +1280,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         cmmExceptionItems,
         lowConsumptionCandidates,
         cmmExceptionSummary,
+        processItems,
         systemConfig,
         systemConfigLoading,
         systemConfigSaving,
@@ -999,10 +1291,16 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         saveSystemConfig,
         findHmsaProductNameByCode,
         findHmsaProductCategoryByCode,
+        findHmsaProductByBionexoCode,
+        lookupHmsaProductByBionexoCode,
         addBlacklistItem,
         removeBlacklistItem,
         addCmmExceptionItem,
         removeCmmExceptionItem,
+        saveProcessItem,
+        updateProcessParcelas,
+        setProcessIgnored,
+        deleteProcessItem,
         emailConfig,
         refresh,
         syncBase,

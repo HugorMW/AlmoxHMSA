@@ -1,6 +1,6 @@
-import { Action, Level } from './types';
+import { Action, CategoriaMaterial, Level, ProcessoTipo } from './types';
 
-export type ConfiguracaoSistema = {
+type ConfiguracaoSistemaBase = {
   criticoDias: number;
   altoDias: number;
   medioDias: number;
@@ -18,7 +18,81 @@ export type ConfiguracaoSistema = {
   excluirCmmMenorQueUm: boolean;
 };
 
-export const configuracaoSistemaPadrao: ConfiguracaoSistema = {
+export const PROCESSO_TOTAL_PARCELAS_MAX = 6;
+
+type ProcessoPrazoCategoriaSlug = 'MaterialHospitalar' | 'MaterialFarmacologico';
+type ProcessoPrazoTipoSlug = 'Arp' | 'Simplificado' | 'Excepcional';
+type ProcessoPrazoParcelaNumero = 1 | 2 | 3 | 4 | 5 | 6;
+
+export type ProcessoPrazoParcelaKey =
+  `processo${ProcessoPrazoCategoriaSlug}${ProcessoPrazoTipoSlug}Parcela${ProcessoPrazoParcelaNumero}DiasUteis`;
+
+export type ConfiguracaoSistema = ConfiguracaoSistemaBase & Record<ProcessoPrazoParcelaKey, number>;
+
+export const processoPrazoCategorias = [
+  { categoria: 'material_hospitalar', label: 'Materiais', slug: 'MaterialHospitalar' },
+  { categoria: 'material_farmacologico', label: 'Medicamentos', slug: 'MaterialFarmacologico' },
+] as const satisfies readonly { categoria: CategoriaMaterial; label: string; slug: ProcessoPrazoCategoriaSlug }[];
+
+export const processoPrazoTipos = [
+  { tipo: 'ARP', label: 'ARP', slug: 'Arp' },
+  { tipo: 'Processo Simplificado', label: 'Processo Simplificado', slug: 'Simplificado' },
+  { tipo: 'Processo Excepcional', label: 'Processo Excepcional', slug: 'Excepcional' },
+] as const satisfies readonly { tipo: ProcessoTipo; label: string; slug: ProcessoPrazoTipoSlug }[];
+
+export const processoPrazoParcelaNumeros = [1, 2, 3, 4, 5, 6] as const;
+
+const processoPrazoPadraoPorParcela: Record<ProcessoPrazoParcelaNumero, number> = {
+  1: 5,
+  2: 45,
+  3: 85,
+  4: 125,
+  5: 165,
+  6: 205,
+};
+
+const categoriaSlugByValue: Record<CategoriaMaterial, ProcessoPrazoCategoriaSlug> = {
+  material_hospitalar: 'MaterialHospitalar',
+  material_farmacologico: 'MaterialFarmacologico',
+};
+
+const tipoSlugByValue: Record<ProcessoTipo, ProcessoPrazoTipoSlug> = {
+  ARP: 'Arp',
+  'Processo Simplificado': 'Simplificado',
+  'Processo Excepcional': 'Excepcional',
+};
+
+export function getProcessoPrazoParcelaKey(
+  categoria: CategoriaMaterial,
+  tipo: ProcessoTipo,
+  parcela: ProcessoPrazoParcelaNumero
+): ProcessoPrazoParcelaKey {
+  return `processo${categoriaSlugByValue[categoria]}${tipoSlugByValue[tipo]}Parcela${parcela}DiasUteis`;
+}
+
+export const processoPrazoParcelaDefinitions = processoPrazoCategorias.flatMap((categoria) =>
+  processoPrazoTipos.flatMap((tipo) =>
+    processoPrazoParcelaNumeros.map((parcela) => ({
+      categoria: categoria.categoria,
+      categoriaLabel: categoria.label,
+      tipo: tipo.tipo,
+      tipoLabel: tipo.label,
+      parcela,
+      key: getProcessoPrazoParcelaKey(categoria.categoria, tipo.tipo, parcela),
+    }))
+  )
+);
+
+function criarProcessoPrazosPadrao() {
+  return Object.fromEntries(
+    processoPrazoParcelaDefinitions.map((definition) => [
+      definition.key,
+      processoPrazoPadraoPorParcela[definition.parcela],
+    ])
+  ) as Record<ProcessoPrazoParcelaKey, number>;
+}
+
+const configuracaoSistemaBasePadrao: ConfiguracaoSistemaBase = {
   criticoDias: 7,
   altoDias: 15,
   medioDias: 30,
@@ -36,6 +110,11 @@ export const configuracaoSistemaPadrao: ConfiguracaoSistema = {
   excluirCmmMenorQueUm: false,
 };
 
+export const configuracaoSistemaPadrao: ConfiguracaoSistema = {
+  ...configuracaoSistemaBasePadrao,
+  ...criarProcessoPrazosPadrao(),
+};
+
 export type ConfiguracaoSistemaKey = keyof ConfiguracaoSistema;
 
 export type ConfiguracaoSistemaValidationIssue = {
@@ -45,7 +124,11 @@ export type ConfiguracaoSistemaValidationIssue = {
 
 export const configuracaoSistemaKeys = Object.keys(configuracaoSistemaPadrao) as ConfiguracaoSistemaKey[];
 
-export const configuracaoSistemaLabels: Record<ConfiguracaoSistemaKey, string> = {
+export const processoParcelaPrazoKeys = processoPrazoParcelaDefinitions.map(
+  (definition) => definition.key
+) as ProcessoPrazoParcelaKey[];
+
+const configuracaoSistemaBaseLabels: Record<keyof ConfiguracaoSistemaBase, string> = {
   criticoDias: 'Crítico até',
   altoDias: 'Alto até',
   medioDias: 'Médio até',
@@ -63,6 +146,16 @@ export const configuracaoSistemaLabels: Record<ConfiguracaoSistemaKey, string> =
   excluirCmmMenorQueUm: 'Ocultar itens com consumo mensal menor que 1',
 };
 
+export const configuracaoSistemaLabels: Record<ConfiguracaoSistemaKey, string> = {
+  ...configuracaoSistemaBaseLabels,
+  ...Object.fromEntries(
+    processoPrazoParcelaDefinitions.map((definition) => [
+      definition.key,
+      `${definition.categoriaLabel} · ${definition.tipoLabel} · Parcela ${definition.parcela}`,
+    ])
+  ),
+} as Record<ConfiguracaoSistemaKey, string>;
+
 const integerKeys = new Set<ConfiguracaoSistemaKey>([
   'criticoDias',
   'altoDias',
@@ -76,6 +169,7 @@ const integerKeys = new Set<ConfiguracaoSistemaKey>([
   'podeEmprestarDias',
   'doadorSeguroDias',
   'pisoDoadorAposEmprestimoDias',
+  ...processoParcelaPrazoKeys,
 ]);
 
 const fieldBounds: Partial<Record<ConfiguracaoSistemaKey, { min: number; max: number }>> = {
@@ -93,6 +187,9 @@ const fieldBounds: Partial<Record<ConfiguracaoSistemaKey, { min: number; max: nu
   pisoDoadorAposEmprestimoDias: { min: 1, max: 365 },
   alvoTransferenciaCmm: { min: 0, max: 2 },
   mesesCompraSugerida: { min: 0.1, max: 24 },
+  ...Object.fromEntries(
+    processoParcelaPrazoKeys.map((key) => [key, { min: 1, max: 365 }])
+  ),
 };
 
 function parseConfigNumber(value: unknown, fallback: number) {
@@ -232,11 +329,50 @@ export function validarConfiguracaoSistema(config: ConfiguracaoSistema): Configu
     });
   }
 
+  for (const categoria of processoPrazoCategorias) {
+    for (const tipo of processoPrazoTipos) {
+      const keys = processoPrazoParcelaNumeros.map((parcela) =>
+        getProcessoPrazoParcelaKey(categoria.categoria, tipo.tipo, parcela)
+      );
+
+      for (let index = 1; index < keys.length; index += 1) {
+        const previousKey = keys[index - 1];
+        const currentKey = keys[index];
+
+        if (config[previousKey] > config[currentKey]) {
+          issues.push({
+            fields: [previousKey, currentKey],
+            message: `Os prazos de ${categoria.label} em ${tipo.label} precisam seguir a ordem da parcela 1 até a parcela 6.`,
+          });
+          break;
+        }
+      }
+    }
+  }
+
   return issues;
 }
 
 export function getLimiteCompraDias(config: ConfiguracaoSistema) {
   return config.comprarDias;
+}
+
+export function getProcessoParcelasDiasUteis(
+  config: ConfiguracaoSistema,
+  categoria: CategoriaMaterial,
+  tipo: ProcessoTipo
+) {
+  return processoPrazoParcelaNumeros.map((parcela) => config[getProcessoPrazoParcelaKey(categoria, tipo, parcela)]);
+}
+
+export function getProcessoParcelaDiasUteis(
+  config: ConfiguracaoSistema,
+  categoria: CategoriaMaterial,
+  tipo: ProcessoTipo,
+  index: number
+) {
+  const safeIndex = Math.min(Math.max(Math.floor(index), 0), PROCESSO_TOTAL_PARCELAS_MAX - 1);
+  return getProcessoParcelasDiasUteis(config, categoria, tipo)[safeIndex];
 }
 
 export function configuracaoSistemaIgual(left: ConfiguracaoSistema, right: ConfiguracaoSistema) {

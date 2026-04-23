@@ -14,6 +14,8 @@ export type Priority = 'URGENTE' | 'ALTA' | 'NORMAL';
 export type RuptureRisk = 'RISCO ALTO' | 'RISCO MÉDIO' | 'ESTÁVEL';
 export type NotaFiscalStatusSincronizacao = 'ativo' | 'alterado' | 'removido_no_siscore' | 'reativado';
 export type NotaFiscalStatusConferencia = 'ok' | 'nota_com_item_duplicado';
+export type ProcessoTipo = 'ARP' | 'Processo Simplificado' | 'Processo Excepcional';
+export type ProcessoStatus = 'andamento' | 'atrasado' | 'concluido';
 
 export interface Product {
   product_code: string;
@@ -145,6 +147,44 @@ export interface LowConsumptionCandidate {
   cmm: number;
   estoque_atual: number;
 }
+
+export interface ProcessoAcompanhamento {
+  id?: string;
+  categoria_material: CategoriaMaterial;
+  cod_bionexo: string;
+  cd_produto: string;
+  ds_produto: string;
+  numero_processo: string;
+  edocs: string;
+  marca: string;
+  tipo_processo: ProcessoTipo;
+  fornecedor: string;
+  data_resgate: string | null;
+  total_parcelas: number;
+  parcelas_entregues: boolean[];
+  critico: boolean;
+  ignorado: boolean;
+  ativo?: boolean;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export interface ProcessoProdutoLookup {
+  cod_bionexo: string;
+  cd_produto: string;
+  ds_produto: string;
+  categoria_material: CategoriaMaterial;
+  estoque_atual?: number;
+  suficiencia_em_dias?: number;
+}
+
+export type ProcessoSaveInput = Omit<
+  ProcessoAcompanhamento,
+  'id' | 'ignorado' | 'ativo' | 'criado_em' | 'atualizado_em'
+> & {
+  id?: string;
+  ignorado?: boolean;
+};
 
 export interface NotaFiscalResumo {
   nota_fiscal_id: string;

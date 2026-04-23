@@ -20,6 +20,7 @@ const navigationItems: {
   { href: '/products' as Href, label: 'Produtos', hint: 'Carteira', match: '/products', icon: 'products' },
   { href: '/loans' as Href, label: 'Emprést.', hint: 'Redistribuição', match: '/loans', icon: 'loans' },
   { href: '/orders' as Href, label: 'Pedidos', hint: 'Reposição', match: '/orders', icon: 'orders' },
+  { href: '/processes' as Href, label: 'Processos', hint: 'Prazos', match: '/processes', icon: 'processes' },
   { href: '/consumo' as Href, label: 'Consumo', hint: 'Mês atual', match: '/consumo', icon: 'consumo' },
   { href: '/invoices' as Href, label: 'Notas', hint: 'Fiscais', match: '/invoices', icon: 'receipt' },
   { href: '/opme' as Href, label: 'OPME', hint: 'Especiais', match: '/opme', icon: 'opme' },
@@ -48,6 +49,7 @@ export function AppShell() {
   const currentItem =
     navigationItems.find((item) => pathname === item.match || (item.match !== '/' && pathname.startsWith(item.match))) ??
     navigationItems[0];
+  const isProcessRoute = pathname === '/processes' || pathname.startsWith('/processes/');
   const materialOptions: { label: string; value: FiltroCategoriaMaterial }[] = [
     { label: 'Todos', value: 'todos' },
     { label: 'Hospitalar', value: 'material_hospitalar' },
@@ -342,8 +344,17 @@ export function AppShell() {
               </View>
             </View>
 
-            <View style={[styles.mainColumn, { paddingHorizontal: shellHorizontalPadding }]}>
-              <View style={[styles.contentInner, { maxWidth: shellMaxWidth }]}>
+            <View
+              style={[
+                styles.mainColumn,
+                isProcessRoute ? styles.mainColumnFullBleed : null,
+                { paddingHorizontal: isProcessRoute ? 0 : shellHorizontalPadding },
+              ]}>
+              <View
+                style={[
+                  styles.contentInner,
+                  isProcessRoute ? styles.contentInnerFullBleed : { maxWidth: shellMaxWidth },
+                ]}>
                 <Slot />
               </View>
             </View>
@@ -789,9 +800,16 @@ const styles = StyleSheet.create({
     minWidth: 0,
     paddingTop: almoxTheme.spacing.sm,
   },
+  mainColumnFullBleed: {
+    paddingTop: 0,
+  },
   contentInner: {
     flex: 1,
     width: '100%',
     alignSelf: 'center',
+  },
+  contentInnerFullBleed: {
+    maxWidth: '100%',
+    alignSelf: 'stretch',
   },
 });

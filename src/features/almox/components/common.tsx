@@ -19,6 +19,7 @@ type IconName =
   | 'products'
   | 'loans'
   | 'orders'
+  | 'processes'
   | 'blacklist'
   | 'settings'
   | 'refresh'
@@ -35,6 +36,9 @@ type IconName =
   | 'download'
   | 'mail'
   | 'eye'
+  | 'eyeOff'
+  | 'edit'
+  | 'filter'
   | 'send'
   | 'save'
   | 'bell'
@@ -62,6 +66,7 @@ const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = 
   products: 'package-variant-closed',
   loans: 'swap-horizontal',
   orders: 'cart-outline',
+  processes: 'timeline-clock-outline',
   blacklist: 'playlist-remove',
   settings: 'cog-outline',
   refresh: 'refresh',
@@ -78,6 +83,9 @@ const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = 
   download: 'download',
   mail: 'email-outline',
   eye: 'eye-outline',
+  eyeOff: 'eye-off-outline',
+  edit: 'pencil-outline',
+  filter: 'filter-variant',
   send: 'send-outline',
   save: 'content-save-outline',
   bell: 'bell-outline',

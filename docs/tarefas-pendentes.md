@@ -589,3 +589,42 @@ Cada execução deve ter um resumo geral e, quando possível, detalhes por categ
 - Ajustar o Dashboard para trocar **Base atualizada em** por **Última mudança nos dados**.
 - Adicionar **Última conferência no SISCORE** com origem e resultado da última execução.
 - Validar execução agendada, execução manual, sem alteração, falha e sucesso parcial.
+
+### [ ] 6.4 Corrigir timeout na leitura da base do Supabase
+
+**Contexto**
+
+Ainda aparece a mensagem técnica **`canceling statement due to statement timeout`** durante a leitura da base. Junto dela, o app mostra a mensagem **"Os últimos dados carregados continuam visíveis enquanto a conexão não normaliza."**
+
+Isso indica que a tela consegue manter dados anteriores visíveis, o que é bom para não deixar o usuário sem informação, mas a causa do timeout ainda precisa ser tratada. O problema não deve ser resolvido apenas com texto amigável: é necessário reduzir a chance de a consulta estourar o limite de execução no Supabase.
+
+**Por que fazer**
+
+- O usuário não deve ver uma mensagem técnica em inglês.
+- A aplicação precisa diferenciar falha temporária de leitura, consulta pesada e ausência real de dados.
+- O fallback com dados carregados anteriormente é útil, mas não pode esconder um problema recorrente de performance.
+- Timeouts recorrentes podem consumir recursos do Supabase e piorar a experiência em horários de uso.
+
+**Proposta**
+
+Investigar quais consultas estão causando o timeout e ajustar o fluxo de leitura para ser mais leve, previsível e amigável.
+
+**Comportamento esperado**
+
+- Quando houver timeout, o usuário vê uma mensagem simples, como **"A base demorou para responder. Mantivemos os últimos dados carregados enquanto tentamos atualizar novamente."**
+- O erro técnico completo fica apenas em log/debug.
+- A tela continua usando cache ou última leitura válida quando disponível.
+- O app tenta atualizar novamente sem recarregar tudo de forma agressiva.
+- As consultas principais devem ficar abaixo do limite de tempo do Supabase.
+
+**Pendências técnicas**
+
+- Identificar exatamente qual chamada gera o timeout: `almox_estoque_atual`, configurações, exclusões, exceções de CMM, processos ou outra consulta.
+- Medir tempo e volume das consultas feitas no `almox-provider.tsx`.
+- Revisar paginação interna de `loadEstoqueAtualRows()` e avaliar reduzir o tamanho de página ou trocar a estratégia de leitura.
+- Confirmar se a view `public.almox_estoque_atual` ainda está usando índices adequados depois das novas telas e filtros.
+- Criar logs simples no frontend/provider para diferenciar timeout, erro de rede e erro de permissão.
+- Traduzir/normalizar mensagens técnicas vindas do Supabase antes de exibir ao usuário.
+- Avaliar uma API/view resumida para o Dashboard, evitando carregar toda a base quando a tela só precisa de indicadores.
+- Garantir que o cache local seja usado com clareza quando a leitura falhar.
+- Validar o comportamento com conexão lenta, timeout e leitura normal.
