@@ -59,7 +59,8 @@ type IconName =
   | 'check'
   | 'logout'
   | 'opme'
-  | 'consumo';
+  | 'consumo'
+  | 'monitor';
 
 const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = {
   dashboard: 'view-dashboard-outline',
@@ -107,6 +108,7 @@ const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = 
   logout: 'logout',
   opme: 'medical-bag',
   consumo: 'speedometer',
+  monitor: 'monitor-dashboard',
 };
 
 type ButtonTone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';

@@ -367,6 +367,10 @@ Determinados usuários ficam responsáveis por determinadas classificações. As
 
 Essa regra também se aplica às exclusões automáticas e exceções, porque elas podem afetar apenas uma classificação específica, como **Material Hospitalar** ou **Farmacológico**.
 
+**Observação**
+
+A mesma tabela de permissões deve receber a dimensão **unidade** descrita em 5.6. O modelo final combina `usuário × classificação × unidade` para cada escopo editável.
+
 **Proposta**
 
 Criar controle de permissão para definir quais usuários podem alterar configurações, exclusões e exceções por classificação.
@@ -404,6 +408,10 @@ Exemplos:
 **Contexto**
 
 A tela OPME deve ser acessível apenas para usuários autorizados.
+
+**Observação**
+
+Esta regra deve ser absorvida pela 5.5 (Permissões por tela). OPME vira apenas mais uma chave no modelo genérico, sem tratamento especial.
 
 **Proposta**
 

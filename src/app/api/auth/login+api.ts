@@ -1,5 +1,8 @@
 import { autenticarNoSiscore, SiscoreAuthError } from '@/server/siscore-auth';
-import { salvarCredencialSiscoreUsuario } from '@/server/siscore-credential-store';
+import {
+  registrarAcessoSiscoreUsuario,
+  salvarCredencialSiscoreUsuario,
+} from '@/server/siscore-credential-store';
 import { criarHeaderSetCookieDeSessao, criarSessionToken } from '@/server/session-cookie';
 
 export async function POST(request: Request) {
@@ -26,6 +29,13 @@ export async function POST(request: Request) {
     });
 
     await salvarCredencialSiscoreUsuario({ usuario, senha });
+
+    registrarAcessoSiscoreUsuario(session.usuario).catch((rpcError: unknown) => {
+      console.warn(
+        '[auth/login] Falha ao registrar ultimo acesso do usuario.',
+        rpcError instanceof Error ? rpcError.message : rpcError
+      );
+    });
 
     const token = criarSessionToken(session.usuario);
 

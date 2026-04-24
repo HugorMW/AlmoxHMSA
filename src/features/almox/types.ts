@@ -15,7 +15,7 @@ export type RuptureRisk = 'RISCO ALTO' | 'RISCO MÉDIO' | 'ESTÁVEL';
 export type NotaFiscalStatusSincronizacao = 'ativo' | 'alterado' | 'removido_no_siscore' | 'reativado';
 export type NotaFiscalStatusConferencia = 'ok' | 'nota_com_item_duplicado';
 export type ProcessoTipo = 'ARP' | 'Processo Simplificado' | 'Processo Excepcional';
-export type ProcessoStatus = 'andamento' | 'atrasado' | 'concluido';
+export type ProcessoStatus = 'andamento' | 'atrasado' | 'concluido' | 'cancelado';
 
 export interface Product {
   product_code: string;
@@ -148,6 +148,16 @@ export interface LowConsumptionCandidate {
   estoque_atual: number;
 }
 
+export interface ProcessoParcelaDetalhe {
+  numero: number;
+  entregue: boolean;
+  data_entrega: string | null;
+  adiamento_dias_uteis: number;
+  empresa_notificada: boolean;
+  empresa_notificada_em: string | null;
+  atualizado_em: string | null;
+}
+
 export interface ProcessoAcompanhamento {
   id?: string;
   categoria_material: CategoriaMaterial;
@@ -162,7 +172,9 @@ export interface ProcessoAcompanhamento {
   data_resgate: string | null;
   total_parcelas: number;
   parcelas_entregues: boolean[];
+  parcelas_detalhes: ProcessoParcelaDetalhe[];
   critico: boolean;
+  cancelado: boolean;
   ignorado: boolean;
   ativo?: boolean;
   criado_em?: string;

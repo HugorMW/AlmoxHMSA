@@ -1,26 +1,28 @@
-import { Redirect, useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Redirect, useRouter } from "expo-router";
+import React, { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { useAuth } from '@/features/auth/auth-provider';
 import {
   ActionButton,
   FieldInput,
   FormField,
   InfoBanner,
-} from '@/features/almox/components/common';
-import { almoxTheme } from '@/features/almox/tokens';
+} from "@/features/almox/components/common";
+import { almoxTheme } from "@/features/almox/tokens";
+import { useAuth } from "@/features/auth/auth-provider";
 
 export default function LoginScreen() {
   const router = useRouter();
   const { login, status } = useAuth();
-  const [usuario, setUsuario] = useState('');
-  const [senha, setSenha] = useState('');
+  const [usuario, setUsuario] = useState("");
+  const [senha, setSenha] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const errorLines = error ? error.split('\n').filter((line) => line.trim().length > 0) : [];
+  const errorLines = error
+    ? error.split("\n").filter((line) => line.trim().length > 0)
+    : [];
 
-  if (status === 'authenticated') {
+  if (status === "authenticated") {
     return <Redirect href="/" />;
   }
 
@@ -34,9 +36,13 @@ export default function LoginScreen() {
 
     try {
       await login(usuario, senha);
-      router.replace('/');
+      router.replace("/");
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : 'Falha ao autenticar no SISCORE.');
+      setError(
+        loginError instanceof Error
+          ? loginError.message
+          : "Falha ao autenticar no SISCORE.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -56,7 +62,8 @@ export default function LoginScreen() {
             <Text style={styles.brandEyebrow}>Central logística HMSA</Text>
             <Text style={styles.title}>Entrar no painel</Text>
             <Text style={styles.subtitle}>
-              Use seu usuário do SISCORE para liberar o acesso ao painel operacional.
+              Use seu usuário do SISCORE para liberar o acesso ao painel
+              operacional.
             </Text>
           </View>
         </View>
@@ -67,7 +74,8 @@ export default function LoginScreen() {
             {errorLines.map((line, index) => (
               <Text
                 key={`${index}-${line}`}
-                style={index === 0 ? styles.errorPrimary : styles.errorDetail}>
+                style={index === 0 ? styles.errorPrimary : styles.errorDetail}
+              >
                 {index === 0 ? line : `• ${line}`}
               </Text>
             ))}
@@ -110,14 +118,17 @@ export default function LoginScreen() {
 
         <View style={styles.actions}>
           <ActionButton
-            label={submitting ? 'Validando acesso...' : 'Entrar'}
+            label={submitting ? "Validando acesso..." : "Entrar"}
             tone="primary"
             onPress={() => void handleSubmit()}
             disabled={submitting || !usuario.trim() || !senha.trim()}
           />
         </View>
 
-        <Pressable onPress={() => router.replace('/')} style={styles.footerLink}>
+        <Pressable
+          onPress={() => router.replace("/")}
+          style={styles.footerLink}
+        >
           <Text style={styles.footerText}>Voltar para a rota principal</Text>
         </Pressable>
       </View>
@@ -128,14 +139,14 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: almoxTheme.spacing.lg,
     backgroundColor: almoxTheme.colors.canvas,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   glow: {
-    position: 'absolute',
+    position: "absolute",
     width: 280,
     height: 280,
     borderRadius: 999,
@@ -152,7 +163,7 @@ const styles = StyleSheet.create({
     backgroundColor: almoxTheme.colors.emerald,
   },
   card: {
-    width: '100%',
+    width: "100%",
     maxWidth: 460,
     borderRadius: almoxTheme.radii.lg,
     borderWidth: 1,
@@ -167,22 +178,22 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   brandRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     gap: almoxTheme.spacing.md,
   },
   brandMark: {
     width: 52,
     height: 52,
     borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: almoxTheme.colors.brandStrong,
   },
   brandLetter: {
     color: almoxTheme.colors.white,
     fontSize: 24,
-    fontWeight: '900',
+    fontWeight: "900",
   },
   brandText: {
     flex: 1,
@@ -191,14 +202,14 @@ const styles = StyleSheet.create({
   brandEyebrow: {
     color: almoxTheme.colors.brand,
     fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
+    fontWeight: "700",
+    textTransform: "uppercase",
     letterSpacing: 0.8,
   },
   title: {
     color: almoxTheme.colors.text,
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: "800",
     fontFamily: almoxTheme.typography.display,
   },
   subtitle: {
@@ -212,15 +223,15 @@ const styles = StyleSheet.create({
   errorCard: {
     borderRadius: almoxTheme.radii.md,
     borderWidth: 1,
-    borderColor: '#efb4c1',
-    backgroundColor: '#fff0f3',
+    borderColor: "#efb4c1",
+    backgroundColor: "#fff0f3",
     padding: almoxTheme.spacing.md,
     gap: almoxTheme.spacing.xs,
   },
   errorTitle: {
-    color: '#b4234a',
+    color: "#b4234a",
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   errorPrimary: {
     color: almoxTheme.colors.text,
@@ -236,11 +247,11 @@ const styles = StyleSheet.create({
     gap: almoxTheme.spacing.sm,
   },
   footerLink: {
-    alignSelf: 'center',
+    alignSelf: "center",
   },
   footerText: {
     color: almoxTheme.colors.brandStrong,
     fontSize: 12,
-    textDecorationLine: 'underline',
+    textDecorationLine: "underline",
   },
 });

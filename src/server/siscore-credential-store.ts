@@ -132,3 +132,19 @@ export async function registrarUsoCredencialSiscoreUsuario(usuario: string) {
     throw new Error(`Supabase RPC registrar_uso_credencial_siscore_usuario falhou: ${error.message}`);
   }
 }
+
+export async function registrarAcessoSiscoreUsuario(usuario: string) {
+  const usuarioChave = normalizarUsuarioSiscore(usuario);
+  if (!usuarioChave) {
+    return;
+  }
+
+  const supabase = getSupabaseAdmin() as any;
+  const { error } = await supabase.rpc('registrar_acesso_siscore_usuario', {
+    p_siscore_usuario_chave: usuarioChave,
+  });
+
+  if (error) {
+    throw new Error(`Supabase RPC registrar_acesso_siscore_usuario falhou: ${error.message}`);
+  }
+}

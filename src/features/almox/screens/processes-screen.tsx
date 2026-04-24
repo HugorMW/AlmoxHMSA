@@ -1,5 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import { useAlmoxData } from '@/features/almox/almox-provider';
 import {
@@ -15,6 +25,7 @@ import { almoxTheme } from '@/features/almox/tokens';
 import {
   CategoriaMaterial,
   ProcessoAcompanhamento,
+  ProcessoParcelaDetalhe,
   ProcessoProdutoLookup,
   ProcessoSaveInput,
   ProcessoStatus,
@@ -23,7 +34,7 @@ import {
 import { matchesQuery } from '@/features/almox/utils';
 
 const PROCESS_TYPES: ProcessoTipo[] = ['ARP', 'Processo Simplificado', 'Processo Excepcional'];
-const PROCESS_TABLE_MIN_WIDTH = 1100;
+const PROCESS_TABLE_MIN_WIDTH = 1160;
 
 const processTheme = {
   bg: '#06090f',
@@ -42,6 +53,7 @@ const processTheme = {
   red: '#ff5f5f',
   blue: '#5aafff',
   purple: '#b197fc',
+  slate: '#96a4c5',
   critical: '#ff4444',
   ink: '#04080f',
 };
@@ -62,17 +74,32 @@ const statusMeta: Record<ProcessoStatus, { label: string; color: string; backgro
     color: processTheme.green,
     background: 'rgba(34,211,160,0.11)',
   },
+  cancelado: {
+    label: 'Cancelado',
+    color: processTheme.slate,
+    background: 'rgba(150,164,197,0.12)',
+  },
 };
 
 type ProcessoEnriquecido = ProcessoAcompanhamento & {
   status: ProcessoStatus;
   entregues: number;
+  visualParcelas: ProcessoParcelasVisualMap;
 };
+
+type ParcelaVisualDraft = {
+  adiadaDiasUteis: number;
+  empresaNotificada: boolean;
+  empresaNotificadaEm: string | null;
+  dataEntrega: string | null;
+};
+
+type ProcessoParcelasVisualMap = Record<number, ParcelaVisualDraft>;
 
 type ModalState =
   | { type: 'new'; categoria: CategoriaMaterial }
-  | { type: 'edit'; item: ProcessoAcompanhamento }
-  | { type: 'parcelas'; item: ProcessoAcompanhamento }
+  | { type: 'edit'; item: ProcessoEnriquecido }
+  | { type: 'parcelas'; item: ProcessoEnriquecido; selectedIndex: number | null; mode: 'single' | 'summary' }
   | null;
 
 function parseIsoDate(value: string | null | undefined) {
@@ -145,6 +172,97 @@ function getParcelaDueDate(
   );
 }
 
+function getDefaultParcelaVisualDraft(): ParcelaVisualDraft {
+  return {
+    adiadaDiasUteis: 0,
+    empresaNotificada: false,
+    empresaNotificadaEm: null,
+    dataEntrega: null,
+  };
+}
+
+function convertParcelaDetalheToVisualDraft(detalhe?: ProcessoParcelaDetalhe | null): ParcelaVisualDraft {
+  if (!detalhe) {
+    return getDefaultParcelaVisualDraft();
+  }
+
+  return {
+    adiadaDiasUteis: Math.max(0, Math.trunc(Number(detalhe.adiamento_dias_uteis) || 0)),
+    empresaNotificada: detalhe.empresa_notificada === true,
+    empresaNotificadaEm: detalhe.empresa_notificada_em ? formatIsoDateToPtBr(detalhe.empresa_notificada_em) : null,
+    dataEntrega: detalhe.data_entrega ? formatIsoDateToPtBr(detalhe.data_entrega) : null,
+  };
+}
+
+function getProcessItemKey(item: Pick<ProcessoAcompanhamento, 'id' | 'numero_processo' | 'cod_bionexo'>) {
+  return item.id ?? `${item.numero_processo}-${item.cod_bionexo}`;
+}
+
+function createVisualParcelasMap(
+  item: Pick<ProcessoAcompanhamento, 'id' | 'numero_processo' | 'cod_bionexo' | 'total_parcelas' | 'parcelas_detalhes'>,
+  current?: ProcessoParcelasVisualMap
+) {
+  return Object.fromEntries(
+    Array.from({ length: item.total_parcelas }, (_, index) => [
+      index,
+      {
+        ...getDefaultParcelaVisualDraft(),
+        ...convertParcelaDetalheToVisualDraft(item.parcelas_detalhes[index]),
+        ...(current?.[index] ?? {}),
+      },
+    ])
+  ) as ProcessoParcelasVisualMap;
+}
+
+function buildParcelasDetalhesFromVisualState(
+  item: Pick<ProcessoAcompanhamento, 'total_parcelas'>,
+  parcelasEntregues: boolean[],
+  visualState: ProcessoParcelasVisualMap
+): ProcessoParcelaDetalhe[] {
+  return Array.from({ length: item.total_parcelas }, (_, index) => {
+    const current = visualState[index] ?? getDefaultParcelaVisualDraft();
+    const entregue = parcelasEntregues[index] === true;
+    const dataEntrega = current.dataEntrega ? convertPtBrDateToIso(current.dataEntrega) : null;
+    const empresaNotificada = current.empresaNotificada === true;
+    const empresaNotificadaEm = current.empresaNotificadaEm
+      ? convertPtBrDateToIso(current.empresaNotificadaEm)
+      : null;
+
+    return {
+      numero: index + 1,
+      entregue,
+      data_entrega: entregue ? dataEntrega : null,
+      adiamento_dias_uteis: Math.max(0, Math.trunc(current.adiadaDiasUteis || 0)),
+      empresa_notificada: empresaNotificada,
+      empresa_notificada_em: empresaNotificada ? empresaNotificadaEm : null,
+      atualizado_em: new Date().toISOString(),
+    };
+  });
+}
+
+function getParcelaVisualState(item: ProcessoEnriquecido, index: number) {
+  return item.visualParcelas[index] ?? getDefaultParcelaVisualDraft();
+}
+
+function getParcelaAdjustedDueDate(
+  item: Pick<ProcessoAcompanhamento, 'categoria_material' | 'data_resgate' | 'tipo_processo'>,
+  index: number,
+  config: ConfiguracaoSistema,
+  visualState?: ParcelaVisualDraft
+) {
+  const dueDate = getParcelaDueDate(item, index, config);
+  if (!dueDate) {
+    return null;
+  }
+
+  const extraDays = Math.max(0, Math.trunc(visualState?.adiadaDiasUteis ?? 0));
+  if (extraDays === 0) {
+    return dueDate;
+  }
+
+  return addBusinessDays(dueDate, extraDays);
+}
+
 function getParcelaLabel(
   index: number,
   config: ConfiguracaoSistema,
@@ -152,6 +270,89 @@ function getParcelaLabel(
   tipo: ProcessoTipo
 ) {
   return formatBusinessDaysLabel(getProcessoParcelaDiasUteis(config, categoria, tipo, index));
+}
+
+function getTodayPtBrDate() {
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, '0');
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const year = String(today.getFullYear());
+  return `${day}/${month}/${year}`;
+}
+
+function formatPtBrDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) {
+    return digits;
+  }
+  if (digits.length <= 4) {
+    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  }
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function parsePtBrDate(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = formatPtBrDateInput(value);
+  const [dayText, monthText, yearText] = normalized.split('/');
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+
+  if (!day || !month || !year || yearText?.length !== 4) {
+    return null;
+  }
+
+  const parsed = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function convertPtBrDateToIso(value: string | null | undefined) {
+  const parsed = parsePtBrDate(value);
+  if (!parsed) {
+    return null;
+  }
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isValidOptionalPtBrDate(value: string | null | undefined) {
+  if (!value || value.trim().length === 0) {
+    return true;
+  }
+
+  return convertPtBrDateToIso(value) != null;
+}
+
+function formatIsoDateToPtBr(value: string | null | undefined) {
+  return formatDate(parseIsoDate(value));
+}
+
+function formatStoredDateLabel(value: string | null | undefined) {
+  if (!value) {
+    return '-';
+  }
+
+  if (value.includes('/')) {
+    return value;
+  }
+
+  return formatIsoDateToPtBr(value);
 }
 
 function getTodayAtStartOfDay() {
@@ -164,7 +365,15 @@ function countDelivered(item: ProcessoAcompanhamento) {
   return item.parcelas_entregues.filter(Boolean).length;
 }
 
-function computeStatus(item: ProcessoAcompanhamento, config: ConfiguracaoSistema): ProcessoStatus {
+function computeStatus(
+  item: ProcessoAcompanhamento,
+  config: ConfiguracaoSistema,
+  visualParcelas?: ProcessoParcelasVisualMap
+): ProcessoStatus {
+  if (item.cancelado) {
+    return 'cancelado';
+  }
+
   if (countDelivered(item) >= item.total_parcelas) {
     return 'concluido';
   }
@@ -175,13 +384,18 @@ function computeStatus(item: ProcessoAcompanhamento, config: ConfiguracaoSistema
       continue;
     }
 
-    const dueDate = getParcelaDueDate(item, index, config);
+    const dueDate = getParcelaAdjustedDueDate(item, index, config, visualParcelas?.[index]);
     if (dueDate && dueDate < today) {
       return 'atrasado';
     }
   }
 
   return 'andamento';
+}
+
+function getFirstPendingParcelaIndex(item: ProcessoAcompanhamento) {
+  const firstPending = item.parcelas_entregues.findIndex((parcel) => !parcel);
+  return firstPending >= 0 ? firstPending : 0;
 }
 
 function normalizeBionexoCode(value: string) {
@@ -198,6 +412,10 @@ function stripBionexoPrefix(value: string) {
   return value.replace(/^I\s*-\s*/i, '').trim();
 }
 
+function normalizeProductCode(value: string) {
+  return String(value ?? '').trim();
+}
+
 function getProcessTypeColor(tipo: ProcessoTipo) {
   if (tipo === 'ARP') {
     return processTheme.accent;
@@ -210,6 +428,26 @@ function getProcessTypeColor(tipo: ProcessoTipo) {
   return processTheme.blue;
 }
 
+function getProcessListRank(item: Pick<ProcessoEnriquecido, 'status' | 'critico'>) {
+  if (item.status === 'cancelado') {
+    return 4;
+  }
+
+  if (item.status === 'concluido') {
+    return 3;
+  }
+
+  if (item.critico) {
+    return 0;
+  }
+
+  if (item.status === 'atrasado') {
+    return 1;
+  }
+
+  return 2;
+}
+
 export default function ProcessesScreen() {
   const {
     processItems,
@@ -218,11 +456,13 @@ export default function ProcessesScreen() {
     refreshProcessItems,
     error,
     systemConfig,
+    findHmsaProductByProductCode,
     findHmsaProductByBionexoCode,
+    lookupHmsaProductByProductCode,
     lookupHmsaProductByBionexoCode,
     saveProcessItem,
     updateProcessParcelas,
-    setProcessIgnored,
+    setProcessCanceled,
     deleteProcessItem,
   } = useAlmoxData();
   const [categoria, setCategoria] = useState<CategoriaMaterial>('material_hospitalar');
@@ -230,10 +470,10 @@ export default function ProcessesScreen() {
   const [tipoFilter, setTipoFilter] = useState<ProcessoTipo | 'todos'>('todos');
   const [statusFilter, setStatusFilter] = useState<ProcessoStatus | 'todos'>('todos');
   const [showFilters, setShowFilters] = useState(false);
-  const [showIgnored, setShowIgnored] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger' | 'info'; message: string } | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [parcelasVisualState, setParcelasVisualState] = useState<Record<string, ProcessoParcelasVisualMap>>({});
 
   useEffect(() => {
     let active = true;
@@ -255,10 +495,11 @@ export default function ProcessesScreen() {
     () =>
       processItems.map((item) => ({
         ...item,
-        status: computeStatus(item, systemConfig),
+        visualParcelas: createVisualParcelasMap(item, parcelasVisualState[getProcessItemKey(item)]),
+        status: computeStatus(item, systemConfig, parcelasVisualState[getProcessItemKey(item)]),
         entregues: countDelivered(item),
       })),
-    [processItems, systemConfig]
+    [parcelasVisualState, processItems, systemConfig]
   );
 
   const categoryItems = useMemo(
@@ -268,7 +509,7 @@ export default function ProcessesScreen() {
 
   const visibleItems = useMemo(() => {
     return categoryItems
-      .filter((item) => item.ignorado === showIgnored)
+      .filter((item) => !item.ignorado)
       .filter((item) => {
         if (tipoFilter !== 'todos' && item.tipo_processo !== tipoFilter) {
           return false;
@@ -293,12 +534,11 @@ export default function ProcessesScreen() {
       })
       .sort(
         (left, right) =>
-          Number(right.critico) - Number(left.critico) ||
-          Number(left.status !== 'atrasado') - Number(right.status !== 'atrasado') ||
+          getProcessListRank(left) - getProcessListRank(right) ||
           String(left.data_resgate ?? '9999-12-31').localeCompare(String(right.data_resgate ?? '9999-12-31')) ||
           left.numero_processo.localeCompare(right.numero_processo, 'pt-BR')
       );
-  }, [categoryItems, search, showIgnored, statusFilter, tipoFilter]);
+  }, [categoryItems, search, statusFilter, tipoFilter]);
 
   const counts = useMemo(
     () => ({
@@ -306,8 +546,8 @@ export default function ProcessesScreen() {
       andamento: categoryItems.filter((item) => !item.ignorado && item.status === 'andamento').length,
       atrasado: categoryItems.filter((item) => !item.ignorado && item.status === 'atrasado').length,
       concluido: categoryItems.filter((item) => !item.ignorado && item.status === 'concluido').length,
-      critico: categoryItems.filter((item) => !item.ignorado && item.critico).length,
-      ignorado: categoryItems.filter((item) => item.ignorado).length,
+      cancelado: categoryItems.filter((item) => !item.ignorado && item.status === 'cancelado').length,
+      critico: categoryItems.filter((item) => !item.ignorado && !item.cancelado && item.critico).length,
     }),
     [categoryItems]
   );
@@ -330,7 +570,14 @@ export default function ProcessesScreen() {
     setSearch('');
     setTipoFilter('todos');
     setStatusFilter('todos');
-    setShowIgnored(false);
+  }
+
+  function applyParcelasVisualState(item: ProcessoAcompanhamento, nextState: ProcessoParcelasVisualMap) {
+    const processKey = getProcessItemKey(item);
+    setParcelasVisualState((current) => ({
+      ...current,
+      [processKey]: createVisualParcelasMap(item, nextState),
+    }));
   }
 
   return (
@@ -361,7 +608,6 @@ export default function ProcessesScreen() {
           />
 
           <View style={styles.headerActions}>
-            <DarkButton label="Importar CSV" icon="upload" disabled />
             <DarkButton
               label="Novo processo"
               icon="plus"
@@ -418,6 +664,13 @@ export default function ProcessesScreen() {
             active={statusFilter === 'concluido'}
             onPress={() => setStatusFilter((current) => (current === 'concluido' ? 'todos' : 'concluido'))}
           />
+          <MetricCard
+            label="Cancelados"
+            value={counts.cancelado}
+            color={processTheme.slate}
+            active={statusFilter === 'cancelado'}
+            onPress={() => setStatusFilter((current) => (current === 'cancelado' ? 'todos' : 'cancelado'))}
+          />
           <MetricCard label="Críticos" value={counts.critico} color={processTheme.critical} />
         </View>
 
@@ -434,17 +687,6 @@ export default function ProcessesScreen() {
             icon="filter"
             tone={showFilters ? 'accentSoft' : 'neutral'}
             onPress={() => setShowFilters((current) => !current)}
-          />
-          <DarkButton
-            label={showIgnored ? 'Lista principal' : `Ignorados (${counts.ignorado})`}
-            icon={showIgnored ? 'eye' : 'eyeOff'}
-            tone={showIgnored ? 'dangerSoft' : 'neutral'}
-            onPress={() => {
-              setShowIgnored((current) => !current);
-              setSearch('');
-              setTipoFilter('todos');
-              setStatusFilter('todos');
-            }}
           />
         </View>
 
@@ -471,20 +713,13 @@ export default function ProcessesScreen() {
                   { label: 'Em andamento', value: 'andamento', color: processTheme.amber },
                   { label: 'Atrasado', value: 'atrasado', color: processTheme.red },
                   { label: 'Concluído', value: 'concluido', color: processTheme.green },
+                  { label: 'Cancelado', value: 'cancelado', color: processTheme.slate },
                 ]}
                 value={statusFilter}
                 onChange={setStatusFilter}
               />
             </View>
           </View>
-        ) : null}
-
-        {showIgnored ? (
-          <DarkNotice
-            title="Exibindo processos ignorados"
-            description="Estes processos ficam ocultos da lista principal, mas podem ser restaurados."
-            tone="warning"
-          />
         ) : null}
 
         {!initialLoadDone || (processItemsLoading && processItems.length === 0) ? (
@@ -495,20 +730,26 @@ export default function ProcessesScreen() {
         ) : visibleItems.length === 0 ? (
           <DarkEmptyState
             title="Nenhum processo encontrado"
-            description="Ajuste os filtros ou cadastre um novo processo com o Cod. Bionexo."
+            description="Ajuste os filtros ou cadastre um novo processo com Cod. Bionexo ou nº do produto."
           />
         ) : (
           <ProcessTable
             items={visibleItems}
-            showIgnored={showIgnored}
             systemConfig={systemConfig}
             onEdit={(item) => setModal({ type: 'edit', item })}
-            onParcelas={(item) => setModal({ type: 'parcelas', item })}
-            onIgnore={(item) =>
+            onOpenParcelas={(item, selectedIndex) =>
+              setModal({
+                type: 'parcelas',
+                item,
+                selectedIndex: selectedIndex ?? null,
+                mode: selectedIndex == null ? 'summary' : 'single',
+              })
+            }
+            onToggleCanceled={(item) =>
               item.id
                 ? void handleAction(
-                    () => setProcessIgnored(item.id!, !item.ignorado),
-                    item.ignorado ? 'Processo restaurado na lista principal.' : 'Processo ignorado na lista principal.'
+                    () => setProcessCanceled(item.id!, !item.cancelado),
+                    item.cancelado ? 'Processo reativado.' : 'Processo marcado como cancelado.'
                   )
                 : undefined
             }
@@ -525,6 +766,8 @@ export default function ProcessesScreen() {
           <LegendDot color={processTheme.red} label="Parcela atrasada" />
           <LegendDot color={processTheme.amber} label="Pendente dentro do prazo" />
           <LegendDot color={processTheme.green} label="Entregue" />
+          <LegendIcon icon="clock" color={processTheme.blue} label="Adiada" />
+          <LegendIcon icon="bell" color={processTheme.purple} label="Empresa notificada" />
           <Text style={styles.legendText}>Prazos em dias úteis conforme classificação e tipo do processo</Text>
         </View>
       </View>
@@ -534,7 +777,9 @@ export default function ProcessesScreen() {
           initial={modal.type === 'edit' ? modal.item : null}
           initialCategoria={modal.type === 'new' ? modal.categoria : modal.item.categoria_material}
           systemConfig={systemConfig}
+          lookupProductByCode={findHmsaProductByProductCode}
           lookupProduct={findHmsaProductByBionexoCode}
+          lookupProductByCodeRemote={lookupHmsaProductByProductCode}
           lookupProductRemote={lookupHmsaProductByBionexoCode}
           onClose={() => setModal(null)}
           onSave={(input) =>
@@ -548,13 +793,29 @@ export default function ProcessesScreen() {
 
       {modal?.type === 'parcelas' ? (
         <ParcelasModal
+          key={`${getProcessItemKey(modal.item)}:${modal.selectedIndex ?? 'summary'}`}
           item={modal.item}
+          mode={modal.mode}
+          initialSelectedIndex={modal.selectedIndex}
           systemConfig={systemConfig}
           onClose={() => setModal(null)}
-          onSave={(parcelasEntregues) =>
+          onApplyVisualState={(nextVisualState) => {
+            applyParcelasVisualState(modal.item, nextVisualState);
+            setFeedback({
+              tone: 'info',
+              message: 'Visual das parcelas aplicado apenas na interface desta sessão.',
+            });
+            setModal(null);
+          }}
+          onSave={(parcelasEntregues, nextVisualState) =>
             modal.item.id
               ? handleAction(async () => {
-                  await updateProcessParcelas(modal.item.id!, parcelasEntregues);
+                  await updateProcessParcelas(
+                    modal.item.id!,
+                    parcelasEntregues,
+                    buildParcelasDetalhesFromVisualState(modal.item, parcelasEntregues, nextVisualState)
+                  );
+                  applyParcelasVisualState(modal.item, nextVisualState);
                   setModal(null);
                 }, 'Parcelas atualizadas com sucesso.')
               : undefined
@@ -603,7 +864,7 @@ function DarkButton({
 }: {
   label: string;
   icon?: React.ComponentProps<typeof AppIcon>['name'];
-  tone?: 'neutral' | 'accent' | 'accentSoft' | 'dangerSoft';
+  tone?: 'neutral' | 'accent' | 'accentSoft' | 'infoSoft' | 'dangerSoft';
   disabled?: boolean;
   loading?: boolean;
   onPress?: () => void;
@@ -627,6 +888,12 @@ function DarkButton({
       borderColor: 'rgba(0,212,160,0.38)',
       color: processTheme.accent,
       iconColor: processTheme.accent,
+    },
+    infoSoft: {
+      backgroundColor: 'rgba(90,175,255,0.1)',
+      borderColor: 'rgba(90,175,255,0.34)',
+      color: processTheme.blue,
+      iconColor: processTheme.blue,
     },
     dangerSoft: {
       backgroundColor: 'rgba(255,95,95,0.1)',
@@ -794,19 +1061,17 @@ function DarkInput(props: React.ComponentProps<typeof TextInput>) {
 
 function ProcessTable({
   items,
-  showIgnored,
   systemConfig,
   onEdit,
-  onParcelas,
-  onIgnore,
+  onOpenParcelas,
+  onToggleCanceled,
   onDelete,
 }: {
   items: ProcessoEnriquecido[];
-  showIgnored: boolean;
   systemConfig: ConfiguracaoSistema;
-  onEdit: (item: ProcessoAcompanhamento) => void;
-  onParcelas: (item: ProcessoAcompanhamento) => void;
-  onIgnore: (item: ProcessoAcompanhamento) => void;
+  onEdit: (item: ProcessoEnriquecido) => void;
+  onOpenParcelas: (item: ProcessoEnriquecido, selectedIndex?: number) => void;
+  onToggleCanceled: (item: ProcessoEnriquecido) => void;
   onDelete: (item: ProcessoAcompanhamento) => void;
 }) {
   const [viewportWidth, setViewportWidth] = useState(0);
@@ -836,11 +1101,10 @@ function ProcessTable({
             <ProcessRow
               key={item.id ?? `${item.numero_processo}-${item.cod_bionexo}`}
               item={item}
-              showIgnored={showIgnored}
               systemConfig={systemConfig}
               onEdit={() => onEdit(item)}
-              onParcelas={() => onParcelas(item)}
-              onIgnore={() => onIgnore(item)}
+              onOpenParcelas={(selectedIndex) => onOpenParcelas(item, selectedIndex)}
+              onToggleCanceled={() => onToggleCanceled(item)}
               onDelete={() => onDelete(item)}
             />
           ))}
@@ -856,19 +1120,17 @@ function ProcessTable({
 
 function ProcessRow({
   item,
-  showIgnored,
   systemConfig,
   onEdit,
-  onParcelas,
-  onIgnore,
+  onOpenParcelas,
+  onToggleCanceled,
   onDelete,
 }: {
   item: ProcessoEnriquecido;
-  showIgnored: boolean;
   systemConfig: ConfiguracaoSistema;
   onEdit: () => void;
-  onParcelas: () => void;
-  onIgnore: () => void;
+  onOpenParcelas: (selectedIndex?: number) => void;
+  onToggleCanceled: () => void;
   onDelete: () => void;
 }) {
   const status = statusMeta[item.status];
@@ -878,24 +1140,33 @@ function ProcessRow({
     <View
       style={[
         styles.tableRow,
-        item.critico ? styles.criticalRow : null,
+        item.cancelado ? styles.canceledRow : item.critico ? styles.criticalRow : null,
         item.status === 'atrasado' ? styles.overdueRow : null,
       ]}>
-      <View style={[styles.tableCellBlock, styles.numberColumn]}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onEdit}
+        style={({ pressed }) => [
+          styles.tableCellBlock,
+          styles.numberColumn,
+          styles.tableCellPressable,
+          pressed ? styles.tableCellPressablePressed : null,
+        ]}>
         <View style={styles.numberLine}>
           {item.critico ? <AppIcon name="alert" size={14} color={processTheme.critical} /> : null}
           <Text style={styles.processNumber}>{item.numero_processo}</Text>
         </View>
         {item.edocs ? <Text style={styles.productMeta}>E-DOCS {item.edocs}</Text> : null}
         <Pill label={item.tipo_processo} color={typeColor} />
-      </View>
+      </Pressable>
 
       <View style={[styles.tableCellBlock, styles.productColumn]}>
         <Text style={styles.productName} numberOfLines={2}>
           {normalizeInlineText(item.ds_produto)}
         </Text>
         <Text style={styles.productMeta} numberOfLines={1}>
-          Produto {item.cd_produto} · Bionexo {item.cod_bionexo}
+          Produto {item.cd_produto}
+          {item.cod_bionexo ? ` · Bionexo ${item.cod_bionexo}` : ' · Sem Cod. Bionexo'}
         </Text>
         <Text style={styles.productMeta} numberOfLines={1}>
           {item.fornecedor || 'Fornecedor não informado'}
@@ -905,16 +1176,24 @@ function ProcessRow({
         </Text>
       </View>
 
-      <View style={[styles.tableCellBlock, styles.dateColumn]}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onEdit}
+        style={({ pressed }) => [
+          styles.tableCellBlock,
+          styles.dateColumn,
+          styles.tableCellPressable,
+          pressed ? styles.tableCellPressablePressed : null,
+        ]}>
         <Text style={styles.dateText}>{formatDate(parseIsoDate(item.data_resgate))}</Text>
         <Pill
           label={`${item.entregues}/${item.total_parcelas} entregues`}
           color={item.entregues >= item.total_parcelas ? processTheme.green : processTheme.amber}
         />
-      </View>
+      </Pressable>
 
       <View style={[styles.tableCellBlock, styles.timelineColumn]}>
-        <ParcelaTimeline item={item} systemConfig={systemConfig} />
+        <ParcelaTimeline item={item} systemConfig={systemConfig} onSelectParcela={onOpenParcelas} />
       </View>
 
       <View style={[styles.tableCellBlock, styles.statusColumn]}>
@@ -922,15 +1201,13 @@ function ProcessRow({
       </View>
 
       <View style={[styles.actionsColumn, styles.actionList]}>
-        <IconButton icon="refresh" label="Atualizar parcelas" color={processTheme.amber} onPress={onParcelas} />
-        {!showIgnored ? (
-          <>
-            <IconButton icon="edit" label="Editar" color={processTheme.blue} onPress={onEdit} />
-            <IconButton icon="eyeOff" label="Ignorar" color={processTheme.muted} onPress={onIgnore} />
-          </>
-        ) : (
-          <IconButton icon="eye" label="Restaurar" color={processTheme.blue} onPress={onIgnore} />
-        )}
+        <IconButton icon="edit" label="Editar" color={processTheme.blue} onPress={onEdit} />
+        <IconButton
+          icon={item.cancelado ? 'refresh' : 'blocked'}
+          label={item.cancelado ? 'Reativar processo' : 'Cancelar processo'}
+          color={item.cancelado ? processTheme.blue : processTheme.slate}
+          onPress={onToggleCanceled}
+        />
         <IconButton icon="trash" label="Excluir" color={processTheme.red} onPress={onDelete} />
       </View>
     </View>
@@ -950,19 +1227,36 @@ function tableColumnStyle(index: number) {
   return columns[index];
 }
 
-function ParcelaTimeline({ item, systemConfig }: { item: ProcessoAcompanhamento; systemConfig: ConfiguracaoSistema }) {
+function ParcelaTimeline({
+  item,
+  systemConfig,
+  onSelectParcela,
+}: {
+  item: ProcessoEnriquecido;
+  systemConfig: ConfiguracaoSistema;
+  onSelectParcela: (selectedIndex: number) => void;
+}) {
   const today = getTodayAtStartOfDay();
 
   return (
     <View style={styles.timeline}>
       {Array.from({ length: item.total_parcelas }, (_, index) => {
         const delivered = item.parcelas_entregues[index] === true;
-        const dueDate = getParcelaDueDate(item, index, systemConfig);
+        const visualState = getParcelaVisualState(item, index);
+        const dueDate = getParcelaAdjustedDueDate(item, index, systemConfig, visualState);
         const overdue = !delivered && dueDate != null && dueDate < today;
         const color = delivered ? processTheme.green : overdue ? processTheme.red : processTheme.amber;
 
         return (
-          <View key={index} style={styles.timelineItem}>
+          <Pressable
+            key={index}
+            onPress={() => onSelectParcela(index)}
+            style={({ pressed }) => [
+              styles.timelineItem,
+              visualState.adiadaDiasUteis > 0 ? styles.timelineItemDelayed : null,
+              visualState.empresaNotificada ? styles.timelineItemNotified : null,
+              pressed ? styles.timelineItemPressed : null,
+            ]}>
             <View style={[styles.timelineDot, { borderColor: color, backgroundColor: `${color}1f` }]}>
               <Text style={[styles.timelineIndex, { color }]}>{index + 1}</Text>
             </View>
@@ -971,8 +1265,28 @@ function ParcelaTimeline({ item, systemConfig }: { item: ProcessoAcompanhamento;
                 P{index + 1} · {getParcelaLabel(index, systemConfig, item.categoria_material, item.tipo_processo)}
               </Text>
               <Text style={[styles.timelineDate, { color }]}>{formatDate(dueDate)}</Text>
+              {visualState.adiadaDiasUteis > 0 || visualState.empresaNotificada ? (
+                <View style={styles.timelineFlags}>
+                  {visualState.adiadaDiasUteis > 0 ? (
+                    <View style={styles.timelineFlag}>
+                      <AppIcon name="clock" size={10} color={processTheme.blue} />
+                      <Text style={styles.timelineFlagText}>+{visualState.adiadaDiasUteis}d</Text>
+                    </View>
+                  ) : null}
+                  {visualState.empresaNotificada ? (
+                    <View style={styles.timelineFlag}>
+                      <AppIcon
+                        name={visualState.empresaNotificada ? 'bell' : 'bellOff'}
+                        size={10}
+                        color={processTheme.purple}
+                      />
+                      <Text style={styles.timelineFlagText}>Notificada</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
-          </View>
+          </Pressable>
         );
       })}
     </View>
@@ -1027,11 +1341,30 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
+function LegendIcon({
+  icon,
+  color,
+  label,
+}: {
+  icon: React.ComponentProps<typeof AppIcon>['name'];
+  color: string;
+  label: string;
+}) {
+  return (
+    <View style={styles.legendItem}>
+      <AppIcon name={icon} size={12} color={color} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
+  );
+}
+
 function ProcessFormModal({
   initial,
   initialCategoria,
   systemConfig,
+  lookupProductByCode,
   lookupProduct,
+  lookupProductByCodeRemote,
   lookupProductRemote,
   onClose,
   onSave,
@@ -1039,79 +1372,151 @@ function ProcessFormModal({
   initial: ProcessoAcompanhamento | null;
   initialCategoria: CategoriaMaterial;
   systemConfig: ConfiguracaoSistema;
+  lookupProductByCode: (cdProduto: string) => ProcessoProdutoLookup | null;
   lookupProduct: (codBionexo: string) => ProcessoProdutoLookup | null;
+  lookupProductByCodeRemote: (cdProduto: string) => Promise<ProcessoProdutoLookup | null>;
   lookupProductRemote: (codBionexo: string) => Promise<ProcessoProdutoLookup | null>;
   onClose: () => void;
   onSave: (input: ProcessoSaveInput) => Promise<void>;
 }) {
   const [codBionexoText, setCodBionexoText] = useState(stripBionexoPrefix(initial?.cod_bionexo ?? ''));
+  const [cdProdutoText, setCdProdutoText] = useState(initial?.cd_produto ?? '');
   const [numeroPedido, setNumeroPedido] = useState(initial?.numero_processo ?? '');
   const [edocs, setEdocs] = useState(initial?.edocs ?? '');
   const [marca, setMarca] = useState(initial?.marca ?? '');
   const [tipoProcesso, setTipoProcesso] = useState<ProcessoTipo>(initial?.tipo_processo ?? 'ARP');
   const [fornecedor, setFornecedor] = useState(initial?.fornecedor ?? '');
-  const [dataResgate, setDataResgate] = useState(initial?.data_resgate ?? '');
+  const [dataResgate, setDataResgate] = useState(
+    initial?.data_resgate ? formatIsoDateToPtBr(initial.data_resgate) : ''
+  );
   const [totalParcelas, setTotalParcelas] = useState(
     Math.min(initial?.total_parcelas ?? 3, PROCESSO_TOTAL_PARCELAS_MAX)
   );
   const [critico, setCritico] = useState(initial?.critico ?? false);
+  const [lookupSource, setLookupSource] = useState<'bionexo' | 'produto' | null>(null);
+  const [lockedFieldHint, setLockedFieldHint] = useState<'bionexo' | 'produto' | null>(null);
   const [saving, setSaving] = useState(false);
   const [remoteLookup, setRemoteLookup] = useState<{
+    mode: 'bionexo' | 'produto' | '';
     code: string;
     loading: boolean;
     product: ProcessoProdutoLookup | null;
     error: string | null;
-  }>({ code: '', loading: false, product: null, error: null });
+  }>({ mode: '', code: '', loading: false, product: null, error: null });
 
   const normalizedCodBionexo = normalizeBionexoCode(codBionexoText);
-  const lookup = normalizedCodBionexo ? lookupProduct(normalizedCodBionexo) : null;
+  const normalizedCdProduto = normalizeProductCode(cdProdutoText);
+  const searchMode: 'bionexo' | 'produto' | null =
+    lookupSource === 'produto'
+      ? normalizedCdProduto
+        ? 'produto'
+        : normalizedCodBionexo
+          ? 'bionexo'
+          : null
+      : lookupSource === 'bionexo'
+        ? normalizedCodBionexo
+          ? 'bionexo'
+          : normalizedCdProduto
+            ? 'produto'
+            : null
+        : normalizedCodBionexo
+          ? 'bionexo'
+          : normalizedCdProduto
+            ? 'produto'
+            : null;
+  const localProductByCode = normalizedCdProduto ? lookupProductByCode(normalizedCdProduto) : null;
+  const localProductByBionexo = normalizedCodBionexo ? lookupProduct(normalizedCodBionexo) : null;
+  const lookup = searchMode === 'produto' ? localProductByCode : localProductByBionexo;
   const initialAsLookup: ProcessoProdutoLookup | null =
-    initial && normalizedCodBionexo === normalizeBionexoCode(initial.cod_bionexo)
+    initial &&
+    ((normalizedCdProduto && normalizedCdProduto === normalizeProductCode(initial.cd_produto)) ||
+      (normalizedCodBionexo && normalizedCodBionexo === normalizeBionexoCode(initial.cod_bionexo)))
       ? {
-          cod_bionexo: initial.cod_bionexo,
+          cod_bionexo: initial.cod_bionexo ?? '',
           cd_produto: initial.cd_produto,
           ds_produto: initial.ds_produto,
           categoria_material: initial.categoria_material,
         }
       : null;
   const remoteProduct =
-    remoteLookup.code === normalizedCodBionexo && !remoteLookup.loading ? remoteLookup.product : null;
-  const remoteLookupLoading = remoteLookup.code === normalizedCodBionexo && remoteLookup.loading;
-  const remoteLookupError = remoteLookup.code === normalizedCodBionexo ? remoteLookup.error : null;
+    remoteLookup.mode === searchMode &&
+    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo) &&
+    !remoteLookup.loading
+      ? remoteLookup.product
+      : null;
+  const remoteLookupLoading =
+    remoteLookup.mode === searchMode &&
+    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo) &&
+    remoteLookup.loading;
+  const remoteLookupError =
+    remoteLookup.mode === searchMode &&
+    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo)
+      ? remoteLookup.error
+      : null;
   const resolvedProduct = lookup ?? remoteProduct ?? initialAsLookup;
+  const bionexoLocked = lookupSource === 'produto' && resolvedProduct != null;
+  const productLocked = lookupSource === 'bionexo' && resolvedProduct != null;
+  const bionexoInputValue = bionexoLocked ? stripBionexoPrefix(resolvedProduct?.cod_bionexo ?? '') : codBionexoText;
+  const productInputValue = productLocked ? resolvedProduct?.cd_produto ?? '' : cdProdutoText;
+  const bionexoLockMessage =
+    lockedFieldHint === 'bionexo'
+      ? 'Campo bloqueado. Apague o nº do produto para liberar a edição do Cod. Bionexo.'
+      : 'Apague o nº do produto para editar o Cod. Bionexo.';
+  const productLockMessage =
+    lockedFieldHint === 'produto'
+      ? 'Campo bloqueado. Apague o Cod. Bionexo para liberar a edição do nº do produto.'
+      : 'Apague o Cod. Bionexo para editar o nº do produto.';
   const hasLocalLookup = lookup != null;
   const previewCategoria = resolvedProduct?.categoria_material ?? initialCategoria;
-  const baseDate = parseIsoDate(dataResgate);
-  const canSave = !!resolvedProduct && numeroPedido.trim().length > 0 && !saving && !remoteLookupLoading;
+  const dataResgateIso = convertPtBrDateToIso(dataResgate);
+  const baseDate = parsePtBrDate(dataResgate);
+  const dataResgateValida = dataResgate.trim().length === 0 || dataResgateIso != null;
+  const canSave =
+    !!resolvedProduct &&
+    numeroPedido.trim().length > 0 &&
+    !saving &&
+    !remoteLookupLoading &&
+    dataResgateValida;
 
   useEffect(() => {
-    if (!normalizedCodBionexo) {
-      setRemoteLookup({ code: '', loading: false, product: null, error: null });
+    const queryCode = searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo;
+
+    if (!searchMode || !queryCode) {
+      setRemoteLookup({ mode: '', code: '', loading: false, product: null, error: null });
       return;
     }
 
     if (hasLocalLookup) {
-      setRemoteLookup({ code: normalizedCodBionexo, loading: false, product: null, error: null });
+      setRemoteLookup({ mode: searchMode, code: queryCode, loading: false, product: null, error: null });
       return;
     }
 
     let cancelled = false;
-    setRemoteLookup({ code: normalizedCodBionexo, loading: true, product: null, error: null });
+    setRemoteLookup({ mode: searchMode, code: queryCode, loading: true, product: null, error: null });
 
     const timer = setTimeout(() => {
-      lookupProductRemote(normalizedCodBionexo)
+      const lookupPromise =
+        searchMode === 'produto'
+          ? lookupProductByCodeRemote(queryCode)
+          : lookupProductRemote(queryCode);
+
+      lookupPromise
         .then((product) => {
           if (!cancelled) {
-            setRemoteLookup({ code: normalizedCodBionexo, loading: false, product, error: null });
+            setRemoteLookup({ mode: searchMode, code: queryCode, loading: false, product, error: null });
           }
         })
         .catch(() => {
           if (!cancelled) {
             setRemoteLookup({
-              code: normalizedCodBionexo,
+              mode: searchMode,
+              code: queryCode,
               loading: false,
               product: null,
-              error: 'Não foi possível consultar a base agora. Tente novamente em instantes.',
+              error:
+                searchMode === 'produto'
+                  ? 'Não foi possível consultar o número do produto agora. Tente novamente em instantes.'
+                  : 'Não foi possível consultar a base agora. Tente novamente em instantes.',
             });
           }
         });
@@ -1121,10 +1526,32 @@ function ProcessFormModal({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [hasLocalLookup, lookupProductRemote, normalizedCodBionexo]);
+  }, [hasLocalLookup, lookupProductByCodeRemote, lookupProductRemote, normalizedCdProduto, normalizedCodBionexo, searchMode]);
 
   function handleCodChange(value: string) {
-    setCodBionexoText(stripBionexoPrefix(value).toUpperCase());
+    const nextValue = stripBionexoPrefix(value).toUpperCase();
+    setLockedFieldHint(null);
+    setCodBionexoText(nextValue);
+    if (!nextValue.trim() && lookupSource === 'bionexo') {
+      setCdProdutoText('');
+      setLookupSource(null);
+      return;
+    }
+
+    setLookupSource(nextValue.trim() ? 'bionexo' : normalizedCdProduto ? 'produto' : null);
+  }
+
+  function handleProductCodeChange(value: string) {
+    const nextValue = normalizeProductCode(value);
+    setLockedFieldHint(null);
+    setCdProdutoText(nextValue);
+    if (!nextValue && lookupSource === 'produto') {
+      setCodBionexoText('');
+      setLookupSource(null);
+      return;
+    }
+
+    setLookupSource(nextValue ? 'produto' : normalizedCodBionexo ? 'bionexo' : null);
   }
 
   async function handleSave() {
@@ -1137,7 +1564,7 @@ function ProcessFormModal({
       await onSave({
         id: initial?.id,
         categoria_material: resolvedProduct.categoria_material,
-        cod_bionexo: resolvedProduct.cod_bionexo,
+        cod_bionexo: resolvedProduct.cod_bionexo ?? '',
         cd_produto: resolvedProduct.cd_produto,
         ds_produto: resolvedProduct.ds_produto,
         numero_processo: numeroPedido.trim(),
@@ -1145,10 +1572,12 @@ function ProcessFormModal({
         marca: marca.trim(),
         tipo_processo: tipoProcesso,
         fornecedor: fornecedor.trim(),
-        data_resgate: dataResgate || null,
+        data_resgate: dataResgateIso,
         total_parcelas: totalParcelas,
         parcelas_entregues: initial?.parcelas_entregues ?? [],
+        parcelas_detalhes: initial?.parcelas_detalhes ?? [],
         critico,
+        cancelado: initial?.cancelado ?? false,
         ignorado: initial?.ignorado ?? false,
       });
     } finally {
@@ -1171,20 +1600,77 @@ function ProcessFormModal({
           </View>
 
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-            <DarkField label="Cod. Bionexo">
-              <View style={styles.bionexoInputRow}>
-                <View style={styles.bionexoPrefix}>
-                  <Text style={styles.bionexoPrefixText}>I-</Text>
+            <View style={styles.modalGrid}>
+              <DarkField label="Cod. Bionexo">
+                <View style={styles.lockableFieldWrap}>
+                  <View style={[styles.bionexoInputRow, bionexoLocked ? styles.lockedInputSurface : null]}>
+                    <View style={[styles.bionexoPrefix, bionexoLocked ? styles.lockedPrefix : null]}>
+                      <Text style={[styles.bionexoPrefixText, bionexoLocked ? styles.lockedPrefixText : null]}>I-</Text>
+                    </View>
+                    <DarkInput
+                      value={bionexoInputValue}
+                      onChangeText={handleCodChange}
+                      placeholder="Opcional"
+                      autoCapitalize="characters"
+                      editable={!bionexoLocked}
+                      selectTextOnFocus={!bionexoLocked}
+                      style={[styles.bionexoInput, bionexoLocked ? styles.lockedInput : null]}
+                    />
+                  </View>
+                  {bionexoLocked ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setLockedFieldHint('bionexo')}
+                      style={({ pressed }) => [
+                        styles.lockedFieldOverlay,
+                        pressed ? styles.lockedFieldOverlayPressed : null,
+                      ]}
+                    />
+                  ) : null}
                 </View>
-                <DarkInput
-                  value={codBionexoText}
-                  onChangeText={handleCodChange}
-                  placeholder="Código sem o prefixo"
-                  autoCapitalize="characters"
-                  style={styles.bionexoInput}
-                />
-              </View>
-            </DarkField>
+                {bionexoLocked ? (
+                  <Text
+                    style={[
+                      styles.fieldHelperText,
+                      lockedFieldHint === 'bionexo' ? styles.fieldHelperTextActive : null,
+                    ]}>
+                    {bionexoLockMessage}
+                  </Text>
+                ) : null}
+              </DarkField>
+              <DarkField label="Nº do produto">
+                <View style={styles.lockableFieldWrap}>
+                  <DarkInput
+                    value={productInputValue}
+                    onChangeText={handleProductCodeChange}
+                    placeholder="Digite o código do produto"
+                    keyboardType="default"
+                    editable={!productLocked}
+                    selectTextOnFocus={!productLocked}
+                    style={productLocked ? styles.lockedInput : null}
+                  />
+                  {productLocked ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setLockedFieldHint('produto')}
+                      style={({ pressed }) => [
+                        styles.lockedFieldOverlay,
+                        pressed ? styles.lockedFieldOverlayPressed : null,
+                      ]}
+                    />
+                  ) : null}
+                </View>
+                {productLocked ? (
+                  <Text
+                    style={[
+                      styles.fieldHelperText,
+                      lockedFieldHint === 'produto' ? styles.fieldHelperTextActive : null,
+                    ]}>
+                    {productLockMessage}
+                  </Text>
+                ) : null}
+              </DarkField>
+            </View>
 
             {resolvedProduct ? (
               <View style={styles.lookupBox}>
@@ -1194,15 +1680,22 @@ function ProcessFormModal({
                 </View>
                 <Text style={styles.lookupName}>{resolvedProduct.ds_produto}</Text>
                 <Text style={styles.lookupMeta}>
-                  Produto {resolvedProduct.cd_produto} · {getCategoriaMaterialLabel(resolvedProduct.categoria_material)} ·
-                  {' '}Estoque atual {formatLookupNumber(resolvedProduct.estoque_atual)} · Suficiência{' '}
+                  Produto {resolvedProduct.cd_produto}
+                  {resolvedProduct.cod_bionexo ? ` · Bionexo ${resolvedProduct.cod_bionexo}` : ''}
+                  {' · '}
+                  {getCategoriaMaterialLabel(resolvedProduct.categoria_material)} · Estoque atual{' '}
+                  {formatLookupNumber(resolvedProduct.estoque_atual)} · Suficiência{' '}
                   {formatLookupNumber(resolvedProduct.suficiencia_em_dias)} dias
                 </Text>
               </View>
             ) : remoteLookupLoading ? (
               <DarkNotice
                 title="Buscando produto"
-                description="Consultando o Cod. Bionexo na base do HMSA."
+                description={
+                  searchMode === 'produto'
+                    ? 'Consultando o número do produto na base do HMSA.'
+                    : 'Consultando o Cod. Bionexo na base do HMSA.'
+                }
                 tone="info"
               />
             ) : remoteLookupError ? (
@@ -1211,16 +1704,20 @@ function ProcessFormModal({
                 description={remoteLookupError}
                 tone="warning"
               />
-            ) : normalizedCodBionexo ? (
+            ) : searchMode ? (
               <DarkNotice
-                title="Cod. Bionexo não localizado"
-                description="Confira se o código existe para o HMSA na base importada do SISCORE. O cadastro fica bloqueado até localizar o produto."
+                title={searchMode === 'produto' ? 'Produto não localizado' : 'Cod. Bionexo não localizado'}
+                description={
+                  searchMode === 'produto'
+                    ? 'Confira se o número do produto existe no HMSA na base importada do SISCORE. O cadastro fica bloqueado até localizar o item.'
+                    : 'Confira se o código existe para o HMSA na base importada do SISCORE. O cadastro fica bloqueado até localizar o produto.'
+                }
                 tone="warning"
               />
             ) : (
               <DarkNotice
-                title="Informe o Cod. Bionexo"
-                description="O prefixo I- já fica fixo. Digite apenas o restante do código para preencher produto e descrição."
+                title="Informe o produto"
+                description="Use o Cod. Bionexo ou o número do produto para preencher automaticamente a descrição."
                 tone="info"
               />
             )}
@@ -1256,8 +1753,8 @@ function ProcessFormModal({
               <DarkField label="Data de resgate">
                 <DarkInput
                   value={dataResgate}
-                  onChangeText={setDataResgate}
-                  placeholder="AAAA-MM-DD"
+                  onChangeText={(value) => setDataResgate(formatPtBrDateInput(value))}
+                  placeholder="DD/MM/AAAA"
                   keyboardType="numbers-and-punctuation"
                 />
               </DarkField>
@@ -1278,6 +1775,14 @@ function ProcessFormModal({
               </DarkField>
             </View>
 
+            {dataResgate.trim().length > 0 && !dataResgateValida ? (
+              <DarkNotice
+                title="Data de resgate incompleta"
+                description="Preencha a data no formato DD/MM/AAAA para calcular os prazos e salvar o processo."
+                tone="warning"
+              />
+            ) : null}
+
             <View style={styles.deadlinePreview}>
               <Text style={styles.deadlineTitle}>Prazos calculados</Text>
               {baseDate ? (
@@ -1292,7 +1797,7 @@ function ProcessFormModal({
                         getParcelaDueDate(
                           {
                             categoria_material: previewCategoria,
-                            data_resgate: dataResgate,
+                            data_resgate: dataResgateIso,
                             tipo_processo: tipoProcesso,
                           },
                           index,
@@ -1335,30 +1840,111 @@ function ProcessFormModal({
 
 function ParcelasModal({
   item,
+  mode,
+  initialSelectedIndex,
   systemConfig,
   onClose,
+  onApplyVisualState,
   onSave,
 }: {
-  item: ProcessoAcompanhamento;
+  item: ProcessoEnriquecido;
+  mode: 'single' | 'summary';
+  initialSelectedIndex: number | null;
   systemConfig: ConfiguracaoSistema;
   onClose: () => void;
-  onSave: (parcelasEntregues: boolean[]) => Promise<void> | undefined;
+  onApplyVisualState: (visualState: ProcessoParcelasVisualMap) => void;
+  onSave: (parcelasEntregues: boolean[], visualState: ProcessoParcelasVisualMap) => Promise<void> | undefined;
 }) {
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const compactModal = viewportWidth < 1280 || viewportHeight < 860;
   const [parcelas, setParcelas] = useState(() =>
     Array.from({ length: item.total_parcelas }, (_, index) => item.parcelas_entregues[index] === true)
   );
+  const [selectedIndex, setSelectedIndex] = useState(
+    initialSelectedIndex ?? getFirstPendingParcelaIndex(item)
+  );
+  const [visualState, setVisualState] = useState(() => createVisualParcelasMap(item, item.visualParcelas));
 
-  function toggle(index: number) {
+  const selectedVisualState = visualState[selectedIndex] ?? getDefaultParcelaVisualDraft();
+  const selectedDelivered = parcelas[selectedIndex] === true;
+  const standardDueDate = getParcelaDueDate(item, selectedIndex, systemConfig);
+  const adjustedDueDate = getParcelaAdjustedDueDate(item, selectedIndex, systemConfig, selectedVisualState);
+  const selectedOverdue =
+    !selectedDelivered && adjustedDueDate != null && adjustedDueDate < getTodayAtStartOfDay();
+  const selectedStatusColor = item.cancelado
+    ? processTheme.slate
+    : selectedDelivered
+      ? processTheme.green
+      : selectedOverdue
+        ? processTheme.red
+        : processTheme.amber;
+  const selectedStatusLabel = item.cancelado
+    ? 'Cancelado'
+    : selectedDelivered
+      ? 'Entregue'
+      : selectedOverdue
+        ? 'Atrasada'
+        : 'Pendente';
+  const selectedDeliveryDateInvalid = selectedDelivered && !isValidOptionalPtBrDate(selectedVisualState.dataEntrega);
+  const selectedNotificationDateInvalid =
+    selectedVisualState.empresaNotificada && !isValidOptionalPtBrDate(selectedVisualState.empresaNotificadaEm);
+  const hasInvalidParcelDates = Array.from({ length: item.total_parcelas }, (_, index) => {
+    const current = visualState[index] ?? getDefaultParcelaVisualDraft();
+    return (
+      (parcelas[index] === true && !isValidOptionalPtBrDate(current.dataEntrega)) ||
+      (current.empresaNotificada && !isValidOptionalPtBrDate(current.empresaNotificadaEm))
+    );
+  }).some(Boolean);
+
+  function toggleDelivered(index: number) {
+    const nextDelivered = !parcelas[index];
     setParcelas((current) => current.map((value, currentIndex) => (currentIndex === index ? !value : value)));
+    setVisualState((current) => ({
+      ...current,
+      [index]: {
+        ...(current[index] ?? getDefaultParcelaVisualDraft()),
+        dataEntrega: nextDelivered ? current[index]?.dataEntrega ?? getTodayPtBrDate() : null,
+      },
+    }));
+  }
+
+  function updateSelectedVisualState(patch: Partial<ParcelaVisualDraft>) {
+    setVisualState((current) => ({
+      ...current,
+      [selectedIndex]: {
+        ...(current[selectedIndex] ?? getDefaultParcelaVisualDraft()),
+        ...patch,
+      },
+    }));
+  }
+
+  function adjustDelay(delta: number) {
+    updateSelectedVisualState({
+      adiadaDiasUteis: Math.max(0, (visualState[selectedIndex]?.adiadaDiasUteis ?? 0) + delta),
+    });
+  }
+
+  function toggleNotification() {
+    const nextNotified = !(visualState[selectedIndex]?.empresaNotificada ?? false);
+    updateSelectedVisualState({
+      empresaNotificada: nextNotified,
+      empresaNotificadaEm: nextNotified ? visualState[selectedIndex]?.empresaNotificadaEm ?? getTodayPtBrDate() : null,
+    });
   }
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={[styles.modalCard, styles.parcelasModalCard]} onPress={() => undefined}>
-          <View style={styles.modalHeader}>
+      <Pressable style={[styles.modalOverlay, compactModal ? styles.modalOverlayCompact : null]} onPress={onClose}>
+        <Pressable
+          style={[
+            styles.modalCard,
+            styles.parcelasModalCard,
+            compactModal ? styles.parcelasModalCardCompact : null,
+          ]}
+          onPress={() => undefined}>
+          <View style={[styles.modalHeader, compactModal ? styles.modalHeaderCompact : null]}>
             <View>
-              <Text style={styles.modalTitle}>Atualizar parcelas</Text>
+              <Text style={styles.modalTitle}>{mode === 'single' ? 'Parcela do processo' : 'Parcelas do processo'}</Text>
               <Text style={styles.modalSubtitle}>{item.numero_processo} · {item.ds_produto}</Text>
             </View>
             <Pressable style={styles.modalCloseButton} onPress={onClose}>
@@ -1366,42 +1952,245 @@ function ParcelasModal({
             </Pressable>
           </View>
 
-          <View style={styles.modalBody}>
-            {parcelas.map((delivered, index) => {
-              const dueDate = getParcelaDueDate(item, index, systemConfig);
-              const overdue = !delivered && dueDate != null && dueDate < getTodayAtStartOfDay();
-              const color = delivered ? processTheme.green : overdue ? processTheme.red : processTheme.amber;
+          <ScrollView
+            style={styles.modalBodyScroll}
+            contentContainerStyle={[styles.modalBody, compactModal ? styles.modalBodyCompact : null]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={[styles.parcelasSelector, compactModal ? styles.parcelasSelectorCompact : null]}>
+              {parcelas.map((delivered, index) => {
+                const parcelVisualState = visualState[index] ?? getDefaultParcelaVisualDraft();
+                const dueDate = getParcelaAdjustedDueDate(item, index, systemConfig, parcelVisualState);
+                const overdue = !delivered && dueDate != null && dueDate < getTodayAtStartOfDay();
+                const color = delivered ? processTheme.green : overdue ? processTheme.red : processTheme.amber;
+                const active = selectedIndex === index;
 
-              return (
-                <Pressable
-                  key={index}
-                  onPress={() => toggle(index)}
-                  style={[styles.parcelaOption, delivered ? styles.parcelaOptionDelivered : null]}>
-                  <View style={[styles.parcelaIndex, { borderColor: color, backgroundColor: `${color}16` }]}>
-                    <Text style={[styles.parcelaIndexText, { color }]}>{index + 1}</Text>
+                return (
+                  <Pressable
+                    key={index}
+                    onPress={() => setSelectedIndex(index)}
+                    style={[
+                      styles.parcelaSelectorButton,
+                      compactModal ? styles.parcelaSelectorButtonCompact : null,
+                      active ? styles.parcelaSelectorButtonActive : null,
+                    ]}>
+                    <View style={[styles.parcelaSelectorIndex, { borderColor: color, backgroundColor: `${color}14` }]}>
+                      <Text style={[styles.parcelaSelectorIndexText, { color }]}>{index + 1}</Text>
+                    </View>
+                    <View style={styles.parcelaSelectorBody}>
+                      <Text style={styles.parcelaSelectorTitle}>Parcela {index + 1}</Text>
+                      <Text style={styles.parcelaSelectorMeta}>{formatDate(dueDate)}</Text>
+                    </View>
+                    {parcelVisualState.adiadaDiasUteis > 0 || parcelVisualState.empresaNotificada ? (
+                      <View style={styles.parcelaSelectorFlags}>
+                        {parcelVisualState.adiadaDiasUteis > 0 ? (
+                          <AppIcon name="clock" size={12} color={processTheme.blue} />
+                        ) : null}
+                        {parcelVisualState.empresaNotificada ? (
+                          <AppIcon name="bell" size={12} color={processTheme.purple} />
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <View style={[styles.parcelaFocusCard, compactModal ? styles.parcelaFocusCardCompact : null]}>
+              <View style={styles.parcelaFocusHeader}>
+                <View style={styles.parcelaFocusHeaderText}>
+                  <Text style={styles.parcelaFocusEyebrow}>
+                    Parcela {selectedIndex + 1} de {item.total_parcelas}
+                  </Text>
+                  <Text style={styles.parcelaFocusTitle}>
+                    {mode === 'single' ? 'Acompanhamento da parcela selecionada' : 'Detalhes da parcela'}
+                  </Text>
+                </View>
+                <Pill label={selectedStatusLabel} color={selectedStatusColor} />
+              </View>
+
+              <View style={styles.parcelaBadgesRow}>
+                {selectedVisualState.adiadaDiasUteis > 0 ? (
+                  <View style={styles.parcelaBadge}>
+                    <AppIcon name="clock" size={12} color={processTheme.blue} />
+                    <Text style={styles.parcelaBadgeText}>Adiada em {selectedVisualState.adiadaDiasUteis} dias úteis</Text>
                   </View>
-                  <View style={styles.parcelaOptionText}>
-                    <Text style={styles.parcelaTitle}>
-                      Parcela {index + 1} ·{' '}
-                      {getParcelaLabel(index, systemConfig, item.categoria_material, item.tipo_processo)}
+                ) : null}
+                {selectedVisualState.empresaNotificada ? (
+                  <View style={styles.parcelaBadge}>
+                    <AppIcon name="bell" size={12} color={processTheme.purple} />
+                    <Text style={styles.parcelaBadgeText}>Empresa notificada</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={[styles.parcelaInfoGrid, compactModal ? styles.parcelaInfoGridCompact : null]}>
+                <View style={[styles.parcelaInfoCard, compactModal ? styles.parcelaInfoCardCompact : null]}>
+                  <Text style={styles.parcelaInfoLabel}>Prazo padrão</Text>
+                  <Text style={styles.parcelaInfoValue}>{formatDate(standardDueDate)}</Text>
+                  <Text style={styles.parcelaInfoHelper}>
+                    {getParcelaLabel(selectedIndex, systemConfig, item.categoria_material, item.tipo_processo)}
+                  </Text>
+                </View>
+                <View style={[styles.parcelaInfoCard, compactModal ? styles.parcelaInfoCardCompact : null]}>
+                  <Text style={styles.parcelaInfoLabel}>Adiamento aplicado</Text>
+                  <Text style={styles.parcelaInfoValue}>
+                    {selectedVisualState.adiadaDiasUteis > 0
+                      ? `+${selectedVisualState.adiadaDiasUteis} dias úteis`
+                      : 'Sem adiamento'}
+                  </Text>
+                  <Text style={styles.parcelaInfoHelper}>Ajuste visual desta etapa</Text>
+                </View>
+                <View style={[styles.parcelaInfoCard, compactModal ? styles.parcelaInfoCardCompact : null]}>
+                  <Text style={styles.parcelaInfoLabel}>Prazo atual</Text>
+                  <Text style={styles.parcelaInfoValue}>{formatDate(adjustedDueDate)}</Text>
+                  <Text style={styles.parcelaInfoHelper}>
+                    {selectedOverdue ? 'Prazo vencido' : 'Dentro do prazo atual'}
+                  </Text>
+                </View>
+                <View style={[styles.parcelaInfoCard, compactModal ? styles.parcelaInfoCardCompact : null]}>
+                  <Text style={styles.parcelaInfoLabel}>Aviso para a empresa</Text>
+                  <Text style={styles.parcelaInfoValue}>
+                    {selectedVisualState.empresaNotificada ? 'Empresa avisada' : 'Ainda não marcada'}
+                  </Text>
+                  <Text style={styles.parcelaInfoHelper}>
+                    {selectedVisualState.empresaNotificada
+                      ? `Em ${formatStoredDateLabel(selectedVisualState.empresaNotificadaEm)}`
+                      : 'Sem registro de aviso'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.parcelaActionSection}>
+                <Text style={styles.parcelaActionTitle}>Ações rápidas</Text>
+
+                <View style={[styles.parcelaToggleRow, compactModal ? styles.parcelaToggleRowCompact : null]}>
+                  <View style={styles.parcelaToggleText}>
+                    <Text style={styles.parcelaToggleLabel}>Entrega da parcela</Text>
+                    <Text style={styles.parcelaToggleHelper}>
+                      Confirma que esta parcela já foi entregue. Se voltar atrás, ela retorna para pendente.
                     </Text>
-                    <Text style={styles.parcelaSubtitle}>Vencimento: {formatDate(dueDate)}</Text>
                   </View>
-                  <Pill
-                    label={delivered ? 'Entregue' : overdue ? 'Atrasada' : 'Pendente'}
-                    color={color}
-                  />
-                </Pressable>
-              );
-            })}
+                  <View style={styles.deliveryActionControls}>
+                    <DarkButton
+                      label={selectedDelivered ? 'Voltar para pendente' : 'Confirmar entrega da parcela'}
+                      icon={selectedDelivered ? 'refresh' : 'check'}
+                      tone={selectedDelivered ? 'neutral' : 'accentSoft'}
+                      onPress={() => toggleDelivered(selectedIndex)}
+                    />
+                    {selectedDelivered ? (
+                      <View style={styles.deliveryDateInlineWrap}>
+                        <Text style={styles.deliveryDateInlineLabel}>Entregue em</Text>
+                        <DarkInput
+                          value={selectedVisualState.dataEntrega ?? ''}
+                          onChangeText={(value) =>
+                            updateSelectedVisualState({ dataEntrega: formatPtBrDateInput(value) || null })
+                          }
+                          placeholder="DD/MM/AAAA"
+                          keyboardType="numbers-and-punctuation"
+                          style={styles.deliveryDateInput}
+                        />
+                        {selectedDeliveryDateInvalid ? (
+                          <Text style={styles.inlineDateErrorText}>Preencha em DD/MM/AAAA.</Text>
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
 
-            <DarkButton
-              label="Salvar parcelas"
-              icon="save"
-              tone="accent"
-              onPress={() => void onSave(parcelas)}
-            />
-          </View>
+                <View style={[styles.parcelaToggleRow, compactModal ? styles.parcelaToggleRowCompact : null]}>
+                  <View style={styles.parcelaToggleText}>
+                    <Text style={styles.parcelaToggleLabel}>Adiamento da parcela</Text>
+                    <Text style={styles.parcelaToggleHelper}>
+                      Ajuste visual em dias úteis para testar o comportamento da interface.
+                    </Text>
+                  </View>
+                  <View style={styles.delayStepper}>
+                    <Pressable onPress={() => adjustDelay(-1)} style={styles.delayStepperButton}>
+                      <Text style={styles.delayStepperButtonText}>-</Text>
+                    </Pressable>
+                    <View style={styles.delayStepperValueWrap}>
+                      <Text style={styles.delayStepperValue}>{selectedVisualState.adiadaDiasUteis}</Text>
+                      <Text style={styles.delayStepperUnit}>dias úteis</Text>
+                    </View>
+                    <Pressable onPress={() => adjustDelay(1)} style={[styles.delayStepperButton, styles.delayStepperButtonPrimary]}>
+                      <Text style={[styles.delayStepperButtonText, styles.delayStepperButtonTextPrimary]}>+</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => updateSelectedVisualState({ adiadaDiasUteis: 0 })}
+                      style={styles.delayResetButton}>
+                      <Text style={styles.delayResetButtonText}>Limpar</Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={[styles.parcelaToggleRow, compactModal ? styles.parcelaToggleRowCompact : null]}>
+                  <View style={styles.parcelaToggleText}>
+                    <Text style={styles.parcelaToggleLabel}>Aviso para a empresa</Text>
+                    <Text style={styles.parcelaToggleHelper}>
+                      Apenas marca que a empresa já foi avisada. Não altera prazo nem situação da parcela.
+                    </Text>
+                  </View>
+                  <View style={styles.deliveryActionControls}>
+                    <DarkButton
+                      label={
+                        selectedVisualState.empresaNotificada
+                          ? 'Remover marcação de aviso'
+                          : 'Registrar que a empresa foi avisada'
+                      }
+                      icon={selectedVisualState.empresaNotificada ? 'bellOff' : 'bell'}
+                      tone={selectedVisualState.empresaNotificada ? 'neutral' : 'infoSoft'}
+                      onPress={toggleNotification}
+                    />
+                    {selectedVisualState.empresaNotificada ? (
+                      <View style={styles.deliveryDateInlineWrap}>
+                        <Text style={styles.deliveryDateInlineLabel}>Avisada em</Text>
+                        <DarkInput
+                          value={selectedVisualState.empresaNotificadaEm ?? ''}
+                          onChangeText={(value) =>
+                            updateSelectedVisualState({ empresaNotificadaEm: formatPtBrDateInput(value) || null })
+                          }
+                          placeholder="DD/MM/AAAA"
+                          keyboardType="numbers-and-punctuation"
+                          style={styles.deliveryDateInput}
+                        />
+                        {selectedNotificationDateInvalid ? (
+                          <Text style={styles.inlineDateErrorText}>Preencha em DD/MM/AAAA.</Text>
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {hasInvalidParcelDates ? (
+              <DarkNotice
+                title="Datas das parcelas incompletas"
+                description="Revise os campos de data no formato DD/MM/AAAA antes de salvar as parcelas."
+                tone="warning"
+              />
+            ) : null}
+
+            <View style={styles.parcelasModalActions}>
+              <DarkButton
+                label="Aplicar visual"
+                icon="edit"
+                tone="infoSoft"
+                onPress={() => onApplyVisualState(visualState)}
+              />
+              <DarkButton
+                label="Salvar parcelas"
+                icon="save"
+                tone="accent"
+                disabled={hasInvalidParcelDates}
+                onPress={() => void onSave(parcelas, visualState)}
+              />
+            </View>
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
@@ -1524,6 +2313,13 @@ const baseStyles = StyleSheet.create({
   tableCellBlock: {
     paddingRight: almoxTheme.spacing.md,
     gap: almoxTheme.spacing.xs,
+  },
+  tableCellPressable: {
+    borderRadius: almoxTheme.radii.sm,
+    paddingVertical: 2,
+  },
+  tableCellPressablePressed: {
+    opacity: 0.78,
   },
   numberColumn: {
     width: 150,
@@ -2232,6 +3028,10 @@ const styles = {
       borderLeftColor: processTheme.critical,
       backgroundColor: 'rgba(255,68,68,0.045)',
     },
+    canceledRow: {
+      borderLeftColor: processTheme.slate,
+      backgroundColor: 'rgba(150,164,197,0.06)',
+    },
     overdueRow: {
       backgroundColor: 'rgba(255,95,95,0.035)',
     },
@@ -2250,7 +3050,7 @@ const styles = {
       width: 150,
     },
     timelineColumn: {
-      width: 220,
+      width: 252,
     },
     statusColumn: {
       width: 125,
@@ -2312,6 +3112,31 @@ const styles = {
     timeline: {
       gap: 6,
     },
+    timelineItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: almoxTheme.spacing.xs,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: 'transparent',
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+      marginHorizontal: -8,
+    },
+    timelineItemDelayed: {
+      borderColor: 'rgba(90,175,255,0.22)',
+      backgroundColor: 'rgba(90,175,255,0.06)',
+    },
+    timelineItemNotified: {
+      borderColor: 'rgba(177,151,252,0.22)',
+    },
+    timelineItemPressed: {
+      backgroundColor: processTheme.surfacePressed,
+    },
+    timelineTextWrap: {
+      flex: 1,
+      gap: 1,
+    },
     timelineLabel: {
       color: processTheme.muted,
       fontSize: 11,
@@ -2321,6 +3146,22 @@ const styles = {
       fontSize: 11,
       fontWeight: '800',
       fontFamily: almoxTheme.typography.mono,
+    },
+    timelineFlags: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginTop: 2,
+    },
+    timelineFlag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    timelineFlagText: {
+      color: processTheme.dim,
+      fontSize: 10,
+      fontWeight: '800',
     },
     pill: {
       alignSelf: 'flex-start',
@@ -2347,6 +3188,9 @@ const styles = {
       justifyContent: 'center',
       padding: almoxTheme.spacing.lg,
     },
+    modalOverlayCompact: {
+      padding: almoxTheme.spacing.md,
+    },
     modalCard: {
       width: '100%',
       maxWidth: 620,
@@ -2362,6 +3206,12 @@ const styles = {
       shadowOffset: { width: 0, height: 20 },
       elevation: 12,
     },
+    parcelasModalCard: {
+      maxWidth: 760,
+    },
+    parcelasModalCardCompact: {
+      maxWidth: 680,
+    },
     modalHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -2370,12 +3220,16 @@ const styles = {
       paddingVertical: 18,
       borderBottomWidth: 1,
       borderBottomColor: processTheme.border,
-      backgroundColor: 'rgba(0,212,160,0.045)',
+      backgroundColor: 'rgba(90,175,255,0.045)',
     },
     modalTitle: {
       color: processTheme.text,
       fontSize: 16,
       fontWeight: '900',
+    },
+    modalHeaderCompact: {
+      paddingHorizontal: 18,
+      paddingVertical: 14,
     },
     modalSubtitle: {
       color: processTheme.muted,
@@ -2396,6 +3250,15 @@ const styles = {
       paddingHorizontal: 22,
       paddingVertical: 20,
       gap: 14,
+    },
+    modalBodyScroll: {
+      flexShrink: 1,
+      minHeight: 0,
+    },
+    modalBodyCompact: {
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+      gap: 10,
     },
     lookupBox: {
       borderRadius: 14,
@@ -2418,6 +3281,42 @@ const styles = {
     lookupMeta: {
       color: processTheme.muted,
       fontSize: 12,
+    },
+    lockableFieldWrap: {
+      position: 'relative',
+    },
+    lockedFieldOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: 10,
+      backgroundColor: 'rgba(7,10,17,0.06)',
+    },
+    lockedFieldOverlayPressed: {
+      backgroundColor: 'rgba(90,175,255,0.1)',
+    },
+    lockedInputSurface: {
+      opacity: 0.52,
+    },
+    lockedInput: {
+      opacity: 0.52,
+      borderColor: 'rgba(255,255,255,0.05)',
+      backgroundColor: 'rgba(255,255,255,0.025)',
+      color: processTheme.dim,
+    },
+    lockedPrefix: {
+      borderColor: 'rgba(255,255,255,0.05)',
+      backgroundColor: 'rgba(255,255,255,0.025)',
+    },
+    lockedPrefixText: {
+      color: processTheme.dim,
+    },
+    fieldHelperText: {
+      color: processTheme.dim,
+      fontSize: 10,
+      lineHeight: 14,
+    },
+    fieldHelperTextActive: {
+      color: processTheme.blue,
+      fontWeight: '800',
     },
     bionexoPrefix: {
       height: 42,
@@ -2536,6 +3435,292 @@ const styles = {
     },
     criticalToggleTextActive: {
       color: processTheme.critical,
+    },
+    parcelasSelector: {
+      flexDirection: 'row',
+      gap: 10,
+      paddingRight: 4,
+    },
+    parcelasSelectorCompact: {
+      gap: 8,
+    },
+    parcelaSelectorButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minWidth: 154,
+      gap: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surface,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    parcelaSelectorButtonCompact: {
+      minWidth: 132,
+      paddingHorizontal: 10,
+      paddingVertical: 9,
+    },
+    parcelaSelectorButtonActive: {
+      borderColor: 'rgba(90,175,255,0.35)',
+      backgroundColor: 'rgba(90,175,255,0.08)',
+    },
+    parcelaSelectorIndex: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    parcelaSelectorIndexText: {
+      fontSize: 12,
+      fontWeight: '900',
+    },
+    parcelaSelectorBody: {
+      flex: 1,
+      gap: 2,
+    },
+    parcelaSelectorTitle: {
+      color: processTheme.text,
+      fontSize: 12,
+      fontWeight: '900',
+    },
+    parcelaSelectorMeta: {
+      color: processTheme.muted,
+      fontSize: 11,
+      fontFamily: almoxTheme.typography.mono,
+    },
+    parcelaSelectorFlags: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    parcelaFocusCard: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: 'rgba(255,255,255,0.035)',
+      padding: 16,
+      gap: 14,
+    },
+    parcelaFocusCardCompact: {
+      padding: 12,
+      gap: 10,
+    },
+    parcelaFocusHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 12,
+      flexWrap: 'wrap',
+    },
+    parcelaFocusHeaderText: {
+      flex: 1,
+      minWidth: 220,
+      gap: 3,
+    },
+    parcelaFocusEyebrow: {
+      color: processTheme.blue,
+      fontSize: 11,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+    },
+    parcelaFocusTitle: {
+      color: processTheme.text,
+      fontSize: 16,
+      fontWeight: '900',
+    },
+    parcelaBadgesRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    parcelaBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surfaceHi,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    parcelaBadgeText: {
+      color: processTheme.muted,
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    parcelaInfoGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    parcelaInfoGridCompact: {
+      gap: 8,
+    },
+    parcelaInfoCard: {
+      flex: 1,
+      minWidth: 150,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surface,
+      padding: 12,
+      gap: 4,
+    },
+    parcelaInfoCardCompact: {
+      minWidth: 132,
+      padding: 10,
+    },
+    parcelaInfoLabel: {
+      color: processTheme.dim,
+      fontSize: 10,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+    },
+    parcelaInfoValue: {
+      color: processTheme.text,
+      fontSize: 13,
+      fontWeight: '900',
+      fontFamily: almoxTheme.typography.mono,
+    },
+    parcelaInfoHelper: {
+      color: processTheme.muted,
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    parcelaActionSection: {
+      gap: 10,
+    },
+    parcelaActionTitle: {
+      color: processTheme.text,
+      fontSize: 13,
+      fontWeight: '900',
+    },
+    parcelaToggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surface,
+      padding: 12,
+    },
+    parcelaToggleRowCompact: {
+      padding: 10,
+    },
+    parcelaToggleText: {
+      flex: 1,
+      minWidth: 220,
+      gap: 3,
+    },
+    parcelaToggleLabel: {
+      color: processTheme.text,
+      fontSize: 12,
+      fontWeight: '900',
+    },
+    parcelaToggleHelper: {
+      color: processTheme.muted,
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    deliveryActionControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      justifyContent: 'flex-end',
+      gap: 10,
+    },
+    deliveryDateInlineWrap: {
+      width: 140,
+      gap: 4,
+    },
+    deliveryDateInlineLabel: {
+      color: processTheme.dim,
+      fontSize: 10,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+    },
+    inlineDateErrorText: {
+      color: processTheme.amber,
+      fontSize: 10,
+      lineHeight: 14,
+    },
+    deliveryDateInput: {
+      minHeight: 38,
+      fontFamily: almoxTheme.typography.mono,
+      textAlign: 'center',
+    },
+    delayStepper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    delayStepperButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surfaceHi,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    delayStepperButtonPrimary: {
+      borderColor: 'rgba(90,175,255,0.36)',
+      backgroundColor: 'rgba(90,175,255,0.13)',
+    },
+    delayStepperButtonText: {
+      color: processTheme.text,
+      fontSize: 18,
+      fontWeight: '900',
+    },
+    delayStepperButtonTextPrimary: {
+      color: processTheme.blue,
+    },
+    delayStepperValueWrap: {
+      minWidth: 92,
+      alignItems: 'center',
+      gap: 1,
+    },
+    delayStepperValue: {
+      color: processTheme.text,
+      fontSize: 16,
+      fontWeight: '900',
+      fontFamily: almoxTheme.typography.mono,
+    },
+    delayStepperUnit: {
+      color: processTheme.dim,
+      fontSize: 10,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+    },
+    delayResetButton: {
+      minHeight: 34,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surface,
+      paddingHorizontal: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    delayResetButtonText: {
+      color: processTheme.muted,
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    parcelasModalActions: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'flex-end',
+      gap: 10,
     },
     parcelaOption: {
       flexDirection: 'row',

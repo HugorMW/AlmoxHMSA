@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/features/auth/auth-provider';
+import { useIsDeveloper } from '@/features/auth/use-is-developer';
 import { useAlmoxData } from '@/features/almox/almox-provider';
 import { AppIcon } from '@/features/almox/components/common';
 import { almoxTheme } from '@/features/almox/tokens';
@@ -32,6 +33,7 @@ export function AppShell() {
   const pathname = usePathname();
   const router = useRouter();
   const { logout, session } = useAuth();
+  const isDeveloper = useIsDeveloper();
   const { categoryFilter, setCategoryFilter, dashboardHospital, setDashboardHospital, dataset } = useAlmoxData();
   const { width } = useWindowDimensions();
   const [isHospitalMenuOpen, setHospitalMenuOpen] = React.useState(false);
@@ -236,6 +238,17 @@ export function AppShell() {
                       </View>
                     ) : null}
                   </View>
+                  {isDeveloper ? (
+                    <Pressable
+                      onPress={() => router.navigate('/dev' as Href)}
+                      style={({ pressed }) => [
+                        styles.headerDeveloperButton,
+                        pressed ? styles.headerDropdownTriggerPressed : null,
+                      ]}
+                      accessibilityLabel="Abrir tela de desenvolvedor">
+                      <AppIcon name="monitor" size={16} color={almoxTheme.colors.brandStrong} />
+                    </Pressable>
+                  ) : null}
                   <Pressable
                     onPress={() => void handleLogout()}
                     disabled={isLoggingOut}
@@ -601,6 +614,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+  },
+  headerDeveloperButton: {
+    width: 36,
+    height: 36,
+    borderRadius: almoxTheme.radii.pill,
+    borderWidth: 1,
+    borderColor: '#bfd7ff',
+    backgroundColor: '#eaf3ff',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerLogoutButtonDisabled: {
     opacity: 0.7,
