@@ -104,6 +104,7 @@ export async function PUT(request: Request) {
     const current = await lerConfiguracaoSistema();
     const nextConfig = normalizarConfiguracaoSistema(patch, current.config);
     const issues = validarConfiguracaoSistema(nextConfig);
+    const changedKeys = configuracaoSistemaKeys.filter((key) => current.config[key] !== nextConfig[key]);
 
     if (issues.length > 0) {
       return Response.json(
@@ -115,7 +116,15 @@ export async function PUT(request: Request) {
       );
     }
 
-    const saved = await salvarConfiguracaoSistema(nextConfig, session.usuario);
+    if (changedKeys.length === 0) {
+      return Response.json({
+        ok: true,
+        config: current.config,
+        atualizadoEm: current.atualizadoEm,
+      });
+    }
+
+    const saved = await salvarConfiguracaoSistema(nextConfig, session.usuario, changedKeys);
 
     return Response.json({
       ok: true,

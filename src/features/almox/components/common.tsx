@@ -114,11 +114,11 @@ const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = 
 type ButtonTone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
 
 const buttonTones = {
-  primary: { background: almoxTheme.colors.brandStrong, foreground: almoxTheme.colors.white },
+  primary: { background: almoxTheme.colors.brandStrong, foreground: almoxTheme.colors.black },
   success: { background: '#2a8f7b', foreground: almoxTheme.colors.white },
   warning: { background: '#b57433', foreground: almoxTheme.colors.white },
   danger: { background: '#b85773', foreground: almoxTheme.colors.white },
-  neutral: { background: almoxTheme.colors.surfaceRaised, foreground: almoxTheme.colors.text },
+  neutral: { background: almoxTheme.colors.surfaceStrong, foreground: almoxTheme.colors.text },
 } as const;
 
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 500] as const;
@@ -266,10 +266,26 @@ export function InfoBanner({
       border: almoxTheme.colors.lineStrong,
       color: almoxTheme.colors.textSoft,
     },
-    warning: { background: '#fff5e7', border: '#f5ca8f', color: '#a86417' },
-    danger: { background: '#fff0f3', border: '#efb4c1', color: '#b4234a' },
-    success: { background: '#edf9f2', border: '#bce4cc', color: '#18724d' },
-    info: { background: '#eef5ff', border: '#bfd8ff', color: '#245fb6' },
+    warning: {
+      background: 'rgba(251, 191, 36, 0.14)',
+      border: 'rgba(251, 191, 36, 0.45)',
+      color: almoxTheme.colors.amber,
+    },
+    danger: {
+      background: 'rgba(248, 113, 113, 0.14)',
+      border: 'rgba(248, 113, 113, 0.45)',
+      color: almoxTheme.colors.red,
+    },
+    success: {
+      background: 'rgba(52, 211, 153, 0.14)',
+      border: 'rgba(52, 211, 153, 0.45)',
+      color: almoxTheme.colors.green,
+    },
+    info: {
+      background: 'rgba(140, 168, 217, 0.12)',
+      border: 'rgba(140, 168, 217, 0.26)',
+      color: almoxTheme.colors.brandStrong,
+    },
   }[tone];
 
   return (
@@ -616,17 +632,17 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   card: {
-    backgroundColor: almoxTheme.colors.surface,
+    backgroundColor: almoxTheme.colors.surfaceRaised,
     borderRadius: almoxTheme.radii.lg,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
+    borderColor: almoxTheme.colors.lineStrong,
     padding: almoxTheme.spacing.lg,
     gap: almoxTheme.spacing.md,
     shadowColor: almoxTheme.colors.black,
-    shadowOpacity: 0.07,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+    shadowOpacity: 0.14,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
   },
   sectionTitleRow: {
     flexDirection: 'row',
@@ -678,7 +694,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: almoxTheme.spacing.xs,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
+    borderColor: almoxTheme.colors.lineStrong,
+    shadowColor: almoxTheme.colors.black,
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   buttonText: {
     fontSize: 13,
@@ -697,17 +718,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: almoxTheme.spacing.md,
     paddingVertical: almoxTheme.spacing.sm,
     borderRadius: almoxTheme.radii.pill,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    backgroundColor: almoxTheme.colors.surface,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
+    borderColor: almoxTheme.colors.lineStrong,
   },
   inlineTabCompact: {
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   inlineTabActive: {
-    backgroundColor: '#dbeafe',
-    borderColor: '#93c5fd',
+    backgroundColor: 'rgba(140, 168, 217, 0.12)',
+    borderColor: 'rgba(140, 168, 217, 0.26)',
   },
   inlineTabPressed: {
     opacity: 0.82,
@@ -800,8 +821,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   paginationCustomInputInvalid: {
-    borderColor: '#efb4c1',
-    backgroundColor: '#fff0f3',
+    borderColor: 'rgba(248, 113, 113, 0.55)',
+    backgroundColor: 'rgba(248, 113, 113, 0.14)',
   },
   paginationActions: {
     flexDirection: 'row',

@@ -177,8 +177,15 @@ function parseIsoDate(value: string | null | undefined) {
     return null;
   }
 
-  const [datePart] = String(value).trim().split('T');
-  const [year, month, day] = datePart.split('-').map(Number);
+  const match = String(value).trim().match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) {
+    return null;
+  }
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
   if (!year || !month || !day) {
     return null;
   }

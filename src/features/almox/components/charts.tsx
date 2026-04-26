@@ -1,13 +1,16 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
 import { ChartData } from '@/features/almox/types';
 
 const distributionColors = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#0ea5e9', '#3b82f6', '#8b5cf6'];
 
 export function DistributionChart({ data }: { data: ChartData[] }) {
   const maxValue = Math.max(...data.map((item) => item.count), 1);
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
 
   return (
     <View style={styles.distributionRoot}>
@@ -21,7 +24,7 @@ export function DistributionChart({ data }: { data: ChartData[] }) {
                   styles.distributionFill,
                   {
                     height: `${Math.max((item.count / maxValue) * 100, item.count > 0 ? 12 : 0)}%`,
-                    backgroundColor: distributionColors[index] ?? almoxTheme.colors.brand,
+                    backgroundColor: distributionColors[index] ?? tokens.colors.brand,
                   },
                 ]}
               />
@@ -35,44 +38,44 @@ export function DistributionChart({ data }: { data: ChartData[] }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   distributionRoot: {
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   distributionBars: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     minHeight: 196,
   },
   distributionColumn: {
     flex: 1,
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   distributionTrack: {
     width: '100%',
     height: 120,
-    backgroundColor: almoxTheme.colors.surfaceStrong,
-    borderRadius: almoxTheme.radii.md,
+    backgroundColor: tokens.colors.surfaceStrong,
+    borderRadius: tokens.radii.md,
     justifyContent: 'flex-end',
     padding: 6,
   },
   distributionFill: {
     width: '100%',
-    borderRadius: almoxTheme.radii.sm,
+    borderRadius: tokens.radii.sm,
   },
   chartValue: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 11,
     fontWeight: '700',
   },
   chartLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   chartLegend: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
 });

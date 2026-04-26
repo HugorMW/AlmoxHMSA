@@ -7,7 +7,8 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { useIsDeveloper } from '@/features/auth/use-is-developer';
 import { useAlmoxData } from '@/features/almox/almox-provider';
 import { AppIcon } from '@/features/almox/components/common';
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
 import { FiltroCategoriaMaterial, Hospital } from '@/features/almox/types';
 
 const navigationItems: {
@@ -30,6 +31,8 @@ const navigationItems: {
 ];
 
 export function AppShell() {
+  const { mode, tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   const pathname = usePathname();
   const router = useRouter();
   const { logout, session } = useAuth();
@@ -46,13 +49,14 @@ export function AppShell() {
   const sidebarCollapsed = autoCompactSidebar || isSidebarCollapsed;
   const sidebarWidth = sidebarCollapsed ? 84 : 248;
   const headerMaxWidth =
-    width >= 1680 ? 1560 : width >= 1480 ? 1440 : width >= 1280 ? 1320 : almoxTheme.layout.maxWidth;
-  const headerHorizontalPadding = width >= 1480 ? almoxTheme.spacing.sm : almoxTheme.spacing.md;
-  const contentHorizontalPadding = width >= 1480 ? almoxTheme.spacing.xxs : almoxTheme.spacing.xs;
+    width >= 1680 ? 1560 : width >= 1480 ? 1440 : width >= 1280 ? 1320 : tokens.layout.maxWidth;
+  const headerHorizontalPadding = width >= 1480 ? tokens.spacing.sm : tokens.spacing.md;
+  const contentHorizontalPadding = width >= 1480 ? tokens.spacing.xxs : tokens.spacing.xs;
   const currentItem =
     navigationItems.find((item) => pathname === item.match || (item.match !== '/' && pathname.startsWith(item.match))) ??
     navigationItems[0];
   const isProcessRoute = pathname === '/processes' || pathname.startsWith('/processes/');
+  const isDarkMode = mode === 'dark';
   const materialOptions: { label: string; value: FiltroCategoriaMaterial }[] = [
     { label: 'Todos', value: 'todos' },
     { label: 'Hospitalar', value: 'material_hospitalar' },
@@ -108,7 +112,9 @@ export function AppShell() {
             ]}>
             <View style={styles.headerMain}>
               <View style={styles.brandMark}>
-                <Text style={styles.brandLetter}>H</Text>
+                <Text style={[styles.brandLetter, { color: isDarkMode ? tokens.colors.black : tokens.colors.white }]}>
+                  H
+                </Text>
               </View>
               <View style={styles.brandText}>
                 <Text style={styles.brandEyebrow}>Central logística HMSA</Text>
@@ -140,7 +146,7 @@ export function AppShell() {
                       <AppIcon
                         name={isHospitalMenuOpen ? 'chevronUp' : 'chevronDown'}
                         size={18}
-                        color={almoxTheme.colors.textMuted}
+                        color={tokens.colors.textMuted}
                       />
                     </Pressable>
 
@@ -169,7 +175,7 @@ export function AppShell() {
                                 {option}
                               </Text>
                               {isActive ? (
-                                <AppIcon name="check" size={16} color={almoxTheme.colors.brand} />
+                                <AppIcon name="check" size={16} color={tokens.colors.brand} />
                               ) : null}
                             </Pressable>
                           );
@@ -202,7 +208,7 @@ export function AppShell() {
                       <AppIcon
                         name={isCategoryMenuOpen ? 'chevronUp' : 'chevronDown'}
                         size={18}
-                        color={almoxTheme.colors.textMuted}
+                        color={tokens.colors.textMuted}
                       />
                     </Pressable>
 
@@ -231,7 +237,7 @@ export function AppShell() {
                                 {option.label}
                               </Text>
                               {isActive ? (
-                                <AppIcon name="check" size={16} color={almoxTheme.colors.brand} />
+                                <AppIcon name="check" size={16} color={tokens.colors.brand} />
                               ) : null}
                             </Pressable>
                           );
@@ -247,7 +253,11 @@ export function AppShell() {
                         pressed ? styles.headerDropdownTriggerPressed : null,
                       ]}
                       accessibilityLabel="Abrir tela de desenvolvedor">
-                      <AppIcon name="monitor" size={16} color={almoxTheme.colors.brandStrong} />
+                      <AppIcon
+                        name="monitor"
+                        size={16}
+                        color={isDarkMode ? tokens.colors.text : tokens.colors.brandStrong}
+                      />
                     </Pressable>
                   ) : null}
                   <Pressable
@@ -258,7 +268,7 @@ export function AppShell() {
                       pressed ? styles.headerDropdownTriggerPressed : null,
                       isLoggingOut ? styles.headerLogoutButtonDisabled : null,
                     ]}>
-                    <AppIcon name="logout" size={16} color={almoxTheme.colors.text} />
+                    <AppIcon name="logout" size={16} color={tokens.colors.text} />
                     <Text style={styles.headerLogoutText}>{isLoggingOut ? 'Saindo...' : 'Sair'}</Text>
                   </Pressable>
                 </View>
@@ -297,7 +307,7 @@ export function AppShell() {
                   <AppIcon
                     name={sidebarCollapsed ? 'chevronRight' : 'chevronLeft'}
                     size={16}
-                    color={almoxTheme.colors.textSoft}
+                    color={tokens.colors.textSoft}
                   />
                 </Pressable>
               </View>
@@ -325,7 +335,7 @@ export function AppShell() {
                         <AppIcon
                           name={item.icon}
                           size={18}
-                          color={isActive ? almoxTheme.colors.white : almoxTheme.colors.textMuted}
+                          color={isActive ? (isDarkMode ? tokens.colors.black : tokens.colors.white) : tokens.colors.textMuted}
                         />
                       </View>
 
@@ -353,7 +363,7 @@ export function AppShell() {
                     <Text style={styles.sidebarFootValue}>{currentItem.label}</Text>
                   </>
                 ) : (
-                  <AppIcon name={currentItem.icon} size={16} color={almoxTheme.colors.brandStrong} />
+                  <AppIcon name={currentItem.icon} size={16} color={tokens.colors.brandStrong} />
                 )}
               </View>
             </View>
@@ -383,14 +393,14 @@ export function AppShell() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: almoxTheme.colors.canvas,
+    backgroundColor: tokens.colors.canvas,
   },
   root: {
     flex: 1,
-    backgroundColor: almoxTheme.colors.canvas,
+    backgroundColor: tokens.colors.canvas,
   },
   dropdownBackdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -398,50 +408,55 @@ const styles = StyleSheet.create({
   },
   glow: {
     position: 'absolute',
-    width: 260,
-    height: 260,
+    width: 340,
+    height: 340,
     borderRadius: 999,
-    opacity: 0.08,
+    opacity: 0.12,
   },
   glowTop: {
-    backgroundColor: almoxTheme.colors.brand,
-    top: -110,
-    left: -110,
+    backgroundColor: tokens.colors.brand,
+    top: -180,
+    left: -140,
   },
   glowBottom: {
-    backgroundColor: almoxTheme.colors.emerald,
-    bottom: -150,
-    right: -150,
+    backgroundColor: tokens.colors.emerald,
+    bottom: -200,
+    right: -160,
   },
   headerShell: {
     width: '100%',
-    paddingTop: almoxTheme.spacing.xs,
-    paddingBottom: almoxTheme.spacing.xs,
+    paddingTop: tokens.spacing.xs,
+    paddingBottom: tokens.spacing.xs,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.lineStrong,
-    backgroundColor: 'rgba(248, 251, 255, 0.92)',
+    borderBottomColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceMuted,
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.24,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
     zIndex: 20,
   },
   header: {
     width: '100%',
     alignSelf: 'center',
-    minHeight: almoxTheme.layout.headerHeight,
+    minHeight: tokens.layout.headerHeight,
     backgroundColor: 'transparent',
-    paddingHorizontal: almoxTheme.spacing.sm,
+    paddingHorizontal: tokens.spacing.sm,
     paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   headerStacked: {
     alignItems: 'flex-start',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   headerMain: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
     flex: 1,
     minWidth: 220,
   },
@@ -451,15 +466,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: almoxTheme.colors.brandStrong,
-    shadowColor: almoxTheme.colors.brand,
+    backgroundColor: tokens.colors.brandStrong,
+    shadowColor: tokens.colors.brand,
     shadowOpacity: 0.16,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
   brandLetter: {
-    color: almoxTheme.colors.white,
     fontSize: 17,
     fontWeight: '900',
   },
@@ -468,20 +482,20 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   brandEyebrow: {
-    color: almoxTheme.colors.brand,
+    color: tokens.colors.brand,
     fontSize: 9,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   brandTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 15,
     fontWeight: '800',
-    fontFamily: almoxTheme.typography.display,
+    fontFamily: tokens.typography.display,
   },
   brandSubtitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 10,
   },
   headerMeta: {
@@ -498,7 +512,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     flexWrap: 'nowrap',
   },
   headerControlsStacked: {
@@ -509,7 +523,7 @@ const styles = StyleSheet.create({
   headerChipRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
     flexWrap: 'nowrap',
   },
   headerChipRowStacked: {
@@ -518,27 +532,27 @@ const styles = StyleSheet.create({
   headerChip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: almoxTheme.radii.pill,
-    backgroundColor: almoxTheme.colors.surface,
+    borderRadius: tokens.radii.pill,
+    backgroundColor: tokens.colors.surface,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
+    borderColor: tokens.colors.line,
     gap: 0,
     minWidth: 96,
-    shadowColor: almoxTheme.colors.black,
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   headerChipEyebrow: {
-    color: almoxTheme.colors.brand,
+    color: tokens.colors.brand,
     fontSize: 8,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   headerChipValue: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -554,12 +568,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.xs,
-    paddingRight: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
+    paddingRight: tokens.spacing.xs,
   },
   headerDropdownTriggerOpen: {
-    borderColor: '#93c5fd',
-    backgroundColor: '#eaf3ff',
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.surfaceStrong,
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
   },
   headerDropdownTriggerPressed: {
     opacity: 0.9,
@@ -571,70 +590,80 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '100%',
     right: 0,
-    marginTop: almoxTheme.spacing.xs,
+    marginTop: tokens.spacing.xs,
     minWidth: 220,
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surface,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surface,
     padding: 6,
-    shadowColor: almoxTheme.colors.black,
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 14,
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.34,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
   },
   headerDropdownOption: {
     minHeight: 40,
-    borderRadius: almoxTheme.radii.sm,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.xs,
+    borderRadius: tokens.radii.sm,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   headerDropdownOptionActive: {
-    backgroundColor: '#eef5ff',
+    backgroundColor: tokens.colors.surfaceActiveSoft,
   },
   headerDropdownOptionPressed: {
     opacity: 0.88,
   },
   headerDropdownOptionText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: '700',
   },
   headerDropdownOptionTextActive: {
-    color: almoxTheme.colors.brandStrong,
+    color: tokens.colors.brandStrong,
   },
   headerLogoutButton: {
     minHeight: 36,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    borderRadius: almoxTheme.radii.pill,
+    paddingHorizontal: tokens.spacing.sm,
+    borderRadius: tokens.radii.pill,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceRaised,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   headerDeveloperButton: {
     width: 36,
     height: 36,
-    borderRadius: almoxTheme.radii.pill,
+    borderRadius: tokens.radii.pill,
     borderWidth: 1,
-    borderColor: '#bfd7ff',
-    backgroundColor: '#eaf3ff',
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   headerLogoutButtonDisabled: {
     opacity: 0.7,
   },
   headerLogoutText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -651,18 +680,18 @@ const styles = StyleSheet.create({
   },
   sidebar: {
     borderRightWidth: 1,
-    borderRightColor: almoxTheme.colors.lineStrong,
-    backgroundColor: 'rgba(247, 249, 252, 0.9)',
-    padding: almoxTheme.spacing.sm,
-    gap: almoxTheme.spacing.sm,
-    paddingTop: almoxTheme.spacing.md,
-    paddingBottom: almoxTheme.spacing.md,
+    borderRightColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.sm,
+    gap: tokens.spacing.sm,
+    paddingTop: tokens.spacing.md,
+    paddingBottom: tokens.spacing.md,
   },
   sidebarHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     minHeight: 40,
   },
   sidebarHeaderCollapsed: {
@@ -670,7 +699,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     alignItems: 'center',
     minHeight: 72,
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   sidebarHeaderText: {
     flex: 1,
@@ -678,19 +707,19 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   sidebarEyebrow: {
-    color: almoxTheme.colors.brand,
+    color: tokens.colors.brand,
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   sidebarTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 15,
     fontWeight: '800',
   },
   sidebarMiniTitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -703,8 +732,8 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -722,20 +751,20 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   sidebarNavContent: {
-    gap: almoxTheme.spacing.xs,
-    paddingBottom: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
+    paddingBottom: tokens.spacing.xs,
   },
   sidebarItem: {
     minHeight: 56,
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: 'transparent',
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.sm,
+    borderColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surfaceRaised,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -744,8 +773,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   sidebarItemActive: {
-    backgroundColor: '#ebf3ff',
-    borderColor: '#bfd7ff',
+    backgroundColor: tokens.colors.surfaceStrong,
+    borderColor: tokens.colors.brand,
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
   },
   sidebarItemPressed: {
     opacity: 0.88,
@@ -756,15 +790,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: almoxTheme.colors.surfaceStrong,
+    backgroundColor: tokens.colors.surfaceStrong,
   },
   sidebarIconWrapActive: {
-    backgroundColor: almoxTheme.colors.brandStrong,
-    shadowColor: almoxTheme.colors.brand,
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
+    backgroundColor: tokens.colors.brandStrong,
+    shadowColor: tokens.colors.brand,
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
   },
   sidebarItemText: {
     flex: 1,
@@ -772,20 +806,20 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   sidebarItemLabel: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   sidebarItemLabelActive: {
-    color: almoxTheme.colors.brandStrong,
+    color: tokens.colors.brandStrong,
   },
   sidebarItemHint: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '600',
   },
   sidebarItemHintActive: {
-    color: almoxTheme.colors.textSoft,
+    color: tokens.colors.textSoft,
   },
   sidebarSelectionBar: {
     position: 'absolute',
@@ -794,39 +828,44 @@ const styles = StyleSheet.create({
     bottom: 10,
     width: 4,
     borderRadius: 999,
-    backgroundColor: almoxTheme.colors.brand,
+    backgroundColor: tokens.colors.brand,
   },
   sidebarFoot: {
     minHeight: 50,
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surface,
-    paddingHorizontal: almoxTheme.spacing.sm,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceRaised,
+    paddingHorizontal: tokens.spacing.sm,
     paddingVertical: 10,
     gap: 2,
     justifyContent: 'center',
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   sidebarFootCollapsed: {
     alignItems: 'center',
     paddingHorizontal: 0,
   },
   sidebarFootLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
   sidebarFootValue: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: '800',
   },
   mainColumn: {
     flex: 1,
     minWidth: 0,
-    paddingTop: almoxTheme.spacing.sm,
+    paddingTop: tokens.spacing.sm,
   },
   mainColumnFullBleed: {
     paddingTop: 0,
@@ -841,3 +880,4 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
 });
+

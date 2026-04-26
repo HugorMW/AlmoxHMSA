@@ -3,7 +3,8 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-n
 
 import { ActionBadge, LevelBadge } from "@/features/almox/components/badges";
 import { getCategoriaMaterialLabel } from "@/features/almox/data";
-import { almoxTheme } from "@/features/almox/tokens";
+import { AlmoxTheme } from "@/features/almox/tokens";
+import { useThemedStyles } from "@/features/almox/theme-provider";
 import {
   Action,
   Level,
@@ -38,6 +39,7 @@ export function ProductTable({
   doadorSeguroDias: number;
   pisoDoadorAposEmprestimoDias: number;
 }) {
+  const styles = useThemedStyles(createStyles);
   const minWidth =
     300 +
     100 +
@@ -114,6 +116,7 @@ function TableHeader({
   showActionColumns: boolean;
   showObservationColumn: boolean;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.tableHeader}>
       <Text style={[styles.tableHeadCell, styles.productColumn]}>Produto</Text>
@@ -163,6 +166,7 @@ function ProductRow({
   doadorSeguroDias: number;
   pisoDoadorAposEmprestimoDias: number;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.tableRow}>
       <View style={[styles.productColumn, styles.productCell]}>
@@ -257,6 +261,7 @@ function ObservationCell({
   summary?: string;
   detail?: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   if (!summary && !detail) {
     return <Text style={styles.tableCell}>—</Text>;
   }
@@ -345,6 +350,7 @@ function buildHighlightedSegments(text: string) {
 }
 
 function ProcessSummaryCell({ summary }: { summary?: ProductProcessSummary }) {
+  const styles = useThemedStyles(createStyles);
   if (!summary || summary.total_open === 0) {
     return <Text style={styles.tableCell}>—</Text>;
   }
@@ -418,6 +424,7 @@ function HoverInfo({
   emphasizeText?: boolean;
   children: React.ReactNode;
 }) {
+  const styles = useThemedStyles(createStyles);
   const [showTooltip, setShowTooltip] = useState(false);
 
   return (
@@ -446,22 +453,22 @@ function HoverInfo({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   tableOuter: {
     gap: 0,
   },
   tableStickyHeader: {
-    backgroundColor: almoxTheme.colors.surface,
+    backgroundColor: tokens.colors.surface,
   },
   tableWrap: {},
   tableHeader: {
     flexDirection: "row",
-    paddingBottom: almoxTheme.spacing.sm,
+    paddingBottom: tokens.spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.lineStrong,
+    borderBottomColor: tokens.colors.lineStrong,
   },
   tableHeadCell: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -470,10 +477,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minHeight: 68,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.lineStrong,
+    borderBottomColor: tokens.colors.lineStrong,
   },
   tableCell: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
   },
   tableBadgeCell: {
@@ -482,7 +489,7 @@ const styles = StyleSheet.create({
   },
   productColumn: {
     width: 300,
-    paddingRight: almoxTheme.spacing.md,
+    paddingRight: tokens.spacing.md,
   },
   codeColumn: {
     width: 60,
@@ -510,12 +517,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   productName: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: "700",
   },
   productMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   processList: {
@@ -528,28 +535,28 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   processEdocs: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: "700",
-    fontFamily: almoxTheme.typography.mono,
+    fontFamily: tokens.typography.mono,
   },
   processMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     lineHeight: 16,
   },
   observationSummary: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: "700",
   },
   observationDetail: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     lineHeight: 16,
   },
   observationDetailStrong: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontWeight: "700",
   },
   tooltipAnchor: {
@@ -561,16 +568,16 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     bottom: "100%",
-    marginBottom: almoxTheme.spacing.xs,
+    marginBottom: tokens.spacing.xs,
     minWidth: 200,
     maxWidth: 280,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.sm,
-    borderRadius: almoxTheme.radii.md,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.sm,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surface,
-    shadowColor: almoxTheme.colors.black,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surface,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.1,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
@@ -578,7 +585,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   tooltipText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     lineHeight: 18,
   },

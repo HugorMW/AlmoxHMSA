@@ -5,15 +5,18 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/features/auth/auth-provider';
 import { AlmoxDataProvider } from '@/features/almox/almox-provider';
 import { AppShell } from '@/features/almox/components/app-shell';
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
 
 export default function AlmoxLayout() {
   const { status } = useAuth();
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
 
   if (status === 'checking') {
     return (
       <View style={styles.loadingState}>
-        <ActivityIndicator size="small" color={almoxTheme.colors.brand} />
+        <ActivityIndicator size="small" color={tokens.colors.brand} />
         <Text style={styles.loadingText}>Validando acesso SISCORE...</Text>
       </View>
     );
@@ -30,16 +33,16 @@ export default function AlmoxLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   loadingState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: almoxTheme.spacing.sm,
-    backgroundColor: almoxTheme.colors.canvas,
+    gap: tokens.spacing.sm,
+    backgroundColor: tokens.colors.canvas,
   },
   loadingText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 13,
   },
 });

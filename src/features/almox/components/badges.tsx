@@ -1,11 +1,13 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { actionColors, almoxTheme, levelColors } from '@/features/almox/tokens';
+import { actionColors, AlmoxTheme, levelColors } from '@/features/almox/tokens';
+import { useThemedStyles } from '@/features/almox/theme-provider';
 import { Action, Level, Priority, RuptureRisk } from '@/features/almox/types';
 
 export function LevelBadge({ level }: { level: Level }) {
   const colors = levelColors[level];
+  const styles = useThemedStyles(createStyles);
 
   return (
     <View style={[styles.badge, { backgroundColor: colors.background }]}>
@@ -15,6 +17,8 @@ export function LevelBadge({ level }: { level: Level }) {
 }
 
 export function ActionBadge({ action }: { action?: Action }) {
+  const styles = useThemedStyles(createStyles);
+
   if (!action) {
     return null;
   }
@@ -34,6 +38,7 @@ export function PriorityBadge({ priority }: { priority: Priority }) {
     ALTA: { background: '#ffeddc', foreground: '#b5671b' },
     NORMAL: { background: '#fff6db', foreground: '#9f7514' },
   }[priority];
+  const styles = useThemedStyles(createStyles);
 
   return (
     <View style={[styles.badge, { backgroundColor: palette.background }]}>
@@ -49,6 +54,8 @@ export function ScoreBadge({
   score?: number;
   classification?: string;
 }) {
+  const styles = useThemedStyles(createStyles);
+
   if (score == null) {
     return <Text style={styles.emptyText}>--</Text>;
   }
@@ -71,6 +78,8 @@ export function ScoreBadge({
 }
 
 export function RuptureBadge({ risk }: { risk?: RuptureRisk }) {
+  const styles = useThemedStyles(createStyles);
+
   if (!risk) {
     return null;
   }
@@ -88,17 +97,17 @@ export function RuptureBadge({ risk }: { risk?: RuptureRisk }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   badge: {
     alignSelf: 'flex-start',
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.xxs,
-    borderRadius: almoxTheme.radii.pill,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.xxs,
+    borderRadius: tokens.radii.pill,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
+    borderColor: tokens.colors.line,
   },
   badgeText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.2,
@@ -108,11 +117,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   classification: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 10,
   },
   emptyText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
 });

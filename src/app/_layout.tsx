@@ -7,24 +7,35 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from '@/features/auth/auth-provider';
-import { almoxTheme } from '@/features/almox/tokens';
+import { ThemeProvider, useAppTheme } from '@/features/almox/theme-provider';
 
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <StatusBar style="dark" backgroundColor={almoxTheme.colors.canvas} />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: almoxTheme.colors.canvas },
-            }}>
-            <Stack.Screen name="login" />
-            <Stack.Screen name="(app)" />
-          </Stack>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <ThemedRootStack />
+          </AuthProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+function ThemedRootStack() {
+  const { mode, tokens } = useAppTheme();
+  return (
+    <>
+      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} backgroundColor={tokens.colors.canvas} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: tokens.colors.canvas },
+        }}>
+        <Stack.Screen name="login" />
+        <Stack.Screen name="(app)" />
+      </Stack>
+    </>
   );
 }

@@ -105,6 +105,8 @@ type ModalState =
   | { type: 'parcelas'; item: ProcessoEnriquecido; selectedIndex: number | null; mode: 'single' | 'summary' }
   | null;
 
+type ProcessSortOption = 'prioridade' | 'suficiencia_asc';
+
 function parseIsoDate(value: string | null | undefined) {
   if (!value) {
     return null;
@@ -475,6 +477,7 @@ export default function ProcessesScreen() {
   const [search, setSearch] = useState('');
   const [tipoFilter, setTipoFilter] = useState<ProcessoTipo | 'todos'>('todos');
   const [statusFilter, setStatusFilter] = useState<ProcessoStatus | 'todos' | 'critico'>('todos');
+  const [sortOption, setSortOption] = useState<ProcessSortOption>('prioridade');
   const [showFilters, setShowFilters] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger' | 'info'; message: string } | null>(null);
@@ -550,13 +553,23 @@ export default function ProcessesScreen() {
           search
         );
       })
-      .sort(
-        (left, right) =>
+      .sort((left, right) => {
+        if (sortOption === 'suficiencia_asc') {
+          const leftSufficiency = left.suficiencia_em_dias ?? Number.POSITIVE_INFINITY;
+          const rightSufficiency = right.suficiencia_em_dias ?? Number.POSITIVE_INFINITY;
+
+          if (leftSufficiency !== rightSufficiency) {
+            return leftSufficiency - rightSufficiency;
+          }
+        }
+
+        return (
           getProcessListRank(left) - getProcessListRank(right) ||
           String(left.data_resgate ?? '9999-12-31').localeCompare(String(right.data_resgate ?? '9999-12-31')) ||
           left.numero_processo.localeCompare(right.numero_processo, 'pt-BR')
-      );
-  }, [categoryItems, search, statusFilter, tipoFilter]);
+        );
+      });
+  }, [categoryItems, search, sortOption, statusFilter, tipoFilter]);
 
   const counts = useMemo(
     () => ({
@@ -588,6 +601,7 @@ export default function ProcessesScreen() {
     setSearch('');
     setTipoFilter('todos');
     setStatusFilter('todos');
+    setSortOption('prioridade');
   }
 
   function applyParcelasVisualState(item: ProcessoAcompanhamento, nextState: ProcessoParcelasVisualMap) {
@@ -747,6 +761,18 @@ export default function ProcessesScreen() {
                 ]}
                 value={statusFilter}
                 onChange={setStatusFilter}
+              />
+            </View>
+            <View style={styles.filterBlock}>
+              <Text style={styles.filterLabel}>Ordenação</Text>
+              <DarkTabGroup
+                compact
+                options={[
+                  { label: 'Prioridade', value: 'prioridade', color: processTheme.accent },
+                  { label: 'Menor suficiência', value: 'suficiencia_asc', color: processTheme.blue },
+                ]}
+                value={sortOption}
+                onChange={setSortOption}
               />
             </View>
           </View>
@@ -1227,18 +1253,6 @@ function ProcessRow({
           pressed ? styles.tableCellPressablePressed : null,
         ]}>
         <Text style={styles.dateText}>{formatDate(parseIsoDate(item.data_resgate))}</Text>
-        <Pill
-          label={`${item.entregues}/${item.total_parcelas} entregues`}
-          color={
-            item.entregues >= item.total_parcelas
-              ? processTheme.green
-              : item.status === 'atrasado'
-                ? processTheme.red
-                : item.andamentoComAlerta
-                  ? processTheme.amber
-                  : processTheme.slate
-          }
-        />
       </Pressable>
 
       <View style={[styles.tableCellBlock, styles.timelineColumn]}>
@@ -1246,7 +1260,16 @@ function ProcessRow({
       </View>
 
       <View style={[styles.tableCellBlock, styles.statusColumn]}>
-        <Pill label={status.label} color={status.color} background={status.background} />
+        <View style={styles.statusPillStack}>
+          {item.critico && !item.cancelado ? (
+            <Pill
+              label="Crítico"
+              color={processTheme.critical}
+              background="rgba(255,68,68,0.13)"
+            />
+          ) : null}
+          <Pill label={status.label} color={status.color} background={status.background} />
+        </View>
       </View>
 
       <View style={[styles.actionsColumn, styles.actionList]}>
@@ -2405,6 +2428,9 @@ const baseStyles = StyleSheet.create({
   statusColumn: {
     width: 125,
   },
+  statusPillStack: {
+    gap: almoxTheme.spacing.xs,
+  },
   actionsColumn: {
     width: 118,
   },
@@ -3121,6 +3147,9 @@ const styles = {
     },
     statusColumn: {
       width: 125,
+    },
+    statusPillStack: {
+      gap: 6,
     },
     actionsColumn: {
       width: 115,

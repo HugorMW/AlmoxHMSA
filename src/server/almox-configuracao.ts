@@ -1,5 +1,6 @@
 import {
   ConfiguracaoSistema,
+  ConfiguracaoSistemaKey,
   configuracaoSistemaKeys,
   criarConfiguracaoSistemaDeRows,
   validarConfiguracaoSistema,
@@ -37,7 +38,11 @@ export async function lerConfiguracaoSistema() {
   };
 }
 
-export async function salvarConfiguracaoSistema(config: ConfiguracaoSistema, usuario: string) {
+export async function salvarConfiguracaoSistema(
+  config: ConfiguracaoSistema,
+  usuario: string,
+  keys: ConfiguracaoSistemaKey[] = configuracaoSistemaKeys
+) {
   const issues = validarConfiguracaoSistema(config);
   if (issues.length > 0) {
     throw new Error(issues.map((issue) => issue.message).join('\n'));
@@ -45,7 +50,7 @@ export async function salvarConfiguracaoSistema(config: ConfiguracaoSistema, usu
 
   const supabase = getSupabaseAdmin() as any;
 
-  for (const key of configuracaoSistemaKeys) {
+  for (const key of keys) {
     const { error } = await supabase.rpc('salvar_configuracao_sistema', {
       p_chave: key,
       p_valor: config[key],

@@ -34,8 +34,8 @@ import {
 import { buildOpenProcessSummaryByProductCode } from './process-utils';
 
 const PAGE_SIZE = 1000;
-const ALMOX_CACHE_KEY = 'almox:base:v1';
-const ALMOX_SESSION_KEY = 'almox:base:session:v1';
+const ALMOX_CACHE_KEY = 'almox:base:v2';
+const ALMOX_SESSION_KEY = 'almox:base:session:v2';
 const ALMOX_CACHE_TTL_MS = 5 * 60 * 1000;
 const ALMOX_CONFIG_CACHE_KEY = 'almox:config:v1';
 const ALMOX_CONFIG_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -1531,6 +1531,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     const cachedProcesses = readCachedValue<AlmoxProcessCache>(ALMOX_PROCESS_CACHE_KEY, ALMOX_PROCESS_CACHE_TTL_MS);
 
     if (sessionLoaded && cached) {
+      const cacheHasMonthlyConsumptionRows = Array.isArray(cached.value.monthlyConsumptionRows);
       hasLoadedRef.current = true;
       startTransition(() => {
         setRows(cached.value.rows);
@@ -1541,7 +1542,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       setLastRefreshAt(new Date(cached.savedAt).toISOString());
       setLoading(false);
 
-      if (cached.isFresh) {
+      if (cached.isFresh && cacheHasMonthlyConsumptionRows) {
         setUsingCachedData(false);
       } else {
         setUsingCachedData(true);
