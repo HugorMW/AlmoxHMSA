@@ -68,6 +68,8 @@ export const levelColors = {
 
 export const actionColors = {
   COMPRAR: { background: '#ffe3e9', foreground: '#ba3358' },
+  'ACOMPANHAR PROCESSO': { background: '#fff4d6', foreground: '#9f7514' },
+  'COBRAR ENTREGA': { background: '#ffeddc', foreground: '#b5671b' },
   'PEGAR EMPRESTADO': { background: '#dff2ff', foreground: '#176ab5' },
   AVALIAR: { background: '#ebe6ff', foreground: '#5f49d7' },
   'PODE EMPRESTAR': { background: '#dcfaf0', foreground: '#0f7d5b' },

@@ -1,7 +1,6 @@
 import React, { useDeferredValue, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
-import { ActionBadge, LevelBadge } from '@/features/almox/components/badges';
 import {
   ActionButton,
   EmptyState,
@@ -16,15 +15,22 @@ import {
   SectionCard,
   SectionTitle,
 } from '@/features/almox/components/common';
+import { ProductTable } from '@/features/almox/components/product-table';
 import { useAlmoxData } from '@/features/almox/almox-provider';
-import { getActionTooltips, getLevelRangeLabels, getLevelTooltips, getLimiteCompraDias } from '@/features/almox/configuracao';
+import { getActionTooltips, getLevelRangeLabels, getLevelTooltips } from '@/features/almox/configuracao';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
 import { createExportTimestamp, exportRowsToExcel } from '@/features/almox/excel';
 import { almoxTheme } from '@/features/almox/tokens';
-import { Hospital, Product } from '@/features/almox/types';
-import { formatDecimal, paginate, matchesQuery } from '@/features/almox/utils';
+import { Hospital } from '@/features/almox/types';
+import { paginate, matchesQuery } from '@/features/almox/utils';
 
-type ActionFilter = 'all' | 'COMPRAR' | 'PEGAR EMPRESTADO' | 'AVALIAR';
+type ActionFilter =
+  | 'all'
+  | 'COMPRAR'
+  | 'ACOMPANHAR PROCESSO'
+  | 'COBRAR ENTREGA'
+  | 'PEGAR EMPRESTADO'
+  | 'AVALIAR';
 type LevelFilter = 'all' | 'URGENTE' | 'CRÍTICO' | 'ALTO' | 'MÉDIO' | 'BAIXO' | 'ESTÁVEL';
 type SortOption = 'dias_asc' | 'dias_desc' | 'nome_asc' | 'codigo_asc';
 
@@ -38,17 +44,29 @@ export default function ProductsScreen() {
   const [pageSize, setPageSize] = useState<PageSize>(10);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const { dataset, categoryFilter, error, warning, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData, systemConfig } = useAlmoxData();
+  const {
+    dataset,
+    categoryFilter,
+    error,
+    warning,
+    loading,
+    refreshing,
+    syncError,
+    syncNotice,
+    syncingBase,
+    syncBase,
+    usingCachedData,
+    systemConfig,
+    openProcessSummaryByProductCode,
+  } = useAlmoxData();
   const levelTooltips = useMemo(() => getLevelTooltips(systemConfig), [systemConfig]);
   const actionTooltips = useMemo(() => getActionTooltips(systemConfig), [systemConfig]);
   const levelRanges = useMemo(() => getLevelRangeLabels(systemConfig), [systemConfig]);
-  const limiteCompraDias = useMemo(() => getLimiteCompraDias(systemConfig), [systemConfig]);
-
   const deferredSearch = useDeferredValue(search);
   const hospitals = dataset.hospitals;
-  const items = dataset.productsByHospital[activeHospital] ?? [];
 
   const filteredItems = useMemo(() => {
+    const items = dataset.productsByHospital[activeHospital] ?? [];
     const nextItems = items.filter((item) => {
       if (actionFilter !== 'all' && item.action !== actionFilter) {
         return false;
@@ -76,13 +94,15 @@ export default function ProductsScreen() {
     });
 
     return nextItems;
-  }, [items, actionFilter, levelFilter, deferredSearch, sortOption]);
+  }, [dataset.productsByHospital, activeHospital, actionFilter, levelFilter, deferredSearch, sortOption]);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const pageItems = paginate(filteredItems, safePage, pageSize);
 
   const showActionColumns = activeHospital === 'HMSA';
+  const showProcessColumn = activeHospital === 'HMSA';
+  const showObservationColumn = activeHospital === 'HMSA';
 
   async function handleExport() {
     setExportError(null);
@@ -92,23 +112,33 @@ export default function ProductsScreen() {
       await exportRowsToExcel({
         fileName: `produtos_${activeHospital}_${categoryFilter}_${createExportTimestamp()}`,
         sheetName: `Produtos ${activeHospital}`,
-        rows: filteredItems.map((item) => ({
-          Hospital: item.hospital,
-          Categoria: getCategoriaMaterialLabel(item.categoria_material),
-          'Código do produto': item.product_code,
-          Produto: item.product_name,
-          'Dias de suficiência': item.sufficiency_days,
-          'Consumo médio mensal': item.avg_monthly_consumption,
-          Nível: item.level,
-          Ação: item.action ?? '',
-          'Unidade doadora': item.suggested_hospital ?? '',
-          'Unidade doadora - Suficiência atual (dias)': item.donor_sufficiency ?? '',
-          'Unidade doadora - Estoque atual': item.donor_current_stock ?? '',
-          'Unidade doadora - Suficiência após transferência': item.nova_suf_doador ?? '',
-          'Quantidade sugerida para transferência': item.qty_transfer ?? '',
-          'HMSA - Suficiência após transferência': item.projected_suf ?? '',
-          'Classificação operacional': item.classification ?? '',
-        })),
+        rows: filteredItems.map((item) => {
+          const processSummary =
+            item.hospital === 'HMSA' ? openProcessSummaryByProductCode[item.product_code] : undefined;
+
+          return {
+            Hospital: item.hospital,
+            Categoria: getCategoriaMaterialLabel(item.categoria_material),
+            'Código do produto': item.product_code,
+            Produto: item.product_name,
+            'Dias de suficiência': item.sufficiency_days,
+            'Consumo médio mensal': item.avg_monthly_consumption,
+            Nível: item.level,
+            'Processos em aberto': processSummary?.total_open ?? '',
+            'Processos atrasados': processSummary?.overdue_count ?? '',
+            'Processos críticos': processSummary?.critical_count ?? '',
+            Ação: item.action ?? '',
+            'Observação curta': item.observation_summary ?? '',
+            'Observação detalhada': item.observation_detail ?? '',
+            'Unidade doadora': item.suggested_hospital ?? '',
+            'Unidade doadora - Suficiência atual (dias)': item.donor_sufficiency ?? '',
+            'Unidade doadora - Estoque atual': item.donor_current_stock ?? '',
+            'Unidade doadora - Suficiência após transferência': item.nova_suf_doador ?? '',
+            'Quantidade sugerida para transferência': item.qty_transfer ?? '',
+            'HMSA - Suficiência após transferência': item.projected_suf ?? '',
+            'Classificação operacional': item.classification ?? '',
+          };
+        }),
       });
     } catch (caughtError) {
       setExportError(caughtError instanceof Error ? caughtError.message : 'Não foi possível gerar o arquivo Excel.');
@@ -228,20 +258,27 @@ export default function ProductsScreen() {
                 {
                   label: 'Comprar',
                   value: 'COMPRAR' as const,
-                  tooltip:
-                    `Item com até ${limiteCompraDias} dias sem outro hospital com cobertura suficiente para emprestar, ou já na faixa até ${systemConfig.medioDias} dias sem redistribuição prioritária.`,
+                  tooltip: actionTooltips.COMPRAR,
+                },
+                {
+                  label: 'Acompanhar processo',
+                  value: 'ACOMPANHAR PROCESSO' as const,
+                  tooltip: actionTooltips['ACOMPANHAR PROCESSO'],
+                },
+                {
+                  label: 'Cobrar entrega',
+                  value: 'COBRAR ENTREGA' as const,
+                  tooltip: actionTooltips['COBRAR ENTREGA'],
                 },
                 {
                   label: 'Pegar emprestado',
                   value: 'PEGAR EMPRESTADO' as const,
-                  tooltip:
-                    `Item do HMSA com até ${limiteCompraDias} dias e outro hospital com o mesmo item acima de ${systemConfig.doadorSeguroDias} dias, mantendo pelo menos ${systemConfig.pisoDoadorAposEmprestimoDias} dias após a transferência.`,
+                  tooltip: actionTooltips['PEGAR EMPRESTADO'],
                 },
                 {
                   label: 'Avaliar',
                   value: 'AVALIAR' as const,
-                  tooltip:
-                    'Faixa mantida para leitura operacional, mas a regra atual tende a não priorizar essa saída.',
+                  tooltip: actionTooltips.AVALIAR,
                 },
               ]}
               value={actionFilter}
@@ -365,31 +402,18 @@ export default function ProductsScreen() {
             description="Ajuste os filtros ou aguarde a carga inicial para visualizar os itens desta unidade."
           />
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.tableWrap}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeadCell, styles.productColumn]}>Produto</Text>
-                <Text style={[styles.tableHeadCell, styles.codeColumn]}>Código</Text>
-                <Text style={[styles.tableHeadCell, styles.smallColumn]}>Dias</Text>
-                <Text style={[styles.tableHeadCell, styles.smallColumn]}>Nível</Text>
-                {showActionColumns ? <Text style={[styles.tableHeadCell, styles.actionColumn]}>Ação</Text> : null}
-                {showActionColumns ? <Text style={[styles.tableHeadCell, styles.hospitalColumn]}>Hospital sugerido</Text> : null}
-              </View>
-
-              {pageItems.map((item) => (
-                <ProductRow
-                  key={`${item.categoria_material}-${item.hospital}-${item.product_code}`}
-                  item={item}
-                  showActionColumns={showActionColumns}
-                  showMaterialLabel={categoryFilter === 'todos'}
-                  levelTooltip={levelTooltips[item.level]}
-                  actionTooltip={item.action ? actionTooltips[item.action] : undefined}
-                  doadorSeguroDias={systemConfig.doadorSeguroDias}
-                  pisoDoadorAposEmprestimoDias={systemConfig.pisoDoadorAposEmprestimoDias}
-                />
-              ))}
-            </View>
-          </ScrollView>
+          <ProductTable
+            items={pageItems}
+            showActionColumns={showActionColumns}
+            showProcessColumn={showProcessColumn}
+            showObservationColumn={showObservationColumn}
+            showMaterialLabel={categoryFilter === 'todos'}
+            levelTooltips={levelTooltips}
+            actionTooltips={actionTooltips}
+            processSummaryByProductCode={openProcessSummaryByProductCode}
+            doadorSeguroDias={systemConfig.doadorSeguroDias}
+            pisoDoadorAposEmprestimoDias={systemConfig.pisoDoadorAposEmprestimoDias}
+          />
         )}
 
         <PaginationFooter
@@ -407,102 +431,6 @@ export default function ProductsScreen() {
         />
       </SectionCard>
     </ScreenScrollView>
-  );
-}
-
-function ProductRow({
-  item,
-  showActionColumns,
-  showMaterialLabel,
-  levelTooltip,
-  actionTooltip,
-  doadorSeguroDias,
-  pisoDoadorAposEmprestimoDias,
-}: {
-  item: Product;
-  showActionColumns: boolean;
-  showMaterialLabel: boolean;
-  levelTooltip: string;
-  actionTooltip?: string;
-  doadorSeguroDias: number;
-  pisoDoadorAposEmprestimoDias: number;
-}) {
-  return (
-    <View style={styles.tableRow}>
-      <View style={[styles.productColumn, styles.productCell]}>
-        <Text style={styles.productName} numberOfLines={1}>
-          {item.product_name}
-        </Text>
-        <Text style={styles.productMeta}>
-          CMM: {formatDecimal(item.avg_monthly_consumption)}
-          {showMaterialLabel ? ` • ${getCategoriaMaterialLabel(item.categoria_material)}` : ''}
-        </Text>
-      </View>
-      <Text style={[styles.tableCell, styles.codeColumn]}>{item.product_code}</Text>
-      <Text style={[styles.tableCell, styles.smallColumn]}>{formatDecimal(item.sufficiency_days)}</Text>
-      <View style={[styles.tableBadgeCell, styles.smallColumn]}>
-        <HoverInfo text={levelTooltip}>
-          <LevelBadge level={item.level} />
-        </HoverInfo>
-      </View>
-      {showActionColumns ? (
-        <View style={[styles.tableBadgeCell, styles.actionColumn]}>
-          {item.action ? (
-            <HoverInfo text={actionTooltip ?? 'Recomendação operacional calculada para este item.'}>
-              <ActionBadge action={item.action} />
-            </HoverInfo>
-          ) : (
-            <Text style={styles.tableCell}>—</Text>
-          )}
-        </View>
-      ) : null}
-      {showActionColumns ? (
-        <View style={[styles.hospitalColumn, styles.productCell]}>
-          <HoverInfo
-            text={
-              item.suggested_hospital
-                ? `Melhor hospital para emprestar este item. O valor em dias ao lado do hospital mostra a cobertura atual dessa unidade: ${item.donor_sufficiency?.toFixed(0) ?? 'sem dado'} dias. Estoque atual da unidade sugerida: ${item.donor_current_stock != null ? formatDecimal(item.donor_current_stock, 0) : 'sem dado'}. Cobertura estimada depois do empréstimo: ${item.nova_suf_doador?.toFixed(0) ?? 'sem dado'} dias. Mínimo configurado depois de emprestar: ${pisoDoadorAposEmprestimoDias} dias.`
-                : `Nenhum hospital encontrado com o mesmo item e mais de ${doadorSeguroDias} dias de cobertura atual.`
-            }>
-            <View style={styles.productCell}>
-              <Text style={styles.tableCell}>
-                {item.suggested_hospital
-                  ? `${item.suggested_hospital}${item.donor_sufficiency ? ` • ${item.donor_sufficiency.toFixed(0)}d` : ''}`
-                  : '—'}
-              </Text>
-              {item.suggested_hospital && item.donor_current_stock != null ? (
-                <Text style={styles.productMeta}>Estoque atual: {formatDecimal(item.donor_current_stock, 0)}</Text>
-              ) : null}
-              {item.suggested_hospital && item.nova_suf_doador != null ? (
-                <Text style={styles.productMeta}>Suf. projetada doador: {formatDecimal(item.nova_suf_doador, 0)}d</Text>
-              ) : null}
-            </View>
-          </HoverInfo>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function HoverInfo({
-  text,
-  children,
-}: {
-  text: string;
-  children: React.ReactNode;
-}) {
-  const [showTooltip, setShowTooltip] = useState(false);
-
-  return (
-    <Pressable
-      onHoverIn={() => setShowTooltip(true)}
-      onHoverOut={() => setShowTooltip(false)}
-      onPressIn={() => setShowTooltip(true)}
-      onPressOut={() => setShowTooltip(false)}
-      style={styles.tooltipAnchor}>
-      {showTooltip ? <View pointerEvents="none" style={styles.tooltipBubble}><Text style={styles.tooltipText}>{text}</Text></View> : null}
-      {children}
-    </Pressable>
   );
 }
 
@@ -525,93 +453,5 @@ const styles = StyleSheet.create({
     color: almoxTheme.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
-  },
-  tableWrap: {
-    minWidth: 920,
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    paddingBottom: almoxTheme.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.lineStrong,
-  },
-  tableHeadCell: {
-    color: almoxTheme.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 68,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
-  },
-  tableCell: {
-    color: almoxTheme.colors.text,
-    fontSize: 13,
-  },
-  tableBadgeCell: {
-    justifyContent: 'center',
-    overflow: 'visible',
-  },
-  productColumn: {
-    width: 300,
-    paddingRight: almoxTheme.spacing.md,
-  },
-  codeColumn: {
-    width: 120,
-  },
-  smallColumn: {
-    width: 110,
-  },
-  actionColumn: {
-    width: 180,
-  },
-  hospitalColumn: {
-    width: 220,
-  },
-  productCell: {
-    gap: 4,
-    justifyContent: 'center',
-  },
-  productName: {
-    color: almoxTheme.colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  productMeta: {
-    color: almoxTheme.colors.textMuted,
-    fontSize: 11,
-  },
-  tooltipAnchor: {
-    position: 'relative',
-    alignSelf: 'flex-start',
-    overflow: 'visible',
-  },
-  tooltipBubble: {
-    position: 'absolute',
-    left: 0,
-    bottom: '100%',
-    marginBottom: almoxTheme.spacing.xs,
-    minWidth: 200,
-    maxWidth: 280,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.sm,
-    borderRadius: almoxTheme.radii.md,
-    borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surface,
-    shadowColor: almoxTheme.colors.black,
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
-    zIndex: 20,
-  },
-  tooltipText: {
-    color: almoxTheme.colors.text,
-    fontSize: 12,
-    lineHeight: 18,
   },
 });

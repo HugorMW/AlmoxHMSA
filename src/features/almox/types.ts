@@ -4,6 +4,8 @@ export type FiltroCategoriaMaterial = 'todos' | CategoriaMaterial;
 export type Level = 'URGENTE' | 'CRÍTICO' | 'ALTO' | 'MÉDIO' | 'BAIXO' | 'ESTÁVEL';
 export type Action =
   | 'COMPRAR'
+  | 'ACOMPANHAR PROCESSO'
+  | 'COBRAR ENTREGA'
   | 'PEGAR EMPRESTADO'
   | 'AVALIAR'
   | 'PODE EMPRESTAR'
@@ -39,6 +41,8 @@ export interface Product {
   nova_suf_receptor?: number;
   trend?: number;
   qty_to_buy?: number;
+  observation_summary?: string;
+  observation_detail?: string;
 }
 
 export interface DashboardKPI {
@@ -188,6 +192,38 @@ export interface ProcessoProdutoLookup {
   categoria_material: CategoriaMaterial;
   estoque_atual?: number;
   suficiencia_em_dias?: number;
+}
+
+export interface ProductProcessSummaryParcel {
+  numero: number;
+  data_label: string;
+  adiamento_dias_uteis?: number;
+  due_in_days: number | null;
+  overdue: boolean;
+  near_due: boolean;
+  empresa_notificada: boolean;
+  empresa_notificada_em: string | null;
+}
+
+export interface ProductProcessSummaryEntry {
+  numero_processo: string;
+  edocs: string;
+  fornecedor: string;
+  marca: string;
+  tipo_processo: ProcessoTipo;
+  data_resgate: string | null;
+  status: ProcessoStatus;
+  critico: boolean;
+  andamento_com_alerta: boolean;
+  parcelas: ProductProcessSummaryParcel[];
+}
+
+export interface ProductProcessSummary {
+  total_open: number;
+  overdue_count: number;
+  critical_count: number;
+  alert_count: number;
+  entries: ProductProcessSummaryEntry[];
 }
 
 export type ProcessoSaveInput = Omit<

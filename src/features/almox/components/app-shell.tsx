@@ -45,9 +45,10 @@ export function AppShell() {
   const [isSidebarCollapsed, setSidebarCollapsed] = React.useState(width < 1240);
   const sidebarCollapsed = autoCompactSidebar || isSidebarCollapsed;
   const sidebarWidth = sidebarCollapsed ? 84 : 248;
-  const shellMaxWidth =
+  const headerMaxWidth =
     width >= 1680 ? 1560 : width >= 1480 ? 1440 : width >= 1280 ? 1320 : almoxTheme.layout.maxWidth;
-  const shellHorizontalPadding = width >= 1480 ? almoxTheme.spacing.sm : almoxTheme.spacing.md;
+  const headerHorizontalPadding = width >= 1480 ? almoxTheme.spacing.sm : almoxTheme.spacing.md;
+  const contentHorizontalPadding = width >= 1480 ? almoxTheme.spacing.xxs : almoxTheme.spacing.xs;
   const currentItem =
     navigationItems.find((item) => pathname === item.match || (item.match !== '/' && pathname.startsWith(item.match))) ??
     navigationItems[0];
@@ -98,12 +99,12 @@ export function AppShell() {
           />
         ) : null}
 
-        <View style={[styles.headerShell, { paddingHorizontal: shellHorizontalPadding }]}>
+        <View style={[styles.headerShell, { paddingHorizontal: headerHorizontalPadding }]}>
           <View
             style={[
               styles.header,
               isHeaderStacked ? styles.headerStacked : null,
-              { maxWidth: shellMaxWidth },
+              { maxWidth: headerMaxWidth },
             ]}>
             <View style={styles.headerMain}>
               <View style={styles.brandMark}>
@@ -361,12 +362,16 @@ export function AppShell() {
               style={[
                 styles.mainColumn,
                 isProcessRoute ? styles.mainColumnFullBleed : null,
-                { paddingHorizontal: isProcessRoute ? 0 : shellHorizontalPadding },
+                {
+                  paddingHorizontal: isProcessRoute ? 0 : contentHorizontalPadding,
+                },
               ]}>
               <View
                 style={[
                   styles.contentInner,
-                  isProcessRoute ? styles.contentInnerFullBleed : { maxWidth: shellMaxWidth },
+                  isProcessRoute
+                    ? styles.contentInnerFullBleed
+                    : styles.contentInnerFullBleed,
                 ]}>
                 <Slot />
               </View>

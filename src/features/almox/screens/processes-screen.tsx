@@ -31,6 +31,7 @@ import {
   ProcessoStatus,
   ProcessoTipo,
 } from '@/features/almox/types';
+import { computeProcessStatus } from '@/features/almox/process-utils';
 import { matchesQuery } from '@/features/almox/utils';
 
 const PROCESS_TYPES: ProcessoTipo[] = ['ARP', 'Processo Simplificado', 'Processo Excepcional'];
@@ -61,8 +62,8 @@ const processTheme = {
 const statusMeta: Record<ProcessoStatus, { label: string; color: string; background: string }> = {
   andamento: {
     label: 'Em andamento',
-    color: processTheme.amber,
-    background: 'rgba(255,179,64,0.11)',
+    color: processTheme.slate,
+    background: 'rgba(150,164,197,0.12)',
   },
   atrasado: {
     label: 'Atrasado',
@@ -85,6 +86,8 @@ type ProcessoEnriquecido = ProcessoAcompanhamento & {
   status: ProcessoStatus;
   entregues: number;
   visualParcelas: ProcessoParcelasVisualMap;
+  suficiencia_em_dias?: number;
+  andamentoComAlerta: boolean;
 };
 
 type ParcelaVisualDraft = {
@@ -365,32 +368,35 @@ function countDelivered(item: ProcessoAcompanhamento) {
   return item.parcelas_entregues.filter(Boolean).length;
 }
 
-function computeStatus(
+const PROCESSO_ALERTA_DIAS_UTEIS = 1;
+
+function isParcelaNearDue(dueDate: Date | null, today: Date) {
+  if (!dueDate) {
+    return false;
+  }
+  const limit = addBusinessDays(today, PROCESSO_ALERTA_DIAS_UTEIS);
+  return dueDate > today && dueDate <= limit;
+}
+
+function hasAndamentoComAlerta(
   item: ProcessoAcompanhamento,
   config: ConfiguracaoSistema,
   visualParcelas?: ProcessoParcelasVisualMap
-): ProcessoStatus {
-  if (item.cancelado) {
-    return 'cancelado';
-  }
-
-  if (countDelivered(item) >= item.total_parcelas) {
-    return 'concluido';
-  }
-
+) {
   const today = getTodayAtStartOfDay();
+
   for (let index = 0; index < item.total_parcelas; index += 1) {
     if (item.parcelas_entregues[index]) {
       continue;
     }
 
     const dueDate = getParcelaAdjustedDueDate(item, index, config, visualParcelas?.[index]);
-    if (dueDate && dueDate < today) {
-      return 'atrasado';
+    if (isParcelaNearDue(dueDate, today)) {
+      return true;
     }
   }
 
-  return 'andamento';
+  return false;
 }
 
 function getFirstPendingParcelaIndex(item: ProcessoAcompanhamento) {
@@ -468,7 +474,7 @@ export default function ProcessesScreen() {
   const [categoria, setCategoria] = useState<CategoriaMaterial>('material_hospitalar');
   const [search, setSearch] = useState('');
   const [tipoFilter, setTipoFilter] = useState<ProcessoTipo | 'todos'>('todos');
-  const [statusFilter, setStatusFilter] = useState<ProcessoStatus | 'todos'>('todos');
+  const [statusFilter, setStatusFilter] = useState<ProcessoStatus | 'todos' | 'critico'>('todos');
   const [showFilters, setShowFilters] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger' | 'info'; message: string } | null>(null);
@@ -493,13 +499,21 @@ export default function ProcessesScreen() {
 
   const enrichedItems = useMemo<ProcessoEnriquecido[]>(
     () =>
-      processItems.map((item) => ({
-        ...item,
-        visualParcelas: createVisualParcelasMap(item, parcelasVisualState[getProcessItemKey(item)]),
-        status: computeStatus(item, systemConfig, parcelasVisualState[getProcessItemKey(item)]),
-        entregues: countDelivered(item),
-      })),
-    [parcelasVisualState, processItems, systemConfig]
+      processItems.map((item) => {
+        const lookup =
+          (item.cod_bionexo ? findHmsaProductByBionexoCode(item.cod_bionexo) : null) ??
+          (item.cd_produto ? findHmsaProductByProductCode(item.cd_produto) : null);
+        const visual = parcelasVisualState[getProcessItemKey(item)];
+        return {
+          ...item,
+          visualParcelas: createVisualParcelasMap(item, visual),
+          status: computeProcessStatus(item, systemConfig, visual),
+          entregues: countDelivered(item),
+          suficiencia_em_dias: lookup?.suficiencia_em_dias,
+          andamentoComAlerta: hasAndamentoComAlerta(item, systemConfig, visual),
+        };
+      }),
+    [findHmsaProductByBionexoCode, findHmsaProductByProductCode, parcelasVisualState, processItems, systemConfig]
   );
 
   const categoryItems = useMemo(
@@ -515,7 +529,11 @@ export default function ProcessesScreen() {
           return false;
         }
 
-        if (statusFilter !== 'todos' && item.status !== statusFilter) {
+        if (statusFilter === 'critico') {
+          if (item.cancelado || !item.critico) {
+            return false;
+          }
+        } else if (statusFilter !== 'todos' && item.status !== statusFilter) {
           return false;
         }
 
@@ -642,13 +660,19 @@ export default function ProcessesScreen() {
         ) : null}
 
         <View style={styles.metricGrid}>
-          <MetricCard label="Total" value={counts.total} color={processTheme.text} />
           <MetricCard
-            label="Em andamento"
-            value={counts.andamento}
-            color={processTheme.amber}
-            active={statusFilter === 'andamento'}
-            onPress={() => setStatusFilter((current) => (current === 'andamento' ? 'todos' : 'andamento'))}
+            label="Total"
+            value={counts.total}
+            color={processTheme.text}
+            active={statusFilter === 'todos'}
+            onPress={() => setStatusFilter('todos')}
+          />
+          <MetricCard
+            label="CRÍTICO (Risco de desabastecimento)"
+            value={counts.critico}
+            color={processTheme.critical}
+            active={statusFilter === 'critico'}
+            onPress={() => setStatusFilter((current) => (current === 'critico' ? 'todos' : 'critico'))}
           />
           <MetricCard
             label="Atrasados"
@@ -656,6 +680,13 @@ export default function ProcessesScreen() {
             color={processTheme.red}
             active={statusFilter === 'atrasado'}
             onPress={() => setStatusFilter((current) => (current === 'atrasado' ? 'todos' : 'atrasado'))}
+          />
+          <MetricCard
+            label="Em andamento"
+            value={counts.andamento}
+            color={processTheme.slate}
+            active={statusFilter === 'andamento'}
+            onPress={() => setStatusFilter((current) => (current === 'andamento' ? 'todos' : 'andamento'))}
           />
           <MetricCard
             label="Concluídos"
@@ -671,7 +702,6 @@ export default function ProcessesScreen() {
             active={statusFilter === 'cancelado'}
             onPress={() => setStatusFilter((current) => (current === 'cancelado' ? 'todos' : 'cancelado'))}
           />
-          <MetricCard label="Críticos" value={counts.critico} color={processTheme.critical} />
         </View>
 
         <View style={styles.toolbar}>
@@ -710,7 +740,7 @@ export default function ProcessesScreen() {
                 compact
                 options={[
                   { label: 'Todos', value: 'todos', color: processTheme.accent },
-                  { label: 'Em andamento', value: 'andamento', color: processTheme.amber },
+                  { label: 'Em andamento', value: 'andamento', color: processTheme.slate },
                   { label: 'Atrasado', value: 'atrasado', color: processTheme.red },
                   { label: 'Concluído', value: 'concluido', color: processTheme.green },
                   { label: 'Cancelado', value: 'cancelado', color: processTheme.slate },
@@ -764,7 +794,15 @@ export default function ProcessesScreen() {
         <View style={styles.legendRow}>
           <LegendDot color={processTheme.critical} label="Crítico" />
           <LegendDot color={processTheme.red} label="Parcela atrasada" />
-          <LegendDot color={processTheme.amber} label="Pendente dentro do prazo" />
+          <LegendDot
+            color={processTheme.amber}
+            label={
+              PROCESSO_ALERTA_DIAS_UTEIS === 1
+                ? 'Entrega em 1 dia útil'
+                : `Pendente em até ${PROCESSO_ALERTA_DIAS_UTEIS} dias úteis`
+            }
+          />
+          <LegendDot color={processTheme.slate} label="Pendente dentro do prazo" />
           <LegendDot color={processTheme.green} label="Entregue" />
           <LegendIcon icon="clock" color={processTheme.blue} label="Adiada" />
           <LegendIcon icon="bell" color={processTheme.purple} label="Empresa notificada" />
@@ -1167,6 +1205,9 @@ function ProcessRow({
         <Text style={styles.productMeta} numberOfLines={1}>
           Produto {item.cd_produto}
           {item.cod_bionexo ? ` · Bionexo ${item.cod_bionexo}` : ' · Sem Cod. Bionexo'}
+          {item.suficiencia_em_dias != null
+            ? ` · Suficiência ${formatLookupNumber(item.suficiencia_em_dias)} dias`
+            : ''}
         </Text>
         <Text style={styles.productMeta} numberOfLines={1}>
           {item.fornecedor || 'Fornecedor não informado'}
@@ -1188,7 +1229,15 @@ function ProcessRow({
         <Text style={styles.dateText}>{formatDate(parseIsoDate(item.data_resgate))}</Text>
         <Pill
           label={`${item.entregues}/${item.total_parcelas} entregues`}
-          color={item.entregues >= item.total_parcelas ? processTheme.green : processTheme.amber}
+          color={
+            item.entregues >= item.total_parcelas
+              ? processTheme.green
+              : item.status === 'atrasado'
+                ? processTheme.red
+                : item.andamentoComAlerta
+                  ? processTheme.amber
+                  : processTheme.slate
+          }
         />
       </Pressable>
 
@@ -1245,7 +1294,14 @@ function ParcelaTimeline({
         const visualState = getParcelaVisualState(item, index);
         const dueDate = getParcelaAdjustedDueDate(item, index, systemConfig, visualState);
         const overdue = !delivered && dueDate != null && dueDate < today;
-        const color = delivered ? processTheme.green : overdue ? processTheme.red : processTheme.amber;
+        const nearDue = !delivered && !overdue && isParcelaNearDue(dueDate, today);
+        const color = delivered
+          ? processTheme.green
+          : overdue
+            ? processTheme.red
+            : nearDue
+              ? processTheme.amber
+              : processTheme.slate;
 
         return (
           <Pressable
@@ -1871,13 +1927,17 @@ function ParcelasModal({
   const adjustedDueDate = getParcelaAdjustedDueDate(item, selectedIndex, systemConfig, selectedVisualState);
   const selectedOverdue =
     !selectedDelivered && adjustedDueDate != null && adjustedDueDate < getTodayAtStartOfDay();
+  const selectedNearDue =
+    !selectedDelivered && !selectedOverdue && isParcelaNearDue(adjustedDueDate, getTodayAtStartOfDay());
   const selectedStatusColor = item.cancelado
     ? processTheme.slate
     : selectedDelivered
       ? processTheme.green
       : selectedOverdue
         ? processTheme.red
-        : processTheme.amber;
+        : selectedNearDue
+          ? processTheme.amber
+          : processTheme.slate;
   const selectedStatusLabel = item.cancelado
     ? 'Cancelado'
     : selectedDelivered
@@ -1964,8 +2024,16 @@ function ParcelasModal({
               {parcelas.map((delivered, index) => {
                 const parcelVisualState = visualState[index] ?? getDefaultParcelaVisualDraft();
                 const dueDate = getParcelaAdjustedDueDate(item, index, systemConfig, parcelVisualState);
-                const overdue = !delivered && dueDate != null && dueDate < getTodayAtStartOfDay();
-                const color = delivered ? processTheme.green : overdue ? processTheme.red : processTheme.amber;
+                const today = getTodayAtStartOfDay();
+                const overdue = !delivered && dueDate != null && dueDate < today;
+                const nearDue = !delivered && !overdue && isParcelaNearDue(dueDate, today);
+                const color = delivered
+                  ? processTheme.green
+                  : overdue
+                    ? processTheme.red
+                    : nearDue
+                      ? processTheme.amber
+                      : processTheme.slate;
                 const active = selectedIndex === index;
 
                 return (
@@ -3029,7 +3097,6 @@ const styles = {
       backgroundColor: 'rgba(255,68,68,0.045)',
     },
     canceledRow: {
-      borderLeftColor: processTheme.slate,
       backgroundColor: 'rgba(150,164,197,0.06)',
     },
     overdueRow: {

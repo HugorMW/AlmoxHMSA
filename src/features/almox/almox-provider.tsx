@@ -6,6 +6,7 @@ import {
   AlmoxDataset,
   createEmptyDataset,
   EstoqueAtualRow,
+  ProductMonthlyConsumptionSignal,
   getEmailConfig,
   hydrateDataset,
 } from './data';
@@ -28,7 +29,9 @@ import {
   ProcessoParcelaDetalhe,
   ProcessoProdutoLookup,
   ProcessoSaveInput,
+  ProductProcessSummary,
 } from './types';
+import { buildOpenProcessSummaryByProductCode } from './process-utils';
 
 const PAGE_SIZE = 1000;
 const ALMOX_CACHE_KEY = 'almox:base:v1';
@@ -76,6 +79,14 @@ type SyncSuccessMetadata = {
   skipped?: boolean;
 };
 
+type MonthlyConsumptionRow = {
+  codigo_unidade: string;
+  codigo_produto: string;
+  data_snapshot_inicio: string | null;
+  consumo_mes_ate_hoje: number | string | null;
+  percentual_consumido: number | string | null;
+};
+
 type AlmoxDataContextValue = {
   dataset: AlmoxDataset;
   loading: boolean;
@@ -106,6 +117,7 @@ type AlmoxDataContextValue = {
   processItems: ProcessoAcompanhamento[];
   processItemsLoading: boolean;
   processItemsError: string | null;
+  openProcessSummaryByProductCode: Record<string, ProductProcessSummary>;
   refreshProcessItems: (options?: { force?: boolean }) => Promise<void>;
   systemConfig: ConfiguracaoSistema;
   systemConfigLoading: boolean;
@@ -198,6 +210,20 @@ async function loadCmmExceptionItems() {
   }
 
   return (data ?? []) as CmmExceptionItem[];
+}
+
+async function loadMonthlyConsumptionRows() {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('almox_consumo_mes_atual')
+    .select('codigo_unidade, codigo_produto, data_snapshot_inicio, consumo_mes_ate_hoje, percentual_consumido')
+    .eq('codigo_unidade', 'HMSASOUL');
+
+  if (error) {
+    throw createScopedError('almox_consumo_mes_atual', error);
+  }
+
+  return (data ?? []) as MonthlyConsumptionRow[];
 }
 
 function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanhamento {
@@ -559,6 +585,7 @@ type AlmoxBaseCache = {
   rows: EstoqueAtualRow[];
   blacklistItems: BlacklistItem[];
   cmmExceptionItems: CmmExceptionItem[];
+  monthlyConsumptionRows?: MonthlyConsumptionRow[];
   processItems?: ProcessoAcompanhamento[];
 };
 
@@ -575,6 +602,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [rows, setRows] = useState<EstoqueAtualRow[]>([]);
   const [blacklistItems, setBlacklistItems] = useState<BlacklistItem[]>([]);
   const [cmmExceptionItems, setCmmExceptionItems] = useState<CmmExceptionItem[]>([]);
+  const [monthlyConsumptionRows, setMonthlyConsumptionRows] = useState<MonthlyConsumptionRow[]>([]);
   const [processItems, setProcessItems] = useState<ProcessoAcompanhamento[]>([]);
   const [processItemsLoading, setProcessItemsLoading] = useState(false);
   const [processItemsError, setProcessItemsError] = useState<string | null>(null);
@@ -600,6 +628,33 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const hasLoadedRef = useRef(false);
   const processItemsLoadedRef = useRef(false);
 
+  const openProcessSummaryByProductCode = useMemo(
+    () => buildOpenProcessSummaryByProductCode(processItems, systemConfig),
+    [processItems, systemConfig]
+  );
+
+  const monthlyConsumptionByProductCode = useMemo<Record<string, ProductMonthlyConsumptionSignal>>(
+    () =>
+      monthlyConsumptionRows.reduce<Record<string, ProductMonthlyConsumptionSignal>>((accumulator, row) => {
+        const productCode = normalizarCodigoProduto(row.codigo_produto);
+        if (!productCode) {
+          return accumulator;
+        }
+
+        accumulator[productCode] = {
+          product_code: productCode,
+          data_snapshot_inicio: row.data_snapshot_inicio ?? null,
+          consumo_mes_ate_hoje: parseNumericRowValue(row.consumo_mes_ate_hoje),
+          percentual_consumido:
+            row.percentual_consumido == null || row.percentual_consumido === ''
+              ? null
+              : parseNumericRowValue(row.percentual_consumido),
+        };
+        return accumulator;
+      }, {}),
+    [monthlyConsumptionRows]
+  );
+
   const dataset = useMemo<AlmoxDataset>(() => {
     const blacklistSet = new Set(blacklistItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
     const cmmExceptionSet = new Set(cmmExceptionItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
@@ -613,9 +668,21 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         : visibleRows.filter((row) => normalizeCategory(row.categoria_material) === categoryFilter);
 
     return filteredRows.length > 0
-      ? hydrateDataset(filteredRows, systemConfig, { cmmExceptionCodes: cmmExceptionSet })
+      ? hydrateDataset(filteredRows, systemConfig, {
+          cmmExceptionCodes: cmmExceptionSet,
+          processSummaryByProductCode: openProcessSummaryByProductCode,
+          monthlyConsumptionByProductCode,
+        })
       : createEmptyDataset(systemConfig);
-  }, [rows, blacklistItems, cmmExceptionItems, categoryFilter, systemConfig]);
+  }, [
+    rows,
+    blacklistItems,
+    cmmExceptionItems,
+    categoryFilter,
+    systemConfig,
+    openProcessSummaryByProductCode,
+    monthlyConsumptionByProductCode,
+  ]);
 
   const blacklistSummary = useMemo(() => {
     const blockedCodes = new Set(blacklistItems.map((item) => normalizarCodigoProduto(item.cd_produto)));
@@ -879,10 +946,11 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const [rowsResult, blacklistResult, cmmExceptionResult] = await Promise.allSettled([
+      const [rowsResult, blacklistResult, cmmExceptionResult, monthlyConsumptionResult] = await Promise.allSettled([
         loadEstoqueAtualRows(),
         loadBlacklistItems(),
         loadCmmExceptionItems(),
+        loadMonthlyConsumptionRows(),
       ]);
 
       if (rowsResult.status === 'rejected') {
@@ -908,6 +976,13 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
               failedSources.push('a lista de exceções de CMM');
               return null;
             })();
+      const nextMonthlyConsumptionRows =
+        monthlyConsumptionResult.status === 'fulfilled'
+          ? monthlyConsumptionResult.value
+          : (() => {
+              failedSources.push('a apuração de consumo do mês');
+              return null;
+            })();
 
       startTransition(() => {
         setRows(rowsResult.value);
@@ -916,6 +991,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         }
         if (nextCmmExceptionItems) {
           setCmmExceptionItems(nextCmmExceptionItems);
+        }
+        if (nextMonthlyConsumptionRows) {
+          setMonthlyConsumptionRows(nextMonthlyConsumptionRows);
         }
       });
       setError(null);
@@ -1458,6 +1536,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         setRows(cached.value.rows);
         setBlacklistItems(cached.value.blacklistItems);
         setCmmExceptionItems(cached.value.cmmExceptionItems ?? []);
+        setMonthlyConsumptionRows(cached.value.monthlyConsumptionRows ?? []);
       });
       setLastRefreshAt(new Date(cached.savedAt).toISOString());
       setLoading(false);
@@ -1478,6 +1557,11 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       startTransition(() => {
         setProcessItems(cachedProcessItems);
       });
+      if (!cachedProcesses.isFresh) {
+        void refreshProcessItems();
+      }
+    } else {
+      void refreshProcessItems();
     }
 
     if (cachedConfig) {
@@ -1497,7 +1581,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mountedRef.current = false;
     };
-  }, [refresh, refreshSystemConfig]);
+  }, [refresh, refreshProcessItems, refreshSystemConfig]);
 
   useEffect(() => {
     if (!pendingSync) {
@@ -1625,8 +1709,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       rows,
       blacklistItems,
       cmmExceptionItems,
+      monthlyConsumptionRows,
     });
-  }, [rows, blacklistItems, cmmExceptionItems]);
+  }, [rows, blacklistItems, cmmExceptionItems, monthlyConsumptionRows]);
 
   useEffect(() => {
     if (!processItemsLoadedRef.current) {
@@ -1663,6 +1748,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         processItems,
         processItemsLoading,
         processItemsError,
+        openProcessSummaryByProductCode,
         refreshProcessItems,
         systemConfig,
         systemConfigLoading,

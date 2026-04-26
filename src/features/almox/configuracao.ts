@@ -409,6 +409,10 @@ export function getActionTooltips(config: ConfiguracaoSistema): Record<Action, s
   return {
     COMPRAR:
       `Recomendado quando o HMSA está com até ${limiteCompraDias} dias sem outro hospital com mais de ${config.doadorSeguroDias} dias de cobertura, ou quando já entrou na faixa até ${config.medioDias} dias.`,
+    'ACOMPANHAR PROCESSO':
+      'Item já coberto por processo aberto. A ação passa a ser acompanhar o cronograma das parcelas e o recebimento previsto.',
+    'COBRAR ENTREGA':
+      'Item já coberto por processo aberto e com parcela atrasada. Priorize cobrança do fornecedor e acompanhamento da entrega.',
     'PEGAR EMPRESTADO':
       `Recomendado quando o HMSA está com até ${limiteCompraDias} dias e existe outro hospital com o mesmo item acima de ${config.doadorSeguroDias} dias, mantendo pelo menos ${config.pisoDoadorAposEmprestimoDias} dias após a transferência.`,
     AVALIAR:

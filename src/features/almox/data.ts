@@ -1,4 +1,5 @@
 import {
+  Action,
   BlacklistItem,
   CategoriaMaterial,
   DashboardData,
@@ -9,6 +10,9 @@ import {
   OrderItem,
   Priority,
   Product,
+  ProductProcessSummary,
+  ProductProcessSummaryEntry,
+  ProductProcessSummaryParcel,
 } from './types';
 import { ConfiguracaoSistema, configuracaoSistemaPadrao, getLimiteCompraDias } from './configuracao';
 
@@ -36,6 +40,13 @@ export interface EstoqueAtualRow {
   consumo_medio: number | string | null;
   estoque_atual: number | string | null;
   criado_em?: string;
+}
+
+export interface ProductMonthlyConsumptionSignal {
+  product_code: string;
+  data_snapshot_inicio: string | null;
+  consumo_mes_ate_hoje: number;
+  percentual_consumido: number | null;
 }
 
 interface EnrichedProduct extends Product {
@@ -149,11 +160,498 @@ function clampScore(value: number) {
   return Math.min(Math.max(Math.round(value), 0), 100);
 }
 
+function formatDays(days: number) {
+  return `${round(days, 0)} dias`;
+}
+
+function formatUnits(value: number) {
+  return `${round(value, 0)} un.`;
+}
+
+function formatPercentFromRatio(value: number) {
+  return `${round(value * 100, 0)}%`;
+}
+
+function parseIsoDate(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const [datePart] = String(value).trim().split('T');
+  const [year, month, day] = datePart.split('-').map(Number);
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  const nextDate = new Date(year, month - 1, day);
+  nextDate.setHours(0, 0, 0, 0);
+  return nextDate;
+}
+
 function baseActionForHospital(item: EnrichedProduct, config: ConfiguracaoSistema) {
   if (item.sufficiency_days <= getLimiteCompraDias(config)) return 'COMPRAR' as const;
   if (item.sufficiency_days <= config.medioDias) return 'AVALIAR' as const;
   if (item.sufficiency_days >= config.podeEmprestarDias) return 'PODE EMPRESTAR' as const;
   return 'OK' as const;
+}
+
+function getContextualPurchaseAction(action: Action, processSummary?: ProductProcessSummary): Action {
+  if (action !== 'COMPRAR') {
+    return action;
+  }
+
+  if (!processSummary || processSummary.total_open === 0) {
+    return 'COMPRAR';
+  }
+
+  if (processSummary.overdue_count > 0) {
+    return 'COBRAR ENTREGA';
+  }
+
+  return 'ACOMPANHAR PROCESSO';
+}
+
+function isPurchaseWorkflowAction(action?: Action) {
+  return action === 'COMPRAR' || action === 'ACOMPANHAR PROCESSO' || action === 'COBRAR ENTREGA';
+}
+
+type ConsumptionAssessment = {
+  state: 'missing' | 'normal' | 'moderate' | 'high';
+  snapshotLabel?: string;
+  monthlyPercentLabel?: string;
+  consumedUnitsLabel?: string;
+  avgUnitsLabel?: string;
+  paceAboveExpectedLabel?: string;
+};
+
+type ObservationContext = {
+  processSummary?: ProductProcessSummary;
+  consumptionSignal?: ProductMonthlyConsumptionSignal;
+  suggestedHospital?: Hospital;
+  qtyTransfer?: number;
+  donorAfter?: number;
+  receiverAfter?: number;
+  qtyToBuy?: number;
+};
+
+function getMonthMeasurementRatio(snapshotDate: Date, referenceDate = new Date()) {
+  const currentDate = new Date(referenceDate);
+  currentDate.setHours(0, 0, 0, 0);
+
+  const daysInMonth = new Date(snapshotDate.getFullYear(), snapshotDate.getMonth() + 1, 0).getDate();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysMeasured = Math.max(1, Math.floor((currentDate.getTime() - snapshotDate.getTime()) / msPerDay) + 1);
+
+  return Math.min(daysMeasured / daysInMonth, 1);
+}
+
+function getConsumptionAssessment(
+  signal: ProductMonthlyConsumptionSignal | undefined,
+  item: Pick<Product, 'avg_monthly_consumption'>
+): ConsumptionAssessment {
+  if (!signal) {
+    return { state: 'missing' };
+  }
+
+  const snapshotDate = parseIsoDate(signal.data_snapshot_inicio);
+  if (!snapshotDate || signal.percentual_consumido == null) {
+    return { state: 'missing' };
+  }
+
+  const measurementRatio = getMonthMeasurementRatio(snapshotDate);
+  const paceRatio = measurementRatio > 0 ? signal.percentual_consumido / measurementRatio : signal.percentual_consumido;
+  const state =
+    paceRatio >= 1.35 ? 'high' : paceRatio >= 1.15 ? 'moderate' : 'normal';
+
+  return {
+    state,
+    snapshotLabel: snapshotDate.toLocaleDateString('pt-BR'),
+    monthlyPercentLabel: formatPercentFromRatio(signal.percentual_consumido),
+    consumedUnitsLabel: formatUnits(signal.consumo_mes_ate_hoje),
+    avgUnitsLabel: formatUnits(item.avg_monthly_consumption),
+    paceAboveExpectedLabel: formatPercentFromRatio(Math.max(paceRatio - 1, 0)),
+  };
+}
+
+function getTodayAtStartOfDay(referenceDate = new Date()) {
+  const nextDate = new Date(referenceDate);
+  nextDate.setHours(0, 0, 0, 0);
+  return nextDate;
+}
+
+function getCalendarDayDifference(targetDate: Date | null, referenceDate = new Date()) {
+  if (!targetDate) {
+    return null;
+  }
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.round((targetDate.getTime() - getTodayAtStartOfDay(referenceDate).getTime()) / msPerDay);
+}
+
+function isOlderThanYears(targetDate: Date, years: number, referenceDate = new Date()) {
+  const thresholdDate = getTodayAtStartOfDay(referenceDate);
+  thresholdDate.setFullYear(thresholdDate.getFullYear() - years);
+  return targetDate < thresholdDate;
+}
+
+function formatRelativeDays(days: number) {
+  if (days === 0) {
+    return 'hoje';
+  }
+
+  const amount = Math.abs(days);
+  return days > 0 ? `daqui a ${amount} dia(s)` : `há ${amount} dia(s)`;
+}
+
+function formatElapsedTimeFromDays(days: number) {
+  const amount = Math.abs(days);
+
+  if (amount >= 365) {
+    return `${Math.floor(amount / 365)} ano(s)`;
+  }
+
+  if (amount >= 30) {
+    return `${Math.floor(amount / 30)} mes(es)`;
+  }
+
+  return `${amount} dia(s)`;
+}
+
+function joinObservationLines(lines: (string | null | undefined)[]) {
+  return lines.filter(Boolean).join('\n');
+}
+
+function formatDateLabel(value: string | null | undefined) {
+  const parsedDate = parseIsoDate(value);
+  return parsedDate ? parsedDate.toLocaleDateString('pt-BR') : null;
+}
+
+function getLastEntryObservationLines(item: Pick<EnrichedProduct, 'data_ultima_entrada'>) {
+  const entryDate = parseIsoDate(item.data_ultima_entrada);
+  if (!entryDate) {
+    return ['Entrada: sem data na base'];
+  }
+
+  const entryDays = getCalendarDayDifference(entryDate) ?? 0;
+  const entryLabel = `Entrada: ${entryDate.toLocaleDateString('pt-BR')} • há ${formatElapsedTimeFromDays(entryDays)}`;
+
+  if (isOlderThanYears(entryDate, 3)) {
+    return [
+      `${entryLabel} • VALIDAR USO`,
+      'Próximo passo: retirar da lista se obsoleto',
+    ];
+  }
+
+  return [entryLabel];
+}
+
+function getInventorySnapshotLines(item: Pick<EnrichedProduct, 'estoque_atual' | 'sufficiency_days' | 'data_ultima_entrada'>) {
+  return [
+    `Estoque: ${formatUnits(item.estoque_atual)} • ${formatDays(item.sufficiency_days)}`,
+    ...getLastEntryObservationLines(item),
+  ];
+}
+
+function getPrimaryProcessEntry(processSummary?: ProductProcessSummary) {
+  return processSummary?.entries[0] ?? null;
+}
+
+function getPrimaryProcessParcel(entry?: ProductProcessSummaryEntry | null) {
+  if (!entry || entry.parcelas.length === 0) {
+    return null;
+  }
+
+  return [...entry.parcelas].sort((left, right) => {
+    const leftPriority = left.overdue ? 0 : left.near_due ? 1 : 2;
+    const rightPriority = right.overdue ? 0 : right.near_due ? 1 : 2;
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+
+    const leftDistance = left.due_in_days ?? Number.POSITIVE_INFINITY;
+    const rightDistance = right.due_in_days ?? Number.POSITIVE_INFINITY;
+    if (leftDistance !== rightDistance) {
+      return leftDistance - rightDistance;
+    }
+
+    return left.numero - right.numero;
+  })[0];
+}
+
+function getProcessReference(entry?: ProductProcessSummaryEntry | null) {
+  if (!entry) {
+    return null;
+  }
+
+  const refs = [
+    entry.numero_processo ? `${entry.tipo_processo} ${entry.numero_processo}` : entry.tipo_processo,
+    entry.edocs ? `E-DOCS ${entry.edocs}` : null,
+  ].filter(Boolean);
+  const refLabel = refs.join(' / ');
+
+  if (entry.fornecedor) {
+    return refLabel ? `${refLabel} com ${entry.fornecedor}` : `Fornecedor ${entry.fornecedor}`;
+  }
+
+  return refLabel || 'Processo aberto';
+}
+
+function describeProcessParcel(parcel?: ProductProcessSummaryParcel | null) {
+  if (!parcel) {
+    return 'Parcela: sem detalhe na base';
+  }
+
+  const delayLabel = parcel.adiamento_dias_uteis ? ` (+${parcel.adiamento_dias_uteis}d)` : '';
+  if (parcel.overdue) {
+    return `Parcela: P${parcel.numero} • ${parcel.data_label}${delayLabel} • atrasada ${formatRelativeDays(parcel.due_in_days ?? -1)}`;
+  }
+
+  if (parcel.near_due) {
+    if (parcel.due_in_days === 0) {
+      return `Parcela: P${parcel.numero} • ${parcel.data_label}${delayLabel} • vence hoje`;
+    }
+
+    return `Parcela: P${parcel.numero} • ${parcel.data_label}${delayLabel} • ${formatRelativeDays(parcel.due_in_days ?? 1)}`;
+  }
+
+  return `Parcela: P${parcel.numero} • ${parcel.data_label}${delayLabel}`;
+}
+
+function getProcessSituationDetail(entry?: ProductProcessSummaryEntry | null, parcel?: ProductProcessSummaryParcel | null) {
+  const processReference = getProcessReference(entry);
+  const parcelDescription = describeProcessParcel(parcel);
+
+  if (!processReference) {
+    return parcelDescription;
+  }
+
+  return `Processo: ${processReference}\n${parcelDescription}`;
+}
+
+function getProcessNotificationDetail(
+  entry?: ProductProcessSummaryEntry | null,
+  parcel?: ProductProcessSummaryParcel | null
+) {
+  if (!parcel?.overdue) {
+    return null;
+  }
+
+  if (parcel.empresa_notificada) {
+    const notifiedAt = formatDateLabel(parcel.empresa_notificada_em);
+    return notifiedAt
+      ? `Cobrança: notificado em ${notifiedAt}`
+      : 'Cobrança: fornecedor já notificado';
+  }
+
+  return entry?.fornecedor
+    ? `Cobrança: ${entry.fornecedor} ainda não notificado`
+    : 'Cobrança: fornecedor ainda não notificado';
+}
+
+function getExtraOpenProcessDetail(processSummary?: ProductProcessSummary) {
+  if (!processSummary || processSummary.total_open <= 1) {
+    return null;
+  }
+
+  const extraCount = processSummary.total_open - 1;
+  return `Extras: +${extraCount} processo(s) aberto(s)`;
+}
+
+function getBorrowPlanDetail(context: ObservationContext, mode: 'action' | 'contingency') {
+  if (!context.suggestedHospital || !context.qtyTransfer) {
+    return null;
+  }
+
+  const opener =
+    mode === 'action'
+      ? `Remanejamento: ${context.suggestedHospital} • até ${formatUnits(context.qtyTransfer)}`
+      : `Contingência: ${context.suggestedHospital} • até ${formatUnits(context.qtyTransfer)}`;
+  const tail = [
+    context.receiverAfter != null ? `HMSA ${formatDays(context.receiverAfter)}` : null,
+    context.donorAfter != null ? `doador ${formatDays(context.donorAfter)}` : null,
+  ].filter(Boolean);
+
+  return tail.length > 0 ? `${opener} • ${tail.join(' • ')}` : opener;
+}
+
+function getPurchasePlanDetail(context: ObservationContext) {
+  if (!context.qtyToBuy) {
+    return null;
+  }
+
+  return `Compra: ~${formatUnits(context.qtyToBuy)}`;
+}
+
+function buildObservationSummary(
+  action: Action,
+  primaryEntry: ProductProcessSummaryEntry | null,
+  primaryParcel: ProductProcessSummaryParcel | null,
+  context: ObservationContext,
+  consumptionAssessment: ConsumptionAssessment
+) {
+  switch (action) {
+    case 'COMPRAR':
+      return context.qtyToBuy ? `Abrir compra de ${formatUnits(context.qtyToBuy)}` : 'Abrir compra';
+    case 'ACOMPANHAR PROCESSO':
+      return primaryEntry?.edocs && primaryParcel
+        ? `Acompanhar P${primaryParcel.numero} do E-DOCS ${primaryEntry.edocs}`
+        : 'Acompanhar processo';
+    case 'COBRAR ENTREGA':
+      return primaryEntry?.edocs && primaryParcel
+        ? `Cobrar P${primaryParcel.numero} do E-DOCS ${primaryEntry.edocs}`
+        : 'Cobrar fornecedor';
+    case 'PEGAR EMPRESTADO':
+      return context.suggestedHospital && context.qtyTransfer
+        ? `Pedir ${formatUnits(context.qtyTransfer)} ao ${context.suggestedHospital}`
+        : 'Solicitar empréstimo';
+    case 'PODE EMPRESTAR':
+      return consumptionAssessment.state === 'high' || consumptionAssessment.state === 'moderate'
+        ? 'Segurar saldo no HMSA'
+        : 'Avaliar redistribuição';
+    case 'AVALIAR':
+      return primaryEntry ? 'Revisar cobertura e processo' : 'Revisar abastecimento';
+    case 'OK':
+      return consumptionAssessment.state === 'high' || consumptionAssessment.state === 'moderate'
+        ? 'Monitorar aumento de consumo'
+        : 'Sem ação imediata';
+    default:
+      return 'Manter monitoramento';
+  }
+}
+
+function getConsumptionObservationDetail(
+  signal: ProductMonthlyConsumptionSignal | undefined,
+  item: Pick<Product, 'avg_monthly_consumption'>,
+  mode: 'critical' | 'context'
+) {
+  const assessment = getConsumptionAssessment(signal, item);
+
+  if (assessment.state === 'missing') {
+    return mode === 'critical'
+      ? 'Consumo: sem snapshot diário'
+      : null;
+  }
+
+  if (assessment.state === 'normal') {
+    return mode === 'critical'
+      ? `Consumo: em linha desde ${assessment.snapshotLabel}`
+      : null;
+  }
+
+  return `Consumo: ${assessment.monthlyPercentLabel} da média • +${(assessment.paceAboveExpectedLabel ?? '0%').replace('%', '')}% vs ritmo esperado • base ${assessment.snapshotLabel}`;
+}
+
+function buildProductObservation(item: EnrichedProduct, action: Action, config: ConfiguracaoSistema, context: ObservationContext = {}) {
+  const { processSummary, consumptionSignal } = context;
+  const primaryEntry = getPrimaryProcessEntry(processSummary);
+  const primaryParcel = getPrimaryProcessParcel(primaryEntry);
+  const consumptionAssessment = getConsumptionAssessment(consumptionSignal, item);
+  const consumptionCritical = getConsumptionObservationDetail(consumptionSignal, item, 'critical');
+  const consumptionContext = getConsumptionObservationDetail(consumptionSignal, item, 'context');
+  const inventorySnapshotLines = getInventorySnapshotLines(item);
+  const processSituation = getProcessSituationDetail(primaryEntry, primaryParcel);
+  const notificationDetail = getProcessNotificationDetail(primaryEntry, primaryParcel);
+  const extraProcesses = getExtraOpenProcessDetail(processSummary);
+  const borrowPlan = getBorrowPlanDetail(context, 'action');
+  const borrowContingency = getBorrowPlanDetail(context, 'contingency');
+  const purchasePlan = getPurchasePlanDetail(context);
+  const observationSummary = buildObservationSummary(
+    action,
+    primaryEntry,
+    primaryParcel,
+    context,
+    consumptionAssessment
+  );
+
+  switch (action) {
+    case 'COMPRAR':
+      return {
+        observation_summary: observationSummary,
+        observation_detail: joinObservationLines([
+          ...inventorySnapshotLines,
+          'Processo: sem processo aberto',
+          purchasePlan,
+          `Remanejamento: sem doador > ${config.doadorSeguroDias} dias`,
+          consumptionCritical,
+        ]),
+      };
+    case 'ACOMPANHAR PROCESSO':
+      return {
+        observation_summary: observationSummary,
+        observation_detail: joinObservationLines([
+          processSituation,
+          ...inventorySnapshotLines,
+          extraProcesses,
+          borrowContingency ??
+            (context.qtyToBuy && item.sufficiency_days <= config.altoDias
+              ? `Backup: compra ~${formatUnits(context.qtyToBuy)}`
+              : null),
+          consumptionCritical,
+        ]),
+      };
+    case 'COBRAR ENTREGA':
+      return {
+        observation_summary: observationSummary,
+        observation_detail: joinObservationLines([
+          processSituation,
+          ...inventorySnapshotLines,
+          notificationDetail,
+          borrowContingency ??
+            (context.qtyToBuy ? `Backup: compra ~${formatUnits(context.qtyToBuy)}` : null),
+          consumptionCritical,
+        ]),
+      };
+    case 'PEGAR EMPRESTADO':
+      return {
+        observation_summary: observationSummary,
+        observation_detail: joinObservationLines([
+          ...inventorySnapshotLines,
+          borrowPlan,
+          primaryEntry
+            ? `${processSituation}\nObjetivo: segurar HMSA até regularização`
+            : null,
+          consumptionCritical,
+        ]),
+      };
+    case 'PODE EMPRESTAR':
+      return {
+        observation_summary: observationSummary,
+        observation_detail: joinObservationLines([
+          ...inventorySnapshotLines,
+          consumptionContext
+            ? `${consumptionContext}\nLimite: validar necessidade interna antes de liberar`
+            : `Limite: manter HMSA > ${config.pisoDoadorAposEmprestimoDias} dias após saída`,
+        ]),
+      };
+    case 'AVALIAR':
+      return {
+        observation_summary: observationSummary,
+        observation_detail: joinObservationLines([
+          ...inventorySnapshotLines,
+          primaryEntry ? processSituation : null,
+          extraProcesses,
+          consumptionContext
+            ? `${consumptionContext}\nPróximo passo: revisar compra e monitoramento`
+            : 'Próximo passo: revisar compra, consumo e recebimentos',
+        ]),
+      };
+    case 'OK':
+      return {
+        observation_summary: observationSummary,
+        observation_detail: joinObservationLines([
+          ...inventorySnapshotLines,
+          consumptionContext ?? 'Status: sem processo crítico • consumo em rotina',
+        ]),
+      };
+    default:
+      return {
+        observation_summary: 'Manter monitoramento',
+        observation_detail: joinObservationLines([
+          ...inventorySnapshotLines,
+          'Próximo passo: acompanhar próxima atualização da base',
+        ]),
+      };
+  }
 }
 
 function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema, cmmExceptionCodes: Set<string>) {
@@ -222,9 +720,16 @@ function getBestDonor(item: EnrichedProduct, productsByHospital: Record<Hospital
     .sort((left, right) => right.sufficiency_days - left.sufficiency_days)[0];
 }
 
-function enrichProducts(productsByHospital: Record<Hospital, EnrichedProduct[]>, config: ConfiguracaoSistema) {
+function enrichProducts(
+  productsByHospital: Record<Hospital, EnrichedProduct[]>,
+  config: ConfiguracaoSistema,
+  processSummaryByProductCode: Record<string, ProductProcessSummary> = {},
+  monthlyConsumptionByProductCode: Record<string, ProductMonthlyConsumptionSignal> = {}
+) {
   const hmsaProducts = productsByHospital.HMSA.map((product) => {
     const donor = getBestDonor(product, productsByHospital);
+    const processSummary = processSummaryByProductCode[product.product_code];
+    const monthlyConsumptionSignal = monthlyConsumptionByProductCode[product.product_code];
     const limiteCompraDias = getLimiteCompraDias(config);
     const proposedTransfer = Math.max(0, Math.ceil(product.avg_monthly_consumption * config.alvoTransferenciaCmm));
     const donorDailyUsage = donor ? safeDailyUsage(donor.avg_monthly_consumption) : 0;
@@ -257,7 +762,24 @@ function enrichProducts(productsByHospital: Record<Hospital, EnrichedProduct[]>,
       action = 'OK';
     }
 
-    const qtyToBuy = action === 'COMPRAR' ? Math.max(1, Math.ceil(product.avg_monthly_consumption * config.mesesCompraSugerida)) : undefined;
+    action = getContextualPurchaseAction(action, processSummary);
+    const qtyToBuy = isPurchaseWorkflowAction(action)
+      ? Math.max(1, Math.ceil(product.avg_monthly_consumption * config.mesesCompraSugerida))
+      : undefined;
+    const observation = buildProductObservation(
+      product,
+      action,
+      config,
+      {
+        processSummary,
+        consumptionSignal: monthlyConsumptionSignal,
+        suggestedHospital: donor?.hospital,
+        qtyTransfer,
+        donorAfter,
+        receiverAfter: projectedSuf,
+        qtyToBuy,
+      }
+    );
 
     return {
       ...product,
@@ -272,6 +794,8 @@ function enrichProducts(productsByHospital: Record<Hospital, EnrichedProduct[]>,
       score,
       classification,
       qty_to_buy: qtyToBuy,
+      observation_summary: observation.observation_summary,
+      observation_detail: observation.observation_detail,
     };
   });
 
@@ -406,7 +930,7 @@ function buildIntelligenceDetails(productsByHospital: Record<Hospital, Product[]
       rupture_risk: item.rupture_risk,
       action: item.action,
       recommendation:
-        item.action === 'COMPRAR'
+        isPurchaseWorkflowAction(item.action)
           ? 'Preparar reposição com prioridade e acompanhar consumo diário.'
           : 'Executar remanejamento entre hospitais antes do ponto de ruptura.',
     }));
@@ -467,10 +991,19 @@ export function createEmptyDataset(config: ConfiguracaoSistema = configuracaoSis
 export function hydrateDataset(
   rows: EstoqueAtualRow[],
   config: ConfiguracaoSistema = configuracaoSistemaPadrao,
-  options: { cmmExceptionCodes?: Set<string> } = {}
+  options: {
+    cmmExceptionCodes?: Set<string>;
+    processSummaryByProductCode?: Record<string, ProductProcessSummary>;
+    monthlyConsumptionByProductCode?: Record<string, ProductMonthlyConsumptionSignal>;
+  } = {}
 ): AlmoxDataset {
   const baseProducts = buildBaseProducts(rows, config, options.cmmExceptionCodes ?? new Set());
-  const enrichedProducts = enrichProducts(baseProducts, config);
+  const enrichedProducts = enrichProducts(
+    baseProducts,
+    config,
+    options.processSummaryByProductCode,
+    options.monthlyConsumptionByProductCode
+  );
   const productsByHospital = hospitalOrder.reduce<Record<Hospital, Product[]>>((accumulator, hospital) => {
     accumulator[hospital] = enrichedProducts[hospital];
     return accumulator;
