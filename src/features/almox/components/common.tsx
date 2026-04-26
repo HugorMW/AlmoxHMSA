@@ -12,7 +12,8 @@ import {
   View,
 } from 'react-native';
 
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
 
 type IconName =
   | 'dashboard'
@@ -60,7 +61,9 @@ type IconName =
   | 'logout'
   | 'opme'
   | 'consumo'
-  | 'monitor';
+  | 'monitor'
+  | 'themeLight'
+  | 'themeDark';
 
 const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = {
   dashboard: 'view-dashboard-outline',
@@ -109,17 +112,21 @@ const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = 
   opme: 'medical-bag',
   consumo: 'speedometer',
   monitor: 'monitor-dashboard',
+  themeLight: 'white-balance-sunny',
+  themeDark: 'weather-night',
 };
 
 type ButtonTone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
 
-const buttonTones = {
-  primary: { background: almoxTheme.colors.brandStrong, foreground: almoxTheme.colors.black },
-  success: { background: '#2a8f7b', foreground: almoxTheme.colors.white },
-  warning: { background: '#b57433', foreground: almoxTheme.colors.white },
-  danger: { background: '#b85773', foreground: almoxTheme.colors.white },
-  neutral: { background: almoxTheme.colors.surfaceStrong, foreground: almoxTheme.colors.text },
-} as const;
+function createButtonTones(tokens: AlmoxTheme) {
+  return {
+    primary: { background: tokens.colors.brandStrong, foreground: tokens.colors.black },
+    success: { background: '#2a8f7b', foreground: tokens.colors.white },
+    warning: { background: '#b57433', foreground: tokens.colors.white },
+    danger: { background: '#b85773', foreground: tokens.colors.white },
+    neutral: { background: tokens.colors.surfaceStrong, foreground: tokens.colors.text },
+  } as const;
+}
 
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 500] as const;
 export type PageSize = number;
@@ -130,16 +137,18 @@ const MAX_CUSTOM_PAGE_SIZE = 500;
 export function AppIcon({
   name,
   size = 16,
-  color = almoxTheme.colors.textMuted,
+  color,
 }: {
   name: IconName;
   size?: number;
   color?: string;
 }) {
-  return <MaterialCommunityIcons name={iconMap[name]} size={size} color={color} />;
+  const { tokens } = useAppTheme();
+  return <MaterialCommunityIcons name={iconMap[name]} size={size} color={color ?? tokens.colors.textMuted} />;
 }
 
 export function ScreenScrollView({ children }: { children: React.ReactNode }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <ScrollView
       style={styles.scroll}
@@ -162,6 +171,7 @@ export function PageHeader({
   aside?: React.ReactNode;
   tooltip?: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.pageHeader}>
       <View style={styles.pageHeaderText}>
@@ -183,6 +193,7 @@ export function SectionCard({
   children: React.ReactNode;
   accent?: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   return <View style={[styles.card, accent ? { borderColor: accent } : null]}>{children}</View>;
 }
 
@@ -197,11 +208,13 @@ export function SectionTitle({
   icon?: IconName;
   tooltip?: string;
 }) {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.sectionTitleRow}>
       <View style={styles.sectionTitleText}>
         <View style={styles.sectionTitleTop}>
-          {icon ? <AppIcon name={icon} size={16} color={almoxTheme.colors.brand} /> : null}
+          {icon ? <AppIcon name={icon} size={16} color={tokens.colors.brand} /> : null}
           <Text style={styles.sectionTitle}>{title}</Text>
           {tooltip ? <HelpHint text={tooltip} /> : null}
         </View>
@@ -220,6 +233,8 @@ export function HelpHint({
   align?: 'start' | 'end';
   onVisibilityChange?: (visible: boolean) => void;
 }) {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   const [showTooltip, setShowTooltip] = React.useState(false);
 
   const setVisible = React.useCallback(
@@ -245,7 +260,7 @@ export function HelpHint({
         </View>
       ) : null}
       <View style={styles.helpHintBadge}>
-        <AppIcon name="info" size={14} color={almoxTheme.colors.textMuted} />
+        <AppIcon name="info" size={14} color={tokens.colors.textMuted} />
       </View>
     </Pressable>
   );
@@ -260,31 +275,33 @@ export function InfoBanner({
   description: string;
   tone?: 'neutral' | 'warning' | 'danger' | 'success' | 'info';
 }) {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   const palette = {
     neutral: {
-      background: almoxTheme.colors.surfaceMuted,
-      border: almoxTheme.colors.lineStrong,
-      color: almoxTheme.colors.textSoft,
+      background: tokens.colors.surfaceMuted,
+      border: tokens.colors.lineStrong,
+      color: tokens.colors.textSoft,
     },
     warning: {
       background: 'rgba(251, 191, 36, 0.14)',
       border: 'rgba(251, 191, 36, 0.45)',
-      color: almoxTheme.colors.amber,
+      color: tokens.colors.amber,
     },
     danger: {
       background: 'rgba(248, 113, 113, 0.14)',
       border: 'rgba(248, 113, 113, 0.45)',
-      color: almoxTheme.colors.red,
+      color: tokens.colors.red,
     },
     success: {
       background: 'rgba(52, 211, 153, 0.14)',
       border: 'rgba(52, 211, 153, 0.45)',
-      color: almoxTheme.colors.green,
+      color: tokens.colors.green,
     },
     info: {
       background: 'rgba(140, 168, 217, 0.12)',
       border: 'rgba(140, 168, 217, 0.26)',
-      color: almoxTheme.colors.brandStrong,
+      color: tokens.colors.brandStrong,
     },
   }[tone];
 
@@ -313,8 +330,10 @@ export function ActionButton({
   onPress?: () => void;
   href?: Href;
 }) {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   const isDisabled = disabled || loading;
-  const palette = buttonTones[tone];
+  const palette = createButtonTones(tokens)[tone];
   const button = (
     <Pressable
       disabled={isDisabled}
@@ -322,16 +341,16 @@ export function ActionButton({
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: isDisabled ? almoxTheme.colors.surfaceStrong : palette.background,
+          backgroundColor: isDisabled ? tokens.colors.surfaceStrong : palette.background,
           opacity: pressed && !isDisabled ? 0.85 : 1,
         },
       ]}>
       {loading ? (
-        <ActivityIndicator size={15} color={almoxTheme.colors.textMuted} />
+        <ActivityIndicator size={15} color={tokens.colors.textMuted} />
       ) : icon ? (
-        <AppIcon name={icon} size={15} color={isDisabled ? almoxTheme.colors.textMuted : palette.foreground} />
+        <AppIcon name={icon} size={15} color={isDisabled ? tokens.colors.textMuted : palette.foreground} />
       ) : null}
-      <Text style={[styles.buttonText, { color: isDisabled ? almoxTheme.colors.textMuted : palette.foreground }]}>{label}</Text>
+      <Text style={[styles.buttonText, { color: isDisabled ? tokens.colors.textMuted : palette.foreground }]}>{label}</Text>
     </Pressable>
   );
 
@@ -357,6 +376,7 @@ export function InlineTabs<T extends string>({
   onChange: (nextValue: T) => void;
   size?: 'md' | 'sm';
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.inlineTabs}>
       {options.map((option) => {
@@ -395,6 +415,8 @@ export function PaginationFooter({
   onPageChange: (nextPage: number) => void;
   onPageSizeChange: (nextPageSize: PageSize) => void;
 }) {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   const safeTotalPages = Math.max(1, totalPages);
   const safePage = Math.min(Math.max(1, page), safeTotalPages);
   const pageSizeValue = String(pageSize);
@@ -449,7 +471,7 @@ export function PaginationFooter({
             onChangeText={(text) => setCustomPageSizeText(text.replace(/\D/g, '').slice(0, 3))}
             onSubmitEditing={handleApplyCustomPageSize}
             placeholder="Outro"
-            placeholderTextColor={almoxTheme.colors.textMuted}
+            placeholderTextColor={tokens.colors.textMuted}
             keyboardType="number-pad"
             style={[
               styles.paginationCustomInput,
@@ -496,6 +518,7 @@ function InlineTabButton({
   size: 'md' | 'sm';
   onPress: () => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   const [showTooltip, setShowTooltip] = React.useState(false);
 
   return (
@@ -531,14 +554,16 @@ function InlineTabButton({
 }
 
 export function SearchField({ value, onChangeText, placeholder }: TextInputProps) {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.searchField}>
-      <AppIcon name="search" size={16} color={almoxTheme.colors.textMuted} />
+      <AppIcon name="search" size={16} color={tokens.colors.textMuted} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={almoxTheme.colors.textMuted}
+        placeholderTextColor={tokens.colors.textMuted}
         style={styles.searchInput}
       />
     </View>
@@ -552,6 +577,7 @@ export function FormField({
   label: string;
   children: React.ReactNode;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -561,10 +587,12 @@ export function FormField({
 }
 
 export function FieldInput(props: TextInputProps) {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <TextInput
       {...props}
-      placeholderTextColor={almoxTheme.colors.textMuted}
+      placeholderTextColor={tokens.colors.textMuted}
       style={[styles.fieldInput, props.style]}
     />
   );
@@ -577,6 +605,7 @@ export function EmptyState({
   title: string;
   description: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.emptyState}>
       <Text style={styles.emptyTitle}>{title}</Text>
@@ -585,60 +614,60 @@ export function EmptyState({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: almoxTheme.layout.pageBottomPadding,
+    paddingBottom: tokens.layout.pageBottomPadding,
   },
   pageInner: {
     width: '100%',
-    gap: almoxTheme.spacing.lg,
+    gap: tokens.spacing.lg,
   },
   pageHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   pageHeaderText: {
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
     flex: 1,
     minWidth: 240,
   },
   pageTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
     flexWrap: 'wrap',
   },
   pageTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 28,
     fontWeight: '800',
-    fontFamily: almoxTheme.typography.display,
+    fontFamily: tokens.typography.display,
     letterSpacing: -0.6,
   },
   pageSubtitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 13,
     lineHeight: 20,
   },
   pageAside: {
     flexDirection: 'row',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     flexWrap: 'wrap',
   },
   card: {
-    backgroundColor: almoxTheme.colors.surfaceRaised,
-    borderRadius: almoxTheme.radii.lg,
+    backgroundColor: tokens.colors.surfaceRaised,
+    borderRadius: tokens.radii.lg,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    padding: almoxTheme.spacing.lg,
-    gap: almoxTheme.spacing.md,
-    shadowColor: almoxTheme.colors.black,
+    borderColor: tokens.colors.lineStrong,
+    padding: tokens.spacing.lg,
+    gap: tokens.spacing.md,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.14,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 10 },
@@ -648,54 +677,54 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   sectionTitleText: {
     flex: 1,
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   sectionTitleTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
     flexWrap: 'wrap',
   },
   sectionTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 16,
     fontWeight: '700',
   },
   sectionSubtitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
   banner: {
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    padding: almoxTheme.spacing.md,
-    gap: almoxTheme.spacing.xs,
+    padding: tokens.spacing.md,
+    gap: tokens.spacing.xs,
   },
   bannerTitle: {
     fontSize: 13,
     fontWeight: '700',
   },
   bannerDescription: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },
   button: {
     minHeight: 42,
-    borderRadius: almoxTheme.radii.md,
-    paddingHorizontal: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.sm,
+    borderRadius: tokens.radii.md,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    shadowColor: almoxTheme.colors.black,
+    borderColor: tokens.colors.lineStrong,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.14,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
@@ -708,19 +737,19 @@ const styles = StyleSheet.create({
   inlineTabs: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   inlineTabWrap: {
     position: 'relative',
     overflow: 'visible',
   },
   inlineTab: {
-    paddingHorizontal: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.sm,
-    borderRadius: almoxTheme.radii.pill,
-    backgroundColor: almoxTheme.colors.surface,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
+    borderRadius: tokens.radii.pill,
+    backgroundColor: tokens.colors.surface,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
+    borderColor: tokens.colors.lineStrong,
   },
   inlineTabCompact: {
     paddingHorizontal: 12,
@@ -734,7 +763,7 @@ const styles = StyleSheet.create({
     opacity: 0.82,
   },
   inlineTabText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -742,22 +771,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   inlineTabTextActive: {
-    color: almoxTheme.colors.brandStrong,
+    color: tokens.colors.brandStrong,
   },
   inlineTabTooltip: {
     position: 'absolute',
     left: 0,
     bottom: '100%',
-    marginBottom: almoxTheme.spacing.xs,
+    marginBottom: tokens.spacing.xs,
     minWidth: 180,
     maxWidth: 280,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.sm,
-    borderRadius: almoxTheme.radii.md,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.sm,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surface,
-    shadowColor: almoxTheme.colors.black,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surface,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.1,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
@@ -765,7 +794,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   inlineTabTooltipText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -774,18 +803,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
-    paddingTop: almoxTheme.spacing.sm,
+    gap: tokens.spacing.md,
+    paddingTop: tokens.spacing.sm,
   },
   paginationSummary: {
     gap: 3,
   },
   paginationText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
   paginationPageText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -793,30 +822,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     flex: 1,
   },
   paginationControlLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
   paginationCustomSize: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   paginationCustomInput: {
     width: 82,
     minHeight: 42,
-    borderRadius: almoxTheme.radii.md,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderRadius: tokens.radii.md,
+    backgroundColor: tokens.colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    color: almoxTheme.colors.text,
+    borderColor: tokens.colors.line,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
-    paddingHorizontal: almoxTheme.spacing.sm,
+    paddingHorizontal: tokens.spacing.sm,
     paddingVertical: 0,
     textAlign: 'center',
   },
@@ -826,7 +855,7 @@ const styles = StyleSheet.create({
   },
   paginationActions: {
     flexDirection: 'row',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   helpHintWrap: {
     position: 'relative',
@@ -841,23 +870,23 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    backgroundColor: tokens.colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
+    borderColor: tokens.colors.line,
   },
   helpHintTooltip: {
     position: 'absolute',
     bottom: '100%',
-    marginBottom: almoxTheme.spacing.xs,
+    marginBottom: tokens.spacing.xs,
     minWidth: 200,
     maxWidth: 300,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.sm,
-    borderRadius: almoxTheme.radii.md,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.sm,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surface,
-    shadowColor: almoxTheme.colors.black,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surface,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.1,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
@@ -871,65 +900,66 @@ const styles = StyleSheet.create({
     right: 0,
   },
   helpHintTooltipText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     lineHeight: 18,
   },
   searchField: {
     minHeight: 48,
-    borderRadius: almoxTheme.radii.md,
-    paddingHorizontal: almoxTheme.spacing.md,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderRadius: tokens.radii.md,
+    paddingHorizontal: tokens.spacing.md,
+    backgroundColor: tokens.colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
+    borderColor: tokens.colors.lineStrong,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   searchInput: {
     flex: 1,
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 14,
     paddingVertical: 0,
   },
   field: {
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   fieldLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
   fieldInput: {
     minHeight: 46,
-    borderRadius: almoxTheme.radii.md,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderRadius: tokens.radii.md,
+    backgroundColor: tokens.colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    paddingHorizontal: almoxTheme.spacing.md,
-    color: almoxTheme.colors.text,
+    borderColor: tokens.colors.lineStrong,
+    paddingHorizontal: tokens.spacing.md,
+    color: tokens.colors.text,
     fontSize: 14,
   },
   emptyState: {
     minHeight: 160,
-    borderRadius: almoxTheme.radii.lg,
+    borderRadius: tokens.radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: almoxTheme.spacing.xs,
-    paddingHorizontal: almoxTheme.spacing.lg,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
+    gap: tokens.spacing.xs,
+    paddingHorizontal: tokens.spacing.lg,
+    backgroundColor: tokens.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
+    borderColor: tokens.colors.line,
   },
   emptyTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 15,
     fontWeight: '700',
   },
   emptyDescription: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 13,
     lineHeight: 20,
     textAlign: 'center',
   },
 });
+

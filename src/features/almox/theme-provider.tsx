@@ -1,6 +1,15 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import { readCachedValue, writeCachedValue } from '@/features/almox/cache';
 import { AlmoxTheme, DEFAULT_THEME_MODE, ThemeMode, themeTokens } from '@/features/almox/tokens';
+
+const THEME_MODE_CACHE_KEY = 'almox-theme-mode';
+const THEME_MODE_CACHE_AGE_MS = Number.MAX_SAFE_INTEGER;
+
+function readInitialThemeMode(initialMode: ThemeMode): ThemeMode {
+  const cachedThemeMode = readCachedValue<ThemeMode>(THEME_MODE_CACHE_KEY, THEME_MODE_CACHE_AGE_MS)?.value;
+  return cachedThemeMode === 'light' || cachedThemeMode === 'dark' ? cachedThemeMode : initialMode;
+}
 
 type ThemeContextValue = {
   mode: ThemeMode;
@@ -18,11 +27,15 @@ export function ThemeProvider({
   children: React.ReactNode;
   initialMode?: ThemeMode;
 }) {
-  const [mode, setMode] = useState<ThemeMode>(initialMode);
+  const [mode, setMode] = useState<ThemeMode>(() => readInitialThemeMode(initialMode));
 
   const toggleMode = useCallback(() => {
     setMode((current) => (current === 'dark' ? 'light' : 'dark'));
   }, []);
+
+  useEffect(() => {
+    writeCachedValue(THEME_MODE_CACHE_KEY, mode);
+  }, [mode]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({

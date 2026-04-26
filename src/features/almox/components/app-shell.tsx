@@ -31,7 +31,7 @@ const navigationItems: {
 ];
 
 export function AppShell() {
-  const { mode, tokens } = useAppTheme();
+  const { mode, tokens, toggleMode } = useAppTheme();
   const styles = useThemedStyles(createStyles);
   const pathname = usePathname();
   const router = useRouter();
@@ -245,6 +245,19 @@ export function AppShell() {
                       </View>
                     ) : null}
                   </View>
+                  <Pressable
+                    onPress={toggleMode}
+                    style={({ pressed }) => [
+                      styles.headerThemeButton,
+                      pressed ? styles.headerDropdownTriggerPressed : null,
+                    ]}
+                    accessibilityLabel={mode === 'dark' ? 'Alternar para tema claro' : 'Alternar para tema escuro'}>
+                    <AppIcon
+                      name={mode === 'dark' ? 'themeLight' : 'themeDark'}
+                      size={16}
+                      color={mode === 'dark' ? tokens.colors.brandStrong : tokens.colors.brand}
+                    />
+                  </Pressable>
                   {isDeveloper ? (
                     <Pressable
                       onPress={() => router.navigate('/dev' as Href)}
@@ -651,6 +664,21 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     borderWidth: 1,
     borderColor: tokens.colors.lineStrong,
     backgroundColor: tokens.colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: tokens.colors.black,
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+  },
+  headerThemeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: tokens.radii.pill,
+    borderWidth: 1,
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.surfaceActiveSoft,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: tokens.colors.black,

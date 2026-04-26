@@ -129,22 +129,22 @@ export const DEFAULT_THEME_MODE: ThemeMode = 'dark';
 export const almoxTheme: AlmoxTheme = themeTokens[DEFAULT_THEME_MODE];
 
 export const levelColors = {
-  URGENTE: { background: '#111827', foreground: '#ffffff' },
-  'CRÍTICO': { background: '#dc2626', foreground: '#ffffff' },
-  ALTO: { background: '#ea580c', foreground: '#ffffff' },
-  'MÉDIO': { background: '#eab308', foreground: '#1f2937' },
-  BAIXO: { background: '#16a34a', foreground: '#ffffff' },
-  'ESTÁVEL': { background: '#2563eb', foreground: '#ffffff' },
+  URGENTE: { background: '#0f172a', foreground: '#ffffff' },
+  'CRÍTICO': { background: '#d61f1f', foreground: '#ffffff' },
+  ALTO: { background: '#dd6b12', foreground: '#ffffff' },
+  'MÉDIO': { background: '#d4a514', foreground: '#1f2937' },
+  BAIXO: { background: '#15803d', foreground: '#ffffff' },
+  'ESTÁVEL': { background: '#1d4ed8', foreground: '#ffffff' },
 } as const;
 
 export const actionColors = {
-  COMPRAR: { background: '#ffe3e9', foreground: '#ba3358' },
-  'ACOMPANHAR PROCESSO': { background: '#fff4d6', foreground: '#9f7514' },
-  'COBRAR ENTREGA': { background: '#ffeddc', foreground: '#b5671b' },
-  'PEGAR EMPRESTADO': { background: '#dff2ff', foreground: '#176ab5' },
-  AVALIAR: { background: '#ebe6ff', foreground: '#5f49d7' },
-  'PODE EMPRESTAR': { background: '#dcfaf0', foreground: '#0f7d5b' },
-  OK: { background: '#e5f7eb', foreground: '#1f7a4e' },
-  'EXECUTAR AGORA': { background: '#d8f7ee', foreground: '#0b7a64' },
-  'BAIXA PRIORIDADE': { background: '#edf2f7', foreground: '#55657c' },
+  COMPRAR: { background: '#ffc6d4', foreground: '#881337' },
+  'ACOMPANHAR PROCESSO': { background: '#ffe083', foreground: '#6b4f00' },
+  'COBRAR ENTREGA': { background: '#ffc98c', foreground: '#7c2d12' },
+  'PEGAR EMPRESTADO': { background: '#b9dcff', foreground: '#0f4c81' },
+  AVALIAR: { background: '#d3c5ff', foreground: '#4c1d95' },
+  'PODE EMPRESTAR': { background: '#a8e7c7', foreground: '#065f46' },
+  OK: { background: '#b6efc8', foreground: '#166534' },
+  'EXECUTAR AGORA': { background: '#93e2d0', foreground: '#115e59' },
+  'BAIXA PRIORIDADE': { background: '#d7deea', foreground: '#475569' },
 } as const;

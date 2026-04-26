@@ -34,9 +34,9 @@ export function ActionBadge({ action }: { action?: Action }) {
 
 export function PriorityBadge({ priority }: { priority: Priority }) {
   const palette = {
-    URGENTE: { background: '#ffe3e8', foreground: '#b4234a' },
-    ALTA: { background: '#ffeddc', foreground: '#b5671b' },
-    NORMAL: { background: '#fff6db', foreground: '#9f7514' },
+    URGENTE: { background: '#ffc6d4', foreground: '#881337' },
+    ALTA: { background: '#ffc98c', foreground: '#7c2d12' },
+    NORMAL: { background: '#ffe083', foreground: '#6b4f00' },
   }[priority];
   const styles = useThemedStyles(createStyles);
 
@@ -62,10 +62,10 @@ export function ScoreBadge({
 
   const palette =
     score >= 80
-      ? { background: '#dcfaf0', foreground: '#0f7d5b' }
+      ? { background: '#a8e7c7', foreground: '#065f46' }
       : score >= 50
-        ? { background: '#fff4d6', foreground: '#9f7514' }
-        : { background: '#edf2f7', foreground: '#55657c' };
+        ? { background: '#ffe083', foreground: '#6b4f00' }
+        : { background: '#d7deea', foreground: '#475569' };
 
   return (
     <View style={styles.scoreWrapper}>
@@ -85,9 +85,9 @@ export function RuptureBadge({ risk }: { risk?: RuptureRisk }) {
   }
 
   const palette = {
-    'RISCO ALTO': { background: '#ffe3e8', foreground: '#b4234a' },
-    'RISCO MÉDIO': { background: '#ffeddc', foreground: '#b5671b' },
-    ESTÁVEL: { background: '#e5f7eb', foreground: '#1f7a4e' },
+    'RISCO ALTO': { background: '#ffc6d4', foreground: '#881337' },
+    'RISCO MÉDIO': { background: '#ffc98c', foreground: '#7c2d12' },
+    ESTÁVEL: { background: '#b6efc8', foreground: '#166534' },
   }[risk];
 
   return (
