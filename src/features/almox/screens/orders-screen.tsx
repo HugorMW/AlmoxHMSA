@@ -19,13 +19,16 @@ import {
   createExportTimestamp,
   exportRowsToExcel,
 } from "@/features/almox/excel";
-import { almoxTheme } from "@/features/almox/tokens";
+import { AlmoxTheme } from "@/features/almox/tokens";
+import { useAppTheme, useThemedStyles } from "@/features/almox/theme-provider";
 import { Level, OrderItem } from "@/features/almox/types";
 import { formatDecimal, paginate } from "@/features/almox/utils";
 
 const levelOrder: Level[] = ["URGENTE", "CRÍTICO", "ALTO", "MÉDIO", "BAIXO", "ESTÁVEL"];
 
 export default function OrdersScreen() {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -88,7 +91,6 @@ export default function OrdersScreen() {
   return (
     <ScreenScrollView>
       <PageHeader
-        title="Pedidos"
         subtitle="Pré-visualização do pedido automático agrupada por nível de cobertura, usando a base real importada."
         aside={
           <View style={styles.headerActions}>
@@ -209,13 +211,13 @@ export default function OrdersScreen() {
                   key={level}
                   label={level}
                   value={`${grouped[level].length}`}
-                  color={level === "URGENTE" || level === "CRÍTICO" ? almoxTheme.colors.red : level === "ALTO" ? almoxTheme.colors.orange : almoxTheme.colors.brand}
+                  color={level === "URGENTE" || level === "CRÍTICO" ? tokens.colors.red : level === "ALTO" ? tokens.colors.orange : tokens.colors.brand}
                 />
               ))}
               <SummaryMetric
                 label="Qtd. total"
                 value={`${items.reduce((sum, item) => sum + item.qty_to_buy, 0)}`}
-                color={almoxTheme.colors.brand}
+                color={tokens.colors.brand}
               />
             </View>
           </SectionCard>
@@ -260,6 +262,7 @@ function LevelSection({
   items: OrderItem[];
   showMaterialLabel: boolean;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <SectionCard>
       <SectionTitle
@@ -331,6 +334,7 @@ function SummaryMetric({
   value: string;
   color: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.summaryMetric, { borderColor: `${color}55` }]}>
       <View style={[styles.summaryDot, { backgroundColor: color }]} />
@@ -340,38 +344,38 @@ function SummaryMetric({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   headerActions: {
     flexDirection: "row",
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     flexWrap: "wrap",
   },
   ruleList: {
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   ruleItem: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 13,
     lineHeight: 20,
   },
   emptyText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 14,
   },
   summaryRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   summaryMetric: {
     flexGrow: 1,
     flexBasis: 180,
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
     gap: 6,
-    shadowColor: almoxTheme.colors.black,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.05,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
@@ -383,12 +387,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   summaryValue: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 20,
     fontWeight: "800",
   },
   summaryLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
   tableWrap: {
@@ -396,12 +400,12 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: "row",
-    paddingBottom: almoxTheme.spacing.sm,
+    paddingBottom: tokens.spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.lineStrong,
+    borderBottomColor: tokens.colors.lineStrong,
   },
   tableHeadCell: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -410,11 +414,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minHeight: 72,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
+    borderBottomColor: tokens.colors.line,
   },
   productColumn: {
     width: 280,
-    paddingRight: almoxTheme.spacing.md,
+    paddingRight: tokens.spacing.md,
   },
   codeColumn: {
     width: 120,
@@ -427,19 +431,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   productName: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: "700",
   },
   productMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   tableCell: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
   },
   badgeCell: {
     justifyContent: "center",
   },
 });
+

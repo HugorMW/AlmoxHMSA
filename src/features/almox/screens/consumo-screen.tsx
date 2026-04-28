@@ -15,7 +15,8 @@ import {
   SectionTitle,
 } from '@/features/almox/components/common';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useThemedStyles } from '@/features/almox/theme-provider';
 import { CategoriaMaterial } from '@/features/almox/types';
 import { formatDecimal, matchesQuery, paginate } from '@/features/almox/utils';
 import { getSupabaseClient } from '@/lib/supabase';
@@ -52,6 +53,7 @@ function normalizeCategoria(value: ConsumoRow['categoria_material']): CategoriaM
 }
 
 export default function ConsumoScreen() {
+  const styles = useThemedStyles(createStyles);
   const { categoryFilter, syncingBase, syncBase, refreshing, syncError, syncNotice } = useAlmoxData();
   const [rows, setRows] = useState<ConsumoRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,7 +123,6 @@ export default function ConsumoScreen() {
   return (
     <ScreenScrollView>
       <PageHeader
-        title="Consumo do mês"
         subtitle="Produtos HMSA que já ultrapassaram o consumo médio mensal antes do mês terminar."
         aside={
           <View style={styles.headerActions}>
@@ -262,10 +263,10 @@ export default function ConsumoScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     flexWrap: 'wrap',
   },
   tableWrap: {
@@ -273,12 +274,12 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: 'row',
-    paddingBottom: almoxTheme.spacing.sm,
+    paddingBottom: tokens.spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.lineStrong,
+    borderBottomColor: tokens.colors.lineStrong,
   },
   tableHeadCell: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -287,10 +288,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 72,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
+    borderBottomColor: tokens.colors.line,
   },
   tableCell: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
   },
   cellWarning: {
@@ -299,7 +300,7 @@ const styles = StyleSheet.create({
   },
   productColumn: {
     width: 260,
-    paddingRight: almoxTheme.spacing.md,
+    paddingRight: tokens.spacing.md,
   },
   codeColumn: {
     width: 120,
@@ -312,12 +313,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   productName: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   productMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
 });
+

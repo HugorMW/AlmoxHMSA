@@ -16,7 +16,8 @@ import {
 } from '@/features/almox/components/common';
 import { useAlmoxData } from '@/features/almox/almox-provider';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
 import { CategoriaMaterial, CmmExceptionItem, FiltroCategoriaMaterial } from '@/features/almox/types';
 import { formatDecimal, matchesQuery } from '@/features/almox/utils';
 
@@ -36,6 +37,7 @@ type ExceptionRow = {
 };
 
 export default function BlacklistScreen() {
+  const styles = useThemedStyles(createStyles);
   const [search, setSearch] = useState('');
   const [newCode, setNewCode] = useState('');
   const [resolvedName, setResolvedName] = useState('');
@@ -252,10 +254,7 @@ export default function BlacklistScreen() {
 
   return (
     <ScreenScrollView>
-      <PageHeader
-        title="Excluir"
-        subtitle="Gerencia os cd_produto que devem sumir do site apenas para o HMSA."
-      />
+      <PageHeader subtitle="Gerencia os cd_produto que devem sumir do site apenas para o HMSA." />
 
       <InfoBanner
         title="Regra ativa no site"
@@ -449,6 +448,8 @@ function CmmExceptionsModal({
   onToggleException: (row: ExceptionRow) => void;
   onClose: () => void;
 }) {
+  const { tokens } = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   const [showActiveExceptions, setShowActiveExceptions] = useState(false);
 
   useEffect(() => {
@@ -510,7 +511,7 @@ function CmmExceptionsModal({
               <AppIcon
                 name={showActiveExceptions ? 'chevronUp' : 'chevronDown'}
                 size={18}
-                color={almoxTheme.colors.textMuted}
+                color={tokens.colors.textMuted}
               />
             </Pressable>
 
@@ -609,6 +610,7 @@ function ToggleField({
   disabled?: boolean;
   onChange: (nextValue: boolean) => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Pressable
       accessibilityRole="switch"
@@ -632,53 +634,53 @@ function ToggleField({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   formGrid: {
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   list: {
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.sm,
+    gap: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
+    borderBottomColor: tokens.colors.line,
   },
   rowMain: {
     flex: 1,
     gap: 4,
   },
   name: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 14,
     fontWeight: '700',
   },
   meta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
   readOnlyInput: {
     opacity: 0.78,
   },
   lookupHint: {
-    color: almoxTheme.colors.orange,
+    color: tokens.colors.orange,
     fontSize: 12,
     lineHeight: 18,
   },
   exceptionSummaryBox: {
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     flexWrap: 'wrap',
   },
   exceptionSummaryText: {
@@ -687,24 +689,24 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   exceptionSummaryTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '800',
   },
   exceptionSummaryDescription: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },
   exceptionSummaryMeta: {
-    color: almoxTheme.colors.brand,
+    color: tokens.colors.brand,
     fontSize: 12,
     fontWeight: '800',
   },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.44)',
-    padding: almoxTheme.spacing.lg,
+    padding: tokens.spacing.lg,
     justifyContent: 'center',
   },
   modalCard: {
@@ -712,13 +714,13 @@ const styles = StyleSheet.create({
     maxWidth: 980,
     maxHeight: '92%',
     alignSelf: 'center',
-    borderRadius: almoxTheme.radii.lg,
+    borderRadius: tokens.radii.lg,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surface,
-    padding: almoxTheme.spacing.lg,
-    gap: almoxTheme.spacing.md,
-    shadowColor: almoxTheme.colors.black,
+    borderColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surface,
+    padding: tokens.spacing.lg,
+    gap: tokens.spacing.md,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.18,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 12 },
@@ -728,7 +730,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     flexWrap: 'wrap',
   },
   modalHeaderText: {
@@ -737,33 +739,33 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   modalTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 18,
     fontWeight: '800',
   },
   modalSubtitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },
   modalFilters: {
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   activeExceptionsPanel: {
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceMuted,
     overflow: 'hidden',
   },
   activeExceptionsHeader: {
     minHeight: 62,
-    paddingHorizontal: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.sm,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   activeExceptionsHeaderPressed: {
     opacity: 0.86,
@@ -774,39 +776,39 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   activeExceptionsTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '800',
   },
   activeExceptionsSubtitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },
   activeExceptionsEmpty: {
     borderTopWidth: 1,
-    borderTopColor: almoxTheme.colors.line,
-    color: almoxTheme.colors.textMuted,
+    borderTopColor: tokens.colors.line,
+    color: tokens.colors.textMuted,
     fontSize: 12,
-    paddingHorizontal: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.sm,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
   },
   activeExceptionsList: {
     borderTopWidth: 1,
-    borderTopColor: almoxTheme.colors.line,
-    padding: almoxTheme.spacing.sm,
-    gap: almoxTheme.spacing.sm,
+    borderTopColor: tokens.colors.line,
+    padding: tokens.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   activeExceptionRow: {
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surface,
-    padding: almoxTheme.spacing.sm,
+    borderColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surface,
+    padding: tokens.spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     flexWrap: 'wrap',
   },
   activeExceptionMain: {
@@ -818,19 +820,19 @@ const styles = StyleSheet.create({
     maxHeight: 520,
   },
   modalListContent: {
-    gap: almoxTheme.spacing.sm,
-    paddingBottom: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
+    paddingBottom: tokens.spacing.sm,
   },
   exceptionRow: {
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
-    padding: almoxTheme.spacing.md,
+    borderColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surfaceRaised,
+    padding: tokens.spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     flexWrap: 'wrap',
   },
   exceptionRowMain: {
@@ -840,10 +842,10 @@ const styles = StyleSheet.create({
   },
   exceptionRowActions: {
     alignItems: 'flex-end',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   exceptionActiveLabel: {
-    color: almoxTheme.colors.green,
+    color: tokens.colors.green,
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -851,26 +853,26 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.sm,
-    marginBottom: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
+    marginBottom: tokens.spacing.sm,
   },
   filterChip: {
-    paddingHorizontal: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.xs,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.xs,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surface,
+    borderColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surface,
   },
   filterChipActive: {
-    borderColor: almoxTheme.colors.brand,
-    backgroundColor: almoxTheme.colors.brand,
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.brand,
   },
   filterChipPressed: {
     opacity: 0.75,
   },
   filterChipText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -879,15 +881,15 @@ const styles = StyleSheet.create({
   },
   toggle: {
     minHeight: 72,
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   toggleActive: {
     borderColor: '#93c5fd',
@@ -904,35 +906,36 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   toggleTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '800',
   },
   toggleDescription: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },
   toggleTrack: {
     width: 50,
     height: 30,
-    borderRadius: almoxTheme.radii.pill,
-    backgroundColor: almoxTheme.colors.surfaceStrong,
+    borderRadius: tokens.radii.pill,
+    backgroundColor: tokens.colors.surfaceStrong,
     padding: 3,
     justifyContent: 'center',
   },
   toggleTrackActive: {
-    backgroundColor: almoxTheme.colors.brand,
+    backgroundColor: tokens.colors.brand,
   },
   toggleThumb: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: almoxTheme.colors.white,
+    backgroundColor: tokens.colors.white,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
+    borderColor: tokens.colors.line,
   },
   toggleThumbActive: {
     alignSelf: 'flex-end',
   },
 });
+

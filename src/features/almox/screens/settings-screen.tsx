@@ -27,7 +27,8 @@ import {
   processoPrazoTipos,
   validarConfiguracaoSistema,
 } from '@/features/almox/configuracao';
-import { almoxTheme, levelColors } from '@/features/almox/tokens';
+import { AlmoxTheme, levelColors } from '@/features/almox/tokens';
+import { useThemedStyles } from '@/features/almox/theme-provider';
 import { Level } from '@/features/almox/types';
 
 type ConfigDraft = Record<ConfiguracaoSistemaKey, string | boolean>;
@@ -176,7 +177,7 @@ function getProcessDeadlineFields(
     .map((definition) => ({
       key: definition.key,
       label: `Parcela ${definition.parcela}`,
-      suffix: 'dias úteis',
+      suffix: 'dias',
       helper: `Vencimento padrão da parcela ${definition.parcela} contado a partir da data de resgate.`,
     }));
 }
@@ -221,6 +222,7 @@ function confirmCoverageChange() {
 }
 
 export default function SettingsScreen() {
+  const styles = useThemedStyles(createStyles);
   const {
     dataset,
     error,
@@ -305,7 +307,6 @@ export default function SettingsScreen() {
   return (
     <ScreenScrollView>
       <PageHeader
-        title="Configurações"
         subtitle={`Parâmetros do sistema. Base atual sincronizada em ${formattedSync}. Configuração: ${formattedConfig}.`}
         aside={
           <View style={styles.headerActions}>
@@ -502,7 +503,7 @@ export default function SettingsScreen() {
           title="Processos"
           subtitle="Prazos padrão por classificação e tipo de processo."
           icon="processes"
-          tooltip="Cada prazo é contado em dias úteis a partir da data de resgate informada no processo."
+          tooltip="Cada prazo é contado em dias corridos a partir da data de resgate informada no processo."
         />
         <View style={styles.actionGroups}>
           {processoPrazoCategorias.map((categoria, index) => (
@@ -591,6 +592,7 @@ function ConfigNumberField({
   disabled?: boolean;
   onChange: (key: ConfiguracaoSistemaKey, value: string) => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.fieldWrap}>
       <FormField label={field.label}>
@@ -612,69 +614,69 @@ function ConfigNumberField({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     flexWrap: 'wrap',
   },
   formGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   actionGroups: {
-    gap: almoxTheme.spacing.lg,
+    gap: tokens.spacing.lg,
   },
   actionGroup: {
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   actionGroupSeparated: {
     borderTopWidth: 1,
-    borderTopColor: almoxTheme.colors.line,
-    paddingTop: almoxTheme.spacing.lg,
+    borderTopColor: tokens.colors.line,
+    paddingTop: tokens.spacing.lg,
   },
   actionGroupHeader: {
     gap: 4,
   },
   actionGroupTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 14,
     fontWeight: '800',
   },
   actionGroupSubtitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },
   actionSubgroups: {
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   actionSubgroup: {
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     borderLeftWidth: 3,
-    borderLeftColor: almoxTheme.colors.lineStrong,
-    paddingLeft: almoxTheme.spacing.md,
+    borderLeftColor: tokens.colors.lineStrong,
+    paddingLeft: tokens.spacing.md,
   },
   actionSubgroupHeader: {
     gap: 4,
   },
   actionSubgroupTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '800',
   },
   fieldWrap: {
     flexGrow: 1,
     flexBasis: 230,
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   inputWithSuffix: {
     minHeight: 46,
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceRaised,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
@@ -686,35 +688,35 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   inputError: {
-    color: almoxTheme.colors.rose,
+    color: tokens.colors.rose,
   },
   inputSuffix: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
-    paddingRight: almoxTheme.spacing.md,
+    paddingRight: tokens.spacing.md,
   },
   helperText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     lineHeight: 16,
   },
   errorText: {
-    color: almoxTheme.colors.rose,
+    color: tokens.colors.rose,
     fontWeight: '700',
   },
   previewGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   rangePreview: {
     flexGrow: 1,
     flexBasis: 140,
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
     gap: 4,
   },
   rangePreviewLabel: {
@@ -722,7 +724,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   rangePreviewText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -730,6 +732,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
 });
+

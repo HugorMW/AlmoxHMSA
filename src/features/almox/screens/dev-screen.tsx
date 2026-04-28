@@ -12,7 +12,8 @@ import {
   SectionTitle,
 } from '@/features/almox/components/common';
 import { useIsDeveloper } from '@/features/auth/use-is-developer';
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useThemedStyles } from '@/features/almox/theme-provider';
 
 type TabelaMetrica = {
   schema: string;
@@ -155,6 +156,7 @@ function abrirLinkExterno(url: string) {
 }
 
 export default function DevScreen() {
+  const styles = useThemedStyles(createStyles);
   const isDeveloper = useIsDeveloper();
   const [data, setData] = useState<DevUsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -199,7 +201,6 @@ export default function DevScreen() {
   return (
     <ScreenScrollView>
       <PageHeader
-        title="Desenvolvedor"
         subtitle={
           dbUsage
             ? `Última leitura: ${formatarDataHora(dbUsage.medido_em)}`
@@ -434,6 +435,7 @@ function UsuariosOnlineBlock({
   payload: UsuariosOnlinePayload | null;
   erro: string | null;
 }) {
+  const styles = useThemedStyles(createStyles);
   if (erro) {
     return <InfoBanner title="Falha ao ler usuários" description={erro} tone="warning" />;
   }
@@ -490,6 +492,7 @@ function UsuariosOnlineBlock({
 }
 
 function TopQueriesList({ stats, erro }: { stats: QueryStatsPayload | null; erro: string | null }) {
+  const styles = useThemedStyles(createStyles);
   if (erro) {
     return <InfoBanner title="Falha ao ler top queries" description={erro} tone="warning" />;
   }
@@ -529,27 +532,27 @@ function TopQueriesList({ stats, erro }: { stats: QueryStatsPayload | null; erro
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   gaugeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginBottom: almoxTheme.spacing.sm,
+    marginBottom: tokens.spacing.sm,
   },
   gaugeValue: {
     gap: 2,
   },
   gaugeTotal: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 26,
     fontWeight: '800',
   },
   gaugeLimit: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
   gaugePercentBox: {
@@ -560,13 +563,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   gaugePercentLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   gaugeTrack: {
     height: 10,
     borderRadius: 999,
-    backgroundColor: almoxTheme.colors.surfaceStrong,
+    backgroundColor: tokens.colors.surfaceStrong,
     overflow: 'hidden',
   },
   gaugeFill: {
@@ -574,7 +577,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   list: {
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   listRow: {
     gap: 4,
@@ -583,40 +586,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   listLabel: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
     flexShrink: 1,
   },
   listValue: {
-    color: almoxTheme.colors.textSoft,
+    color: tokens.colors.textSoft,
     fontSize: 12,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
   listHint: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     marginTop: 2,
   },
   barTrack: {
     height: 6,
     borderRadius: 999,
-    backgroundColor: almoxTheme.colors.surfaceStrong,
+    backgroundColor: tokens.colors.surfaceStrong,
     overflow: 'hidden',
   },
   barFill: {
     height: '100%',
     borderRadius: 999,
-    backgroundColor: almoxTheme.colors.brand,
+    backgroundColor: tokens.colors.brand,
   },
   cacheRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   cacheCell: {
     flexGrow: 1,
@@ -624,42 +627,42 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   cacheLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     fontWeight: '700',
   },
   cacheValue: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 22,
     fontWeight: '800',
   },
   cacheValueSecondary: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 16,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
   userBlock: {
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   userList: {
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.xs,
+    gap: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
+    borderBottomColor: tokens.colors.line,
   },
   userRowCompact: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
     paddingVertical: 2,
   },
   userDot: {
@@ -673,61 +676,61 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   userName: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   userNameSoft: {
-    color: almoxTheme.colors.textSoft,
+    color: tokens.colors.textSoft,
     fontSize: 12,
     fontWeight: '600',
     flexShrink: 1,
   },
   userMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   userRecentBlock: {
-    gap: almoxTheme.spacing.xs,
-    paddingTop: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
+    paddingTop: tokens.spacing.xs,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: almoxTheme.colors.line,
+    borderTopColor: tokens.colors.line,
   },
   userRecentTitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     fontWeight: '700',
   },
   connectionList: {
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   connectionRow: {
     gap: 4,
-    paddingVertical: almoxTheme.spacing.xs,
+    paddingVertical: tokens.spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
+    borderBottomColor: tokens.colors.line,
   },
   connectionHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   connectionPid: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
   connectionUser: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: '700',
     flex: 1,
   },
   connectionState: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -737,40 +740,41 @@ const styles = StyleSheet.create({
     color: '#16a34a',
   },
   connectionMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   connectionQuery: {
-    color: almoxTheme.colors.textSoft,
+    color: tokens.colors.textSoft,
     fontSize: 11,
-    fontFamily: almoxTheme.typography.mono,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.xs,
-    borderRadius: almoxTheme.radii.sm,
+    fontFamily: tokens.typography.mono,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.xs,
+    borderRadius: tokens.radii.sm,
   },
   queryList: {
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   queryRow: {
     gap: 4,
-    paddingVertical: almoxTheme.spacing.xs,
+    paddingVertical: tokens.spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
+    borderBottomColor: tokens.colors.line,
   },
   queryHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   queryMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   queryBody: {
-    color: almoxTheme.colors.textSoft,
+    color: tokens.colors.textSoft,
     fontSize: 11,
-    fontFamily: almoxTheme.typography.mono,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.xs,
-    borderRadius: almoxTheme.radii.sm,
+    fontFamily: tokens.typography.mono,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.xs,
+    borderRadius: tokens.radii.sm,
   },
 });
+

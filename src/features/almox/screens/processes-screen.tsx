@@ -21,7 +21,8 @@ import {
   AppIcon,
 } from '@/features/almox/components/common';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
-import { almoxTheme } from '@/features/almox/tokens';
+import { useAppTheme } from '@/features/almox/theme-provider';
+import { AlmoxTheme, ThemeMode } from '@/features/almox/tokens';
 import {
   CategoriaMaterial,
   ProcessoAcompanhamento,
@@ -37,50 +38,84 @@ import { matchesQuery } from '@/features/almox/utils';
 const PROCESS_TYPES: ProcessoTipo[] = ['ARP', 'Processo Simplificado', 'Processo Excepcional'];
 const PROCESS_TABLE_MIN_WIDTH = 1160;
 
-const processTheme = {
-  bg: '#06090f',
-  panel: '#0d1120',
-  surface: 'rgba(255,255,255,0.042)',
-  surfaceHi: 'rgba(255,255,255,0.07)',
-  surfacePressed: 'rgba(255,255,255,0.1)',
-  border: 'rgba(255,255,255,0.08)',
-  borderHi: 'rgba(255,255,255,0.13)',
-  text: '#eef2ff',
-  muted: 'rgba(220,228,255,0.56)',
-  dim: 'rgba(220,228,255,0.32)',
-  accent: '#00d4a0',
-  green: '#22d3a0',
-  amber: '#ffb340',
-  red: '#ff5f5f',
-  blue: '#5aafff',
-  purple: '#b197fc',
-  slate: '#96a4c5',
-  critical: '#ff4444',
-  ink: '#04080f',
+type ProcessTheme = {
+  bg: string;
+  panel: string;
+  surface: string;
+  surfaceHi: string;
+  surfacePressed: string;
+  border: string;
+  borderHi: string;
+  text: string;
+  muted: string;
+  dim: string;
+  accent: string;
+  green: string;
+  amber: string;
+  red: string;
+  blue: string;
+  purple: string;
+  slate: string;
+  critical: string;
+  ink: string;
 };
 
-const statusMeta: Record<ProcessoStatus, { label: string; color: string; background: string }> = {
-  andamento: {
-    label: 'Em andamento',
-    color: processTheme.slate,
-    background: 'rgba(150,164,197,0.12)',
-  },
-  atrasado: {
-    label: 'Atrasado',
-    color: processTheme.red,
-    background: 'rgba(255,95,95,0.13)',
-  },
-  concluido: {
-    label: 'Concluído',
-    color: processTheme.green,
-    background: 'rgba(34,211,160,0.11)',
-  },
-  cancelado: {
-    label: 'Cancelado',
-    color: processTheme.slate,
-    background: 'rgba(150,164,197,0.12)',
-  },
-};
+function withAlpha(color: string, alphaHex: string) {
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) {
+    return `${color}${alphaHex}`;
+  }
+
+  return color;
+}
+
+function createProcessTheme(tokens: AlmoxTheme, mode: ThemeMode): ProcessTheme {
+  return {
+    bg: tokens.colors.canvas,
+    panel: mode === 'dark' ? tokens.colors.surfaceStrong : tokens.colors.surfaceRaised,
+    surface: tokens.colors.surfaceMuted,
+    surfaceHi: tokens.colors.surfaceRaised,
+    surfacePressed: tokens.colors.surfaceStrong,
+    border: tokens.colors.line,
+    borderHi: tokens.colors.lineStrong,
+    text: tokens.colors.text,
+    muted: tokens.colors.textMuted,
+    dim: tokens.colors.textSoft,
+    accent: tokens.colors.emerald,
+    green: tokens.colors.green,
+    amber: tokens.colors.amber,
+    red: tokens.colors.red,
+    blue: tokens.colors.blue,
+    purple: tokens.colors.violet,
+    slate: tokens.colors.textMuted,
+    critical: tokens.colors.red,
+    ink: mode === 'dark' ? tokens.colors.black : tokens.colors.white,
+  };
+}
+
+function createStatusMeta(processTheme: ProcessTheme): Record<ProcessoStatus, { label: string; color: string; background: string }> {
+  return {
+    andamento: {
+      label: 'Em andamento',
+      color: processTheme.slate,
+      background: withAlpha(processTheme.slate, '1f'),
+    },
+    atrasado: {
+      label: 'Atrasado',
+      color: processTheme.red,
+      background: withAlpha(processTheme.red, '22'),
+    },
+    concluido: {
+      label: 'Concluído',
+      color: processTheme.green,
+      background: withAlpha(processTheme.green, '1c'),
+    },
+    cancelado: {
+      label: 'Cancelado',
+      color: processTheme.slate,
+      background: withAlpha(processTheme.slate, '1f'),
+    },
+  };
+}
 
 type ProcessoEnriquecido = ProcessoAcompanhamento & {
   status: ProcessoStatus;
@@ -142,23 +177,14 @@ function normalizeInlineText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-function addBusinessDays(date: Date, days: number) {
+function addDays(date: Date, days: number) {
   const nextDate = new Date(date);
-  let added = 0;
-
-  while (added < days) {
-    nextDate.setDate(nextDate.getDate() + 1);
-    const weekday = nextDate.getDay();
-    if (weekday !== 0 && weekday !== 6) {
-      added += 1;
-    }
-  }
-
+  nextDate.setDate(nextDate.getDate() + days);
   return nextDate;
 }
 
-function formatBusinessDaysLabel(days: number) {
-  return days === 1 ? '1 dia útil' : `${days} dias úteis`;
+function formatDaysLabel(days: number) {
+  return days === 1 ? '1 dia' : `${days} dias`;
 }
 
 function getParcelaDueDate(
@@ -171,7 +197,7 @@ function getParcelaDueDate(
     return null;
   }
 
-  return addBusinessDays(
+  return addDays(
     baseDate,
     getProcessoParcelaDiasUteis(config, item.categoria_material, item.tipo_processo, index)
   );
@@ -265,7 +291,7 @@ function getParcelaAdjustedDueDate(
     return dueDate;
   }
 
-  return addBusinessDays(dueDate, extraDays);
+  return addDays(dueDate, extraDays);
 }
 
 function getParcelaLabel(
@@ -274,7 +300,7 @@ function getParcelaLabel(
   categoria: CategoriaMaterial,
   tipo: ProcessoTipo
 ) {
-  return formatBusinessDaysLabel(getProcessoParcelaDiasUteis(config, categoria, tipo, index));
+  return formatDaysLabel(getProcessoParcelaDiasUteis(config, categoria, tipo, index));
 }
 
 function getTodayPtBrDate() {
@@ -370,13 +396,13 @@ function countDelivered(item: ProcessoAcompanhamento) {
   return item.parcelas_entregues.filter(Boolean).length;
 }
 
-const PROCESSO_ALERTA_DIAS_UTEIS = 1;
+const PROCESSO_ALERTA_DIAS = 1;
 
 function isParcelaNearDue(dueDate: Date | null, today: Date) {
   if (!dueDate) {
     return false;
   }
-  const limit = addBusinessDays(today, PROCESSO_ALERTA_DIAS_UTEIS);
+  const limit = addDays(today, PROCESSO_ALERTA_DIAS);
   return dueDate > today && dueDate <= limit;
 }
 
@@ -424,7 +450,18 @@ function normalizeProductCode(value: string) {
   return String(value ?? '').trim();
 }
 
-function getProcessTypeColor(tipo: ProcessoTipo) {
+function useProcessScreenSkin() {
+  const { mode, tokens } = useAppTheme();
+  return useMemo(() => {
+    const processTheme = createProcessTheme(tokens, mode);
+    const statusMeta = createStatusMeta(processTheme);
+    const styles = createStyles(tokens, processTheme);
+
+    return { tokens, processTheme, statusMeta, styles };
+  }, [mode, tokens]);
+}
+
+function getProcessTypeColor(processTheme: ProcessTheme, tipo: ProcessoTipo) {
   if (tipo === 'ARP') {
     return processTheme.accent;
   }
@@ -457,6 +494,7 @@ function getProcessListRank(item: Pick<ProcessoEnriquecido, 'status' | 'critico'
 }
 
 export default function ProcessesScreen() {
+  const { processTheme, styles } = useProcessScreenSkin();
   const {
     processItems,
     processItemsLoading,
@@ -742,7 +780,11 @@ export default function ProcessesScreen() {
                 compact
                 options={[
                   { label: 'Todos', value: 'todos', color: processTheme.accent },
-                  ...PROCESS_TYPES.map((tipo) => ({ label: tipo, value: tipo, color: getProcessTypeColor(tipo) })),
+                  ...PROCESS_TYPES.map((tipo) => ({
+                    label: tipo,
+                    value: tipo,
+                    color: getProcessTypeColor(processTheme, tipo),
+                  })),
                 ]}
                 value={tipoFilter}
                 onChange={setTipoFilter}
@@ -823,16 +865,16 @@ export default function ProcessesScreen() {
           <LegendDot
             color={processTheme.amber}
             label={
-              PROCESSO_ALERTA_DIAS_UTEIS === 1
-                ? 'Entrega em 1 dia útil'
-                : `Pendente em até ${PROCESSO_ALERTA_DIAS_UTEIS} dias úteis`
+              PROCESSO_ALERTA_DIAS === 1
+                ? 'Entrega em 1 dia'
+                : `Pendente em até ${PROCESSO_ALERTA_DIAS} dias`
             }
           />
           <LegendDot color={processTheme.slate} label="Pendente dentro do prazo" />
           <LegendDot color={processTheme.green} label="Entregue" />
           <LegendIcon icon="clock" color={processTheme.blue} label="Adiada" />
           <LegendIcon icon="bell" color={processTheme.purple} label="Empresa notificada" />
-          <Text style={styles.legendText}>Prazos em dias úteis conforme classificação e tipo do processo</Text>
+          <Text style={styles.legendText}>Prazos em dias conforme classificação e tipo do processo</Text>
         </View>
       </View>
 
@@ -903,6 +945,8 @@ function MetricCard({
   active?: boolean;
   onPress?: () => void;
 }) {
+  const { styles } = useProcessScreenSkin();
+
   return (
     <Pressable
       onPress={onPress}
@@ -933,6 +977,7 @@ function DarkButton({
   loading?: boolean;
   onPress?: () => void;
 }) {
+  const { processTheme, styles } = useProcessScreenSkin();
   const isDisabled = disabled || loading;
   const palette = {
     neutral: {
@@ -948,20 +993,20 @@ function DarkButton({
       iconColor: processTheme.ink,
     },
     accentSoft: {
-      backgroundColor: 'rgba(0,212,160,0.1)',
-      borderColor: 'rgba(0,212,160,0.38)',
+      backgroundColor: withAlpha(processTheme.accent, '1a'),
+      borderColor: withAlpha(processTheme.accent, '61'),
       color: processTheme.accent,
       iconColor: processTheme.accent,
     },
     infoSoft: {
-      backgroundColor: 'rgba(90,175,255,0.1)',
-      borderColor: 'rgba(90,175,255,0.34)',
+      backgroundColor: withAlpha(processTheme.blue, '1a'),
+      borderColor: withAlpha(processTheme.blue, '57'),
       color: processTheme.blue,
       iconColor: processTheme.blue,
     },
     dangerSoft: {
-      backgroundColor: 'rgba(255,95,95,0.1)',
-      borderColor: 'rgba(255,95,95,0.34)',
+      backgroundColor: withAlpha(processTheme.red, '1a'),
+      borderColor: withAlpha(processTheme.red, '57'),
       color: processTheme.red,
       iconColor: processTheme.red,
     },
@@ -1000,6 +1045,8 @@ function DarkTabGroup<T extends string>({
   onChange: (nextValue: T) => void;
   compact?: boolean;
 }) {
+  const { processTheme, styles } = useProcessScreenSkin();
+
   return (
     <View style={[styles.darkTabs, compact ? styles.darkTabsCompact : null]}>
       {options.map((option) => {
@@ -1050,6 +1097,8 @@ function DarkSearchField({
   onChange: (nextValue: string) => void;
   placeholder: string;
 }) {
+  const { processTheme, styles } = useProcessScreenSkin();
+
   return (
     <View style={styles.darkSearch}>
       <AppIcon name="search" size={15} color={processTheme.dim} />
@@ -1078,6 +1127,7 @@ function DarkNotice({
   description: string;
   tone: 'success' | 'danger' | 'warning' | 'info';
 }) {
+  const { processTheme, styles } = useProcessScreenSkin();
   const color =
     tone === 'success'
       ? processTheme.green
@@ -1096,6 +1146,7 @@ function DarkNotice({
 }
 
 function DarkEmptyState({ title, description }: { title: string; description: string }) {
+  const { styles } = useProcessScreenSkin();
   return (
     <View style={styles.darkEmptyState}>
       <Text style={styles.darkEmptyTitle}>{title}</Text>
@@ -1105,6 +1156,7 @@ function DarkEmptyState({ title, description }: { title: string; description: st
 }
 
 function DarkField({ label, children }: { label: string; children: React.ReactNode }) {
+  const { styles } = useProcessScreenSkin();
   return (
     <View style={styles.darkField}>
       <Text style={styles.darkFieldLabel}>{label}</Text>
@@ -1114,6 +1166,7 @@ function DarkField({ label, children }: { label: string; children: React.ReactNo
 }
 
 function DarkInput(props: React.ComponentProps<typeof TextInput>) {
+  const { processTheme, styles } = useProcessScreenSkin();
   return (
     <TextInput
       {...props}
@@ -1138,6 +1191,7 @@ function ProcessTable({
   onToggleCanceled: (item: ProcessoEnriquecido) => void;
   onDelete: (item: ProcessoAcompanhamento) => void;
 }) {
+  const { styles } = useProcessScreenSkin();
   const [viewportWidth, setViewportWidth] = useState(0);
   const tableWidth = Math.max(viewportWidth, PROCESS_TABLE_MIN_WIDTH);
 
@@ -1154,7 +1208,7 @@ function ProcessTable({
           <View style={styles.tableHeader}>
             {['Pedido / Tipo', 'Produto / Fornecedor', 'Data resgate', 'Parcelas e prazos', 'Situação', 'Ações'].map(
               (header, index) => (
-                <Text key={header} style={[styles.tableHeadCell, tableColumnStyle(index)]}>
+                <Text key={header} style={[styles.tableHeadCell, tableColumnStyle(styles, index)]}>
                   {header}
                 </Text>
               )
@@ -1197,8 +1251,9 @@ function ProcessRow({
   onToggleCanceled: () => void;
   onDelete: () => void;
 }) {
+  const { processTheme, statusMeta, styles } = useProcessScreenSkin();
   const status = statusMeta[item.status];
-  const typeColor = getProcessTypeColor(item.tipo_processo);
+  const typeColor = getProcessTypeColor(processTheme, item.tipo_processo);
 
   return (
     <View
@@ -1265,7 +1320,7 @@ function ProcessRow({
             <Pill
               label="Crítico"
               color={processTheme.critical}
-              background="rgba(255,68,68,0.13)"
+              background={withAlpha(processTheme.critical, '21')}
             />
           ) : null}
           <Pill label={status.label} color={status.color} background={status.background} />
@@ -1286,7 +1341,7 @@ function ProcessRow({
   );
 }
 
-function tableColumnStyle(index: number) {
+function tableColumnStyle(styles: ReturnType<typeof createStyles>, index: number) {
   const columns = [
     styles.numberColumn,
     styles.productColumn,
@@ -1308,6 +1363,7 @@ function ParcelaTimeline({
   systemConfig: ConfiguracaoSistema;
   onSelectParcela: (selectedIndex: number) => void;
 }) {
+  const { processTheme, styles } = useProcessScreenSkin();
   const today = getTodayAtStartOfDay();
 
   return (
@@ -1381,6 +1437,7 @@ function Pill({
   color: string;
   background?: string;
 }) {
+  const { styles } = useProcessScreenSkin();
   return (
     <View style={[styles.pill, { borderColor: `${color}40`, backgroundColor: background ?? `${color}14` }]}>
       <Text style={[styles.pillText, { color }]} numberOfLines={1}>
@@ -1401,6 +1458,7 @@ function IconButton({
   color: string;
   onPress: () => void;
 }) {
+  const { styles } = useProcessScreenSkin();
   return (
     <Pressable
       accessibilityLabel={label}
@@ -1412,6 +1470,7 @@ function IconButton({
 }
 
 function LegendDot({ color, label }: { color: string; label: string }) {
+  const { styles } = useProcessScreenSkin();
   return (
     <View style={styles.legendItem}>
       <View style={[styles.legendDot, { backgroundColor: color }]} />
@@ -1429,6 +1488,7 @@ function LegendIcon({
   color: string;
   label: string;
 }) {
+  const { styles } = useProcessScreenSkin();
   return (
     <View style={styles.legendItem}>
       <AppIcon name={icon} size={12} color={color} />
@@ -1458,6 +1518,7 @@ function ProcessFormModal({
   onClose: () => void;
   onSave: (input: ProcessoSaveInput) => Promise<void>;
 }) {
+  const { processTheme, styles } = useProcessScreenSkin();
   const [codBionexoText, setCodBionexoText] = useState(stripBionexoPrefix(initial?.cod_bionexo ?? ''));
   const [cdProdutoText, setCdProdutoText] = useState(initial?.cd_produto ?? '');
   const [numeroPedido, setNumeroPedido] = useState(initial?.numero_processo ?? '');
@@ -1817,7 +1878,11 @@ function ProcessFormModal({
               <DarkField label="Tipo">
                 <DarkTabGroup
                   compact
-                  options={PROCESS_TYPES.map((tipo) => ({ label: tipo, value: tipo, color: getProcessTypeColor(tipo) }))}
+                  options={PROCESS_TYPES.map((tipo) => ({
+                    label: tipo,
+                    value: tipo,
+                    color: getProcessTypeColor(processTheme, tipo),
+                  }))}
                   value={tipoProcesso}
                   onChange={setTipoProcesso}
                 />
@@ -1934,6 +1999,7 @@ function ParcelasModal({
   onApplyVisualState: (visualState: ProcessoParcelasVisualMap) => void;
   onSave: (parcelasEntregues: boolean[], visualState: ProcessoParcelasVisualMap) => Promise<void> | undefined;
 }) {
+  const { processTheme, styles } = useProcessScreenSkin();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const compactModal = viewportWidth < 1280 || viewportHeight < 860;
   const [parcelas, setParcelas] = useState(() =>
@@ -2107,7 +2173,7 @@ function ParcelasModal({
                 {selectedVisualState.adiadaDiasUteis > 0 ? (
                   <View style={styles.parcelaBadge}>
                     <AppIcon name="clock" size={12} color={processTheme.blue} />
-                    <Text style={styles.parcelaBadgeText}>Adiada em {selectedVisualState.adiadaDiasUteis} dias úteis</Text>
+                    <Text style={styles.parcelaBadgeText}>Adiada em {selectedVisualState.adiadaDiasUteis} dias</Text>
                   </View>
                 ) : null}
                 {selectedVisualState.empresaNotificada ? (
@@ -2130,7 +2196,7 @@ function ParcelasModal({
                   <Text style={styles.parcelaInfoLabel}>Adiamento aplicado</Text>
                   <Text style={styles.parcelaInfoValue}>
                     {selectedVisualState.adiadaDiasUteis > 0
-                      ? `+${selectedVisualState.adiadaDiasUteis} dias úteis`
+                      ? `+${selectedVisualState.adiadaDiasUteis} dias`
                       : 'Sem adiamento'}
                   </Text>
                   <Text style={styles.parcelaInfoHelper}>Ajuste visual desta etapa</Text>
@@ -2196,7 +2262,7 @@ function ParcelasModal({
                   <View style={styles.parcelaToggleText}>
                     <Text style={styles.parcelaToggleLabel}>Adiamento da parcela</Text>
                     <Text style={styles.parcelaToggleHelper}>
-                      Ajuste visual em dias úteis para testar o comportamento da interface.
+                      Ajuste visual em dias para testar o comportamento da interface.
                     </Text>
                   </View>
                   <View style={styles.delayStepper}>
@@ -2205,7 +2271,7 @@ function ParcelasModal({
                     </Pressable>
                     <View style={styles.delayStepperValueWrap}>
                       <Text style={styles.delayStepperValue}>{selectedVisualState.adiadaDiasUteis}</Text>
-                      <Text style={styles.delayStepperUnit}>dias úteis</Text>
+                      <Text style={styles.delayStepperUnit}>dias</Text>
                     </View>
                     <Pressable onPress={() => adjustDelay(1)} style={[styles.delayStepperButton, styles.delayStepperButtonPrimary]}>
                       <Text style={[styles.delayStepperButtonText, styles.delayStepperButtonTextPrimary]}>+</Text>
@@ -2288,11 +2354,12 @@ function ParcelasModal({
   );
 }
 
-const baseStyles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
+  ...StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   categoryTabsRow: {
     flexDirection: 'row',
@@ -2300,23 +2367,23 @@ const baseStyles = StyleSheet.create({
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   metricCard: {
     flex: 1,
     minWidth: 150,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    borderRadius: almoxTheme.radii.md,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
-    gap: almoxTheme.spacing.xs,
+    borderColor: tokens.colors.line,
+    borderRadius: tokens.radii.md,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
+    gap: tokens.spacing.xs,
   },
   metricCardPressed: {
     opacity: 0.82,
   },
   metricLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -2324,12 +2391,12 @@ const baseStyles = StyleSheet.create({
   metricValue: {
     fontSize: 28,
     fontWeight: '800',
-    fontFamily: almoxTheme.typography.mono,
+    fontFamily: tokens.typography.mono,
   },
   toolbar: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     alignItems: 'center',
   },
   searchWrap: {
@@ -2338,17 +2405,17 @@ const baseStyles = StyleSheet.create({
   },
   filterPanel: {
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    borderRadius: almoxTheme.radii.md,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
-    gap: almoxTheme.spacing.md,
+    borderColor: tokens.colors.line,
+    borderRadius: tokens.radii.md,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
+    gap: tokens.spacing.md,
   },
   filterBlock: {
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   filterLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -2356,8 +2423,8 @@ const baseStyles = StyleSheet.create({
   table: {
     minWidth: 980,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    borderRadius: almoxTheme.radii.md,
+    borderColor: tokens.colors.line,
+    borderRadius: tokens.radii.md,
     overflow: 'hidden',
   },
   tableViewport: {
@@ -2372,14 +2439,14 @@ const baseStyles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: almoxTheme.colors.surfaceMuted,
+    backgroundColor: tokens.colors.surfaceMuted,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.line,
-    paddingHorizontal: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.sm,
+    borderBottomColor: tokens.colors.line,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
   },
   tableHeadCell: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 10,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -2388,25 +2455,25 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.line,
-    paddingHorizontal: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.md,
-    backgroundColor: almoxTheme.colors.surface,
+    borderBottomColor: tokens.colors.line,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.md,
+    backgroundColor: tokens.colors.surface,
   },
   criticalRow: {
     borderLeftWidth: 3,
-    borderLeftColor: almoxTheme.colors.red,
+    borderLeftColor: tokens.colors.red,
     backgroundColor: '#fff8fa',
   },
   overdueRow: {
     backgroundColor: '#fffafb',
   },
   tableCellBlock: {
-    paddingRight: almoxTheme.spacing.md,
-    gap: almoxTheme.spacing.xs,
+    paddingRight: tokens.spacing.md,
+    gap: tokens.spacing.xs,
   },
   tableCellPressable: {
-    borderRadius: almoxTheme.radii.sm,
+    borderRadius: tokens.radii.sm,
     paddingVertical: 2,
   },
   tableCellPressablePressed: {
@@ -2429,7 +2496,7 @@ const baseStyles = StyleSheet.create({
     width: 125,
   },
   statusPillStack: {
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   actionsColumn: {
     width: 118,
@@ -2437,41 +2504,41 @@ const baseStyles = StyleSheet.create({
   numberLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   processNumber: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '800',
-    fontFamily: almoxTheme.typography.mono,
+    fontFamily: tokens.typography.mono,
   },
   productName: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   productMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   dateText: {
-    color: almoxTheme.colors.textSoft,
+    color: tokens.colors.textSoft,
     fontSize: 12,
     fontWeight: '700',
-    fontFamily: almoxTheme.typography.mono,
+    fontFamily: tokens.typography.mono,
   },
   actionList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   iconButton: {
     width: 32,
     height: 32,
-    borderRadius: almoxTheme.radii.sm,
+    borderRadius: tokens.radii.sm,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
+    borderColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2479,21 +2546,21 @@ const baseStyles = StyleSheet.create({
     opacity: 0.75,
   },
   tableFooter: {
-    paddingHorizontal: almoxTheme.spacing.md,
-    paddingVertical: almoxTheme.spacing.sm,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
+    paddingHorizontal: tokens.spacing.md,
+    paddingVertical: tokens.spacing.sm,
+    backgroundColor: tokens.colors.surfaceMuted,
   },
   tableFooterText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   timeline: {
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   timelineItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   timelineDot: {
     width: 24,
@@ -2511,20 +2578,20 @@ const baseStyles = StyleSheet.create({
     flex: 1,
   },
   timelineLabel: {
-    color: almoxTheme.colors.textSoft,
+    color: tokens.colors.textSoft,
     fontSize: 11,
     fontWeight: '700',
   },
   timelineDate: {
     fontSize: 11,
     fontWeight: '700',
-    fontFamily: almoxTheme.typography.mono,
+    fontFamily: tokens.typography.mono,
   },
   pill: {
     alignSelf: 'flex-start',
-    borderRadius: almoxTheme.radii.pill,
+    borderRadius: tokens.radii.pill,
     borderWidth: 1,
-    paddingHorizontal: almoxTheme.spacing.xs,
+    paddingHorizontal: tokens.spacing.xs,
     paddingVertical: 3,
     maxWidth: '100%',
   },
@@ -2536,13 +2603,13 @@ const baseStyles = StyleSheet.create({
   legendRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     alignItems: 'center',
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   legendDot: {
     width: 8,
@@ -2550,7 +2617,7 @@ const baseStyles = StyleSheet.create({
     borderRadius: 3,
   },
   legendText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   modalOverlay: {
@@ -2558,16 +2625,16 @@ const baseStyles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.42)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: almoxTheme.spacing.lg,
+    padding: tokens.spacing.lg,
   },
   modalCard: {
     width: '100%',
     maxWidth: 620,
     maxHeight: '92%',
-    borderRadius: almoxTheme.radii.lg,
+    borderRadius: tokens.radii.lg,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surface,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surface,
     overflow: 'hidden',
   },
   parcelasModalCard: {
@@ -2577,37 +2644,37 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: almoxTheme.spacing.lg,
+    padding: tokens.spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
+    borderBottomColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surfaceMuted,
   },
   modalTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 18,
     fontWeight: '800',
   },
   modalSubtitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     marginTop: 2,
   },
   modalCloseButton: {
     width: 36,
     height: 36,
-    borderRadius: almoxTheme.radii.sm,
+    borderRadius: tokens.radii.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    backgroundColor: tokens.colors.surfaceRaised,
   },
   modalBody: {
-    padding: almoxTheme.spacing.lg,
-    gap: almoxTheme.spacing.md,
+    padding: tokens.spacing.lg,
+    gap: tokens.spacing.md,
   },
   modalGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   bionexoInputRow: {
     flexDirection: 'row',
@@ -2615,17 +2682,17 @@ const baseStyles = StyleSheet.create({
   },
   bionexoPrefix: {
     height: 44,
-    paddingHorizontal: almoxTheme.spacing.md,
-    borderTopLeftRadius: almoxTheme.radii.md,
-    borderBottomLeftRadius: almoxTheme.radii.md,
+    paddingHorizontal: tokens.spacing.md,
+    borderTopLeftRadius: tokens.radii.md,
+    borderBottomLeftRadius: tokens.radii.md,
     borderWidth: 1,
     borderRightWidth: 0,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceRaised,
     justifyContent: 'center',
   },
   bionexoPrefixText: {
-    color: almoxTheme.colors.brandStrong,
+    color: tokens.colors.brandStrong,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -2637,76 +2704,76 @@ const baseStyles = StyleSheet.create({
   lookupBox: {
     borderWidth: 1,
     borderColor: '#bce4cc',
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     backgroundColor: '#edf9f2',
-    padding: almoxTheme.spacing.md,
-    gap: almoxTheme.spacing.xs,
+    padding: tokens.spacing.md,
+    gap: tokens.spacing.xs,
   },
   lookupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   lookupTitle: {
-    color: almoxTheme.colors.green,
+    color: tokens.colors.green,
     fontSize: 12,
     fontWeight: '800',
   },
   lookupName: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   lookupMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
   stepper: {
     height: 44,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   stepperButton: {
     width: 36,
     height: 36,
-    borderRadius: almoxTheme.radii.sm,
+    borderRadius: tokens.radii.sm,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    backgroundColor: almoxTheme.colors.surfaceRaised,
+    borderColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepperButtonPrimary: {
-    borderColor: almoxTheme.colors.brand,
+    borderColor: tokens.colors.brand,
     backgroundColor: '#e9f1ff',
   },
   stepperButtonText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 20,
     fontWeight: '800',
   },
   stepperButtonTextPrimary: {
-    color: almoxTheme.colors.brandStrong,
+    color: tokens.colors.brandStrong,
   },
   stepperValue: {
     minWidth: 28,
     textAlign: 'center',
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 18,
     fontWeight: '800',
-    fontFamily: almoxTheme.typography.mono,
+    fontFamily: tokens.typography.mono,
   },
   deadlinePreview: {
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    borderRadius: almoxTheme.radii.md,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
-    gap: almoxTheme.spacing.sm,
+    borderColor: tokens.colors.line,
+    borderRadius: tokens.radii.md,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
+    gap: tokens.spacing.sm,
   },
   deadlineTitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -2714,38 +2781,38 @@ const baseStyles = StyleSheet.create({
   deadlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   deadlineIndex: {
     width: 30,
-    color: almoxTheme.colors.brandStrong,
+    color: tokens.colors.brandStrong,
     fontSize: 12,
     fontWeight: '800',
   },
   deadlineLabel: {
     flex: 1,
-    color: almoxTheme.colors.textSoft,
+    color: tokens.colors.textSoft,
     fontSize: 12,
   },
   deadlineDate: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     fontWeight: '800',
-    fontFamily: almoxTheme.typography.mono,
+    fontFamily: tokens.typography.mono,
   },
   deadlineEmpty: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
   criticalToggle: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    borderRadius: almoxTheme.radii.md,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
+    borderColor: tokens.colors.line,
+    borderRadius: tokens.radii.md,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
   },
   criticalToggleActive: {
     borderColor: '#efb4c1',
@@ -2756,32 +2823,32 @@ const baseStyles = StyleSheet.create({
     height: 22,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
+    borderColor: tokens.colors.lineStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxActive: {
-    borderColor: almoxTheme.colors.red,
-    backgroundColor: almoxTheme.colors.red,
+    borderColor: tokens.colors.red,
+    backgroundColor: tokens.colors.red,
   },
   criticalToggleText: {
     flex: 1,
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
   criticalToggleTextActive: {
-    color: almoxTheme.colors.red,
+    color: tokens.colors.red,
   },
   parcelaOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.line,
-    borderRadius: almoxTheme.radii.md,
-    backgroundColor: almoxTheme.colors.surfaceMuted,
-    padding: almoxTheme.spacing.md,
+    borderColor: tokens.colors.line,
+    borderRadius: tokens.radii.md,
+    backgroundColor: tokens.colors.surfaceMuted,
+    padding: tokens.spacing.md,
   },
   parcelaOptionDelivered: {
     borderColor: '#bce4cc',
@@ -2804,18 +2871,16 @@ const baseStyles = StyleSheet.create({
     gap: 2,
   },
   parcelaTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '800',
   },
   parcelaSubtitle: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
-});
+  }),
 
-const styles = {
-  ...baseStyles,
   ...StyleSheet.create({
     processScroll: {
       flex: 1,
@@ -2831,8 +2896,8 @@ const styles = {
       borderWidth: 0,
       borderColor: 'transparent',
       backgroundColor: processTheme.bg,
-      padding: almoxTheme.spacing.lg,
-      gap: almoxTheme.spacing.lg,
+      padding: tokens.spacing.lg,
+      gap: tokens.spacing.lg,
       overflow: 'hidden',
     },
     topBar: {
@@ -2840,12 +2905,12 @@ const styles = {
       alignItems: 'center',
       justifyContent: 'space-between',
       flexWrap: 'wrap',
-      gap: almoxTheme.spacing.md,
+      gap: tokens.spacing.md,
     },
     headerActions: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: almoxTheme.spacing.sm,
+      gap: tokens.spacing.sm,
       alignItems: 'center',
     },
     darkButton: {
@@ -2954,8 +3019,8 @@ const styles = {
     darkNotice: {
       borderRadius: 12,
       borderWidth: 1,
-      paddingHorizontal: almoxTheme.spacing.md,
-      paddingVertical: almoxTheme.spacing.sm,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
       gap: 3,
     },
     darkNoticeTitle: {
@@ -2975,8 +3040,8 @@ const styles = {
       borderWidth: 1,
       borderColor: processTheme.border,
       backgroundColor: processTheme.surface,
-      padding: almoxTheme.spacing.xl,
-      gap: almoxTheme.spacing.xs,
+      padding: tokens.spacing.xl,
+      gap: tokens.spacing.xs,
     },
     darkEmptyTitle: {
       color: processTheme.text,
@@ -3016,7 +3081,7 @@ const styles = {
     metricGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: almoxTheme.spacing.sm,
+      gap: tokens.spacing.sm,
     },
     metricCard: {
       flex: 1,
@@ -3042,7 +3107,7 @@ const styles = {
       fontSize: 28,
       fontWeight: '800',
       lineHeight: 31,
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     toolbar: {
       flexDirection: 'row',
@@ -3158,7 +3223,7 @@ const styles = {
       color: processTheme.text,
       fontSize: 12.5,
       fontWeight: '900',
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     productName: {
       color: processTheme.text,
@@ -3173,7 +3238,7 @@ const styles = {
       color: processTheme.muted,
       fontSize: 11.5,
       fontWeight: '800',
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     actionList: {
       flexDirection: 'row',
@@ -3211,7 +3276,7 @@ const styles = {
     timelineItem: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: almoxTheme.spacing.xs,
+      gap: tokens.spacing.xs,
       borderRadius: 10,
       borderWidth: 1,
       borderColor: 'transparent',
@@ -3241,7 +3306,7 @@ const styles = {
     timelineDate: {
       fontSize: 11,
       fontWeight: '800',
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     timelineFlags: {
       flexDirection: 'row',
@@ -3282,10 +3347,10 @@ const styles = {
       backgroundColor: 'rgba(4,6,14,0.78)',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: almoxTheme.spacing.lg,
+      padding: tokens.spacing.lg,
     },
     modalOverlayCompact: {
-      padding: almoxTheme.spacing.md,
+      padding: tokens.spacing.md,
     },
     modalCard: {
       width: '100%',
@@ -3458,7 +3523,7 @@ const styles = {
       textAlign: 'center',
       fontSize: 17,
       fontWeight: '900',
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     deadlinePreview: {
       borderRadius: 14,
@@ -3489,7 +3554,7 @@ const styles = {
       color: processTheme.accent,
       fontSize: 12,
       fontWeight: '900',
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     deadlineEmpty: {
       color: processTheme.dim,
@@ -3585,7 +3650,7 @@ const styles = {
     parcelaSelectorMeta: {
       color: processTheme.muted,
       fontSize: 11,
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     parcelaSelectorFlags: {
       flexDirection: 'row',
@@ -3680,7 +3745,7 @@ const styles = {
       color: processTheme.text,
       fontSize: 13,
       fontWeight: '900',
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     parcelaInfoHelper: {
       color: processTheme.muted,
@@ -3749,7 +3814,7 @@ const styles = {
     },
     deliveryDateInput: {
       minHeight: 38,
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
       textAlign: 'center',
     },
     delayStepper: {
@@ -3789,7 +3854,7 @@ const styles = {
       color: processTheme.text,
       fontSize: 16,
       fontWeight: '900',
-      fontFamily: almoxTheme.typography.mono,
+      fontFamily: tokens.typography.mono,
     },
     delayStepperUnit: {
       color: processTheme.dim,
@@ -3842,4 +3907,4 @@ const styles = {
       fontSize: 12,
     },
   }),
-};
+});

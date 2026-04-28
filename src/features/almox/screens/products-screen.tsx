@@ -20,7 +20,8 @@ import { useAlmoxData } from '@/features/almox/almox-provider';
 import { getActionTooltips, getLevelRangeLabels, getLevelTooltips } from '@/features/almox/configuracao';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
 import { createExportTimestamp, exportRowsToExcel } from '@/features/almox/excel';
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useThemedStyles } from '@/features/almox/theme-provider';
 import { Hospital } from '@/features/almox/types';
 import { paginate, matchesQuery } from '@/features/almox/utils';
 
@@ -35,6 +36,7 @@ type LevelFilter = 'all' | 'URGENTE' | 'CRÍTICO' | 'ALTO' | 'MÉDIO' | 'BAIXO' 
 type SortOption = 'dias_asc' | 'dias_desc' | 'nome_asc' | 'codigo_asc';
 
 export default function ProductsScreen() {
+  const styles = useThemedStyles(createStyles);
   const [activeHospital, setActiveHospital] = useState<Hospital>('HMSA');
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState<ActionFilter>('all');
@@ -150,7 +152,6 @@ export default function ProductsScreen() {
   return (
     <ScreenScrollView>
       <PageHeader
-        title="Produtos"
         subtitle="Exploração da carteira completa por hospital, com filtros locais sobre a base sincronizada."
         tooltip="Tela de consulta operacional da carteira. Aqui você compara hospitais, aplica filtros locais e entende a ação sugerida para cada item."
         aside={
@@ -434,24 +435,25 @@ export default function ProductsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
     flexWrap: 'wrap',
   },
   filterBlock: {
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
   },
   filterLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: almoxTheme.spacing.xs,
+    gap: tokens.spacing.xs,
     flexWrap: 'wrap',
   },
   filterLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
 });
+

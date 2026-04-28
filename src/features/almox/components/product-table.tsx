@@ -131,7 +131,7 @@ function TableHeader({
       ) : null}
       {showActionColumns ? (
         <Text style={[styles.tableHeadCell, styles.hospitalColumn]}>
-          Hospital sugerido
+          Hospital compatível
         </Text>
       ) : null}
       {showObservationColumn ? (

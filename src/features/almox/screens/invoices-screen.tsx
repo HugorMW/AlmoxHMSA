@@ -11,7 +11,6 @@ import {
 } from '@/features/almox/cache';
 import {
   ActionButton,
-  AppIcon,
   EmptyState,
   FieldInput,
   FormField,
@@ -23,7 +22,8 @@ import {
   SectionCard,
   SectionTitle,
 } from '@/features/almox/components/common';
-import { almoxTheme } from '@/features/almox/tokens';
+import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
+import { AlmoxTheme } from '@/features/almox/tokens';
 import {
   NotaFiscalItem,
   NotaFiscalResumo,
@@ -148,12 +148,12 @@ function getStatusLabel(value: NotaFiscalStatusSincronizacao) {
   return labels[value];
 }
 
-function getStatusPalette(value: NotaFiscalStatusSincronizacao) {
+function getStatusPalette(tokens: AlmoxTheme, value: NotaFiscalStatusSincronizacao) {
   const palette: Record<NotaFiscalStatusSincronizacao, { background: string; foreground: string }> = {
-    ativo: { background: '#e5f7eb', foreground: '#1f7a4e' },
-    alterado: { background: '#fff4d6', foreground: '#9f7514' },
-    removido_no_siscore: { background: '#ffe3e8', foreground: '#b4234a' },
-    reativado: { background: '#dff2ff', foreground: '#176ab5' },
+    ativo: { background: `${tokens.colors.green}1e`, foreground: tokens.colors.green },
+    alterado: { background: `${tokens.colors.amber}20`, foreground: tokens.colors.amber },
+    removido_no_siscore: { background: `${tokens.colors.rose}1e`, foreground: tokens.colors.rose },
+    reativado: { background: `${tokens.colors.blue}1e`, foreground: tokens.colors.blue },
   };
 
   return palette[value];
@@ -318,6 +318,8 @@ async function loadNotaFiscalItens(noteIds: string[]) {
 }
 
 export default function InvoicesScreen() {
+  const styles = useThemedStyles(createStyles);
+  const { tokens } = useAppTheme();
   const { syncBase, syncError, syncNotice, syncingBase } = useAlmoxData();
   const [notes, setNotes] = useState<NotaFiscalResumo[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -570,7 +572,6 @@ export default function InvoicesScreen() {
   return (
     <ScreenScrollView>
       <PageHeader
-        title="Notas fiscais"
         subtitle="Cada documento é identificado por fornecedor, número e data de entrada. A consolidação só agrupa quando o mesmo fornecedor e número reaparecem em dias diferentes."
         aside={
           <ActionButton
@@ -633,42 +634,42 @@ export default function InvoicesScreen() {
           value={`${summary.totalNotas}`}
           caption="Contagem por data"
           tooltip="Total de documentos do SISCORE considerando fornecedor, número e data de entrada. Se o mesmo documento reaparecer em outro dia, ele entra novamente aqui."
-          color={almoxTheme.colors.blue}
+          color={tokens.colors.blue}
         />
         <SummaryCard
           label="Documentos consolidados"
           value={`${summary.totalNotasUnificadas}`}
           caption="Leitura sem repetição"
           tooltip="Agrupa documentos com o mesmo fornecedor e número quando eles reaparecem em dias diferentes. Serve para leitura operacional sem contar o mesmo documento várias vezes."
-          color={almoxTheme.colors.violet}
+          color={tokens.colors.violet}
         />
         <SummaryCard
           label="Produtos lançados"
           value={`${summary.totalItens}`}
           caption="Linhas de item"
           tooltip="Total de linhas de produtos registradas nas notas atualmente visíveis. Um documento pode ter vários produtos."
-          color={almoxTheme.colors.teal}
+          color={tokens.colors.teal}
         />
         <SummaryCard
           label="Valor lançado"
           value={formatCurrency(summary.totalValorBruto)}
           caption="Soma por data"
           tooltip="Soma do valor total dos documentos considerando cada data de entrada separadamente."
-          color={almoxTheme.colors.amber}
+          color={tokens.colors.amber}
         />
         <SummaryCard
           label="Valor consolidado"
           value={formatCurrency(summary.totalValorUnificado)}
           caption="Sem dupla contagem"
           tooltip="Usa um único valor total por documento consolidado. Quando o mesmo documento reaparece em dias diferentes, considera a última leitura para evitar dupla contagem."
-          color={almoxTheme.colors.green}
+          color={tokens.colors.green}
         />
         <SummaryCard
           label="Documentos recorrentes"
           value={`${summary.totalMultiplasDatas}`}
           caption="Mesmo doc. em outros dias"
           tooltip="Quantidade de documentos que reapareceram em mais de uma data de entrada com o mesmo fornecedor e número."
-          color={almoxTheme.colors.rose}
+          color={tokens.colors.rose}
         />
       </View>
 
@@ -771,11 +772,14 @@ export default function InvoicesScreen() {
                   <Text style={[styles.tableCell, styles.smallColumn]}>{formatDecimal(note.quantidade_entrada_total, 0)}</Text>
                   <Text style={[styles.tableCell, styles.valueColumn]}>{formatCurrency(note.valor_total_nota)}</Text>
                   <View style={[styles.statusColumn, styles.statusCell]}>
-                    <StatusChip label={getStatusLabel(note.status_sincronizacao)} palette={getStatusPalette(note.status_sincronizacao)} />
+                    <StatusChip
+                      label={getStatusLabel(note.status_sincronizacao)}
+                      palette={getStatusPalette(tokens, note.status_sincronizacao)}
+                    />
                     {note.possui_multiplas_datas ? (
                       <StatusChip
                         label={`${note.quantidade_datas} datas`}
-                        palette={{ background: '#fff4d6', foreground: '#9f7514' }}
+                        palette={{ background: `${tokens.colors.amber}20`, foreground: tokens.colors.amber }}
                       />
                     ) : null}
                   </View>
@@ -929,6 +933,7 @@ function SummaryCard({
   tooltip: string;
   color: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   const [tooltipVisible, setTooltipVisible] = useState(false);
 
   return (
@@ -955,6 +960,7 @@ function SummaryCard({
 }
 
 function SummaryCardTooltip({ text }: { text: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View pointerEvents="none" style={styles.summaryTooltipBubble}>
       <Text style={styles.summaryTooltipText}>{text}</Text>
@@ -963,6 +969,7 @@ function SummaryCardTooltip({ text }: { text: string }) {
 }
 
 function DetailMetric({ label, value }: { label: string; value: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.detailMetric}>
       <Text style={styles.detailMetricLabel}>{label}</Text>
@@ -980,6 +987,8 @@ function StatusChip({
   label: string;
   palette: { background: string; foreground: string };
 }) {
+  const styles = useThemedStyles(createStyles);
+
   return (
     <View style={[styles.statusChip, { backgroundColor: palette.background }]}>
       <Text style={[styles.statusChipText, { color: palette.foreground }]}>{label}</Text>
@@ -987,23 +996,23 @@ function StatusChip({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     overflow: 'visible',
   },
   summaryCard: {
     flexGrow: 1,
     flexBasis: 220,
     minHeight: 132,
-    borderRadius: almoxTheme.radii.lg,
+    borderRadius: tokens.radii.lg,
     borderWidth: 1,
-    backgroundColor: almoxTheme.colors.surface,
-    padding: almoxTheme.spacing.lg,
+    backgroundColor: tokens.colors.surface,
+    padding: tokens.spacing.lg,
     gap: 6,
-    shadowColor: almoxTheme.colors.black,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.05,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
@@ -1021,17 +1030,17 @@ const styles = StyleSheet.create({
   },
   summaryTooltipBubble: {
     position: 'absolute',
-    left: almoxTheme.spacing.sm,
-    right: almoxTheme.spacing.sm,
+    left: tokens.spacing.sm,
+    right: tokens.spacing.sm,
     bottom: '100%',
-    marginBottom: almoxTheme.spacing.xs,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.sm,
-    borderRadius: almoxTheme.radii.md,
+    marginBottom: tokens.spacing.xs,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.sm,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
-    borderColor: almoxTheme.colors.lineStrong,
-    backgroundColor: almoxTheme.colors.surface,
-    shadowColor: almoxTheme.colors.black,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surface,
+    shadowColor: tokens.colors.black,
     shadowOpacity: 0.1,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
@@ -1039,7 +1048,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   summaryTooltipText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -1049,12 +1058,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   summaryValue: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 24,
     fontWeight: '800',
   },
   summaryLabel: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1064,7 +1073,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   summaryHint: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -1076,12 +1085,12 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: 'row',
-    paddingBottom: almoxTheme.spacing.sm,
+    paddingBottom: tokens.spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.lineStrong,
+    borderBottomColor: tokens.colors.lineStrong,
   },
   tableHeadCell: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1090,19 +1099,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 72,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
+    borderBottomColor: tokens.colors.line,
   },
   tableRowActive: {
-    backgroundColor: '#eef5ff',
+    backgroundColor: tokens.colors.surfaceActiveSoft,
   },
   tableRowPressed: {
     opacity: 0.88,
   },
   itemRowDuplicated: {
-    backgroundColor: '#fffaf0',
+    backgroundColor: tokens.colors.surfaceActiveWarm,
   },
   tableCell: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
   },
   dateColumn: {
@@ -1128,7 +1137,7 @@ const styles = StyleSheet.create({
   },
   productColumn: {
     width: 290,
-    paddingRight: almoxTheme.spacing.md,
+    paddingRight: tokens.spacing.md,
   },
   speciesColumn: {
     width: 260,
@@ -1142,12 +1151,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   documentText: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   documentMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
   statusCell: {
@@ -1156,9 +1165,9 @@ const styles = StyleSheet.create({
   },
   statusChip: {
     alignSelf: 'flex-start',
-    borderRadius: almoxTheme.radii.pill,
-    paddingHorizontal: almoxTheme.spacing.sm,
-    paddingVertical: almoxTheme.spacing.xxs,
+    borderRadius: tokens.radii.pill,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: tokens.spacing.xxs,
   },
   statusChipText: {
     fontSize: 11,
@@ -1169,20 +1178,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   paginationText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
   },
   paginationActions: {
     flexDirection: 'row',
-    gap: almoxTheme.spacing.sm,
+    gap: tokens.spacing.sm,
   },
   filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
     alignItems: 'flex-end',
   },
   filterActionWrap: {
@@ -1191,7 +1200,7 @@ const styles = StyleSheet.create({
   detailSummary: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: almoxTheme.spacing.md,
+    gap: tokens.spacing.md,
   },
   detailMetric: {
     flexGrow: 1,
@@ -1200,19 +1209,19 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   detailMetricLabel: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
   detailMetricValue: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   duplicateHint: {
-    color: almoxTheme.colors.orange,
+    color: tokens.colors.orange,
     fontSize: 11,
     fontWeight: '700',
   },

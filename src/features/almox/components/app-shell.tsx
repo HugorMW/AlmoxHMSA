@@ -11,23 +11,36 @@ import { AlmoxTheme } from '@/features/almox/tokens';
 import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
 import { FiltroCategoriaMaterial, Hospital } from '@/features/almox/types';
 
+type NavigationAccent =
+  | 'brand'
+  | 'emerald'
+  | 'cyan'
+  | 'amber'
+  | 'violet'
+  | 'orange'
+  | 'teal'
+  | 'rose'
+  | 'red'
+  | 'textMuted';
+
 const navigationItems: {
   href: Href;
   label: string;
   hint: string;
   match: string;
   icon: Parameters<typeof AppIcon>[0]['name'];
+  accent: NavigationAccent;
 }[] = [
-  { href: '/' as Href, label: 'Dashboard', hint: 'Visão geral', match: '/', icon: 'dashboard' },
-  { href: '/products' as Href, label: 'Produtos', hint: 'Carteira', match: '/products', icon: 'products' },
-  { href: '/loans' as Href, label: 'Emprést.', hint: 'Redistribuição', match: '/loans', icon: 'loans' },
-  { href: '/orders' as Href, label: 'Pedidos', hint: 'Reposição', match: '/orders', icon: 'orders' },
-  { href: '/processes' as Href, label: 'Processos', hint: 'Prazos', match: '/processes', icon: 'processes' },
-  { href: '/consumo' as Href, label: 'Consumo', hint: 'Mês atual', match: '/consumo', icon: 'consumo' },
-  { href: '/invoices' as Href, label: 'Notas', hint: 'Fiscais', match: '/invoices', icon: 'receipt' },
-  { href: '/opme' as Href, label: 'OPME', hint: 'Especiais', match: '/opme', icon: 'opme' },
-  { href: '/blacklist' as Href, label: 'Excluir', hint: 'Bloqueios', match: '/blacklist', icon: 'blacklist' },
-  { href: '/settings' as Href, label: 'Config.', hint: 'Parâmetros', match: '/settings', icon: 'settings' },
+  { href: '/' as Href, label: 'Dashboard', hint: 'Visão geral', match: '/', icon: 'dashboard', accent: 'brand' },
+  { href: '/products' as Href, label: 'Produtos', hint: 'Carteira', match: '/products', icon: 'products', accent: 'emerald' },
+  { href: '/loans' as Href, label: 'Emprést.', hint: 'Redistribuição', match: '/loans', icon: 'loans', accent: 'cyan' },
+  { href: '/orders' as Href, label: 'Pedidos', hint: 'Reposição', match: '/orders', icon: 'orders', accent: 'amber' },
+  { href: '/processes' as Href, label: 'Processos', hint: 'Prazos', match: '/processes', icon: 'processes', accent: 'violet' },
+  { href: '/consumo' as Href, label: 'Consumo', hint: 'Mês atual', match: '/consumo', icon: 'consumo', accent: 'orange' },
+  { href: '/invoices' as Href, label: 'Notas', hint: 'Fiscais', match: '/invoices', icon: 'receipt', accent: 'teal' },
+  { href: '/opme' as Href, label: 'OPME', hint: 'Especiais', match: '/opme', icon: 'opme', accent: 'rose' },
+  { href: '/blacklist' as Href, label: 'Excluir', hint: 'Bloqueios', match: '/blacklist', icon: 'blacklist', accent: 'red' },
+  { href: '/settings' as Href, label: 'Config.', hint: 'Parâmetros', match: '/settings', icon: 'settings', accent: 'textMuted' },
 ];
 
 export function AppShell() {
@@ -57,6 +70,7 @@ export function AppShell() {
     navigationItems[0];
   const isProcessRoute = pathname === '/processes' || pathname.startsWith('/processes/');
   const isDarkMode = mode === 'dark';
+  const currentAccent = tokens.colors[currentItem.accent];
   const materialOptions: { label: string; value: FiltroCategoriaMaterial }[] = [
     { label: 'Todos', value: 'todos' },
     { label: 'Hospitalar', value: 'material_hospitalar' },
@@ -91,7 +105,7 @@ export function AppShell() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.root}>
-        <View pointerEvents="none" style={[styles.glow, styles.glowTop]} />
+        <View pointerEvents="none" style={[styles.glow, styles.glowTop, { backgroundColor: currentAccent }]} />
         <View pointerEvents="none" style={[styles.glow, styles.glowBottom]} />
         {isHospitalMenuOpen || isCategoryMenuOpen ? (
           <Pressable
@@ -111,16 +125,21 @@ export function AppShell() {
               { maxWidth: headerMaxWidth },
             ]}>
             <View style={styles.headerMain}>
-              <View style={styles.brandMark}>
-                <Text style={[styles.brandLetter, { color: isDarkMode ? tokens.colors.black : tokens.colors.white }]}>
-                  H
-                </Text>
+              <View
+                style={[
+                  styles.brandMark,
+                  { backgroundColor: currentAccent, shadowColor: currentAccent },
+                ]}>
+                <AppIcon
+                  name={currentItem.icon}
+                  size={24}
+                  color={isDarkMode ? tokens.colors.black : tokens.colors.white}
+                />
               </View>
               <View style={styles.brandText}>
-                <Text style={styles.brandEyebrow}>Central logística HMSA</Text>
-                <Text style={styles.brandTitle}>Estoque HMSA</Text>
+                <Text style={[styles.brandTitle, { color: currentAccent }]}>{currentItem.label}</Text>
                 {!isUltraCompact && width >= 680 ? (
-                  <Text style={styles.brandSubtitle}>Painel operacional do almoxarifado hospitalar</Text>
+                  <Text style={styles.brandSubtitle}>{currentItem.hint}</Text>
                 ) : null}
               </View>
             </View>
@@ -140,7 +159,7 @@ export function AppShell() {
                         pressed ? styles.headerDropdownTriggerPressed : null,
                       ]}>
                       <View style={styles.headerDropdownLabelWrap}>
-                        <Text style={styles.headerChipEyebrow}>Base</Text>
+                        <Text style={[styles.headerChipEyebrow, { color: currentAccent }]}>Base</Text>
                         <Text style={styles.headerChipValue}>{currentHospitalLabel}</Text>
                       </View>
                       <AppIcon
@@ -185,7 +204,7 @@ export function AppShell() {
                   </View>
                   {session?.usuario ? (
                     <View style={styles.headerChip}>
-                      <Text style={styles.headerChipEyebrow}>Usuário</Text>
+                      <Text style={[styles.headerChipEyebrow, { color: currentAccent }]}>Usuário</Text>
                       <Text style={styles.headerChipValue}>{session.usuario}</Text>
                     </View>
                   ) : null}
@@ -202,7 +221,7 @@ export function AppShell() {
                         pressed ? styles.headerDropdownTriggerPressed : null,
                       ]}>
                       <View style={styles.headerDropdownLabelWrap}>
-                        <Text style={styles.headerChipEyebrow}>Classificação</Text>
+                        <Text style={[styles.headerChipEyebrow, { color: currentAccent }]}>Classificação</Text>
                         <Text style={styles.headerChipValue}>{currentFilterLabel}</Text>
                       </View>
                       <AppIcon
@@ -281,7 +300,7 @@ export function AppShell() {
                       pressed ? styles.headerDropdownTriggerPressed : null,
                       isLoggingOut ? styles.headerLogoutButtonDisabled : null,
                     ]}>
-                    <AppIcon name="logout" size={16} color={tokens.colors.text} />
+                    <AppIcon name="logout" size={16} color={tokens.colors.red} />
                     <Text style={styles.headerLogoutText}>{isLoggingOut ? 'Saindo...' : 'Sair'}</Text>
                   </Pressable>
                 </View>
@@ -333,6 +352,7 @@ export function AppShell() {
                 {navigationItems.map((item) => {
                   const isActive =
                     pathname === item.match || (item.match !== '/' && pathname.startsWith(item.match));
+                  const itemAccent = tokens.colors[item.accent];
 
                   return (
                     <Pressable
@@ -341,20 +361,32 @@ export function AppShell() {
                       style={({ pressed }) => [
                         styles.sidebarItem,
                         sidebarCollapsed ? styles.sidebarItemCollapsed : null,
-                        isActive ? styles.sidebarItemActive : null,
+                        isActive
+                          ? [styles.sidebarItemActive, { borderColor: itemAccent, shadowColor: itemAccent }]
+                          : null,
                         pressed ? styles.sidebarItemPressed : null,
                       ]}>
-                      <View style={[styles.sidebarIconWrap, isActive ? styles.sidebarIconWrapActive : null]}>
+                      <View
+                        style={[
+                          styles.sidebarIconWrap,
+                          isActive
+                            ? [styles.sidebarIconWrapActive, { backgroundColor: itemAccent, shadowColor: itemAccent }]
+                            : null,
+                        ]}>
                         <AppIcon
                           name={item.icon}
                           size={18}
-                          color={isActive ? (isDarkMode ? tokens.colors.black : tokens.colors.white) : tokens.colors.textMuted}
+                          color={isActive ? (isDarkMode ? tokens.colors.black : tokens.colors.white) : itemAccent}
                         />
                       </View>
 
                       {!sidebarCollapsed ? (
                         <View style={styles.sidebarItemText}>
-                          <Text style={[styles.sidebarItemLabel, isActive ? styles.sidebarItemLabelActive : null]}>
+                          <Text
+                            style={[
+                              styles.sidebarItemLabel,
+                              isActive ? [styles.sidebarItemLabelActive, { color: itemAccent }] : null,
+                            ]}>
                             {item.label}
                           </Text>
                           <Text style={[styles.sidebarItemHint, isActive ? styles.sidebarItemHintActive : null]}>
@@ -363,20 +395,27 @@ export function AppShell() {
                         </View>
                       ) : null}
 
-                      {isActive ? <View style={styles.sidebarSelectionBar} /> : null}
+                      {isActive ? (
+                        <View style={[styles.sidebarSelectionBar, { backgroundColor: itemAccent }]} />
+                      ) : null}
                     </Pressable>
                   );
                 })}
               </ScrollView>
 
-              <View style={[styles.sidebarFoot, sidebarCollapsed ? styles.sidebarFootCollapsed : null]}>
+              <View
+                style={[
+                  styles.sidebarFoot,
+                  sidebarCollapsed ? styles.sidebarFootCollapsed : null,
+                  { borderColor: currentAccent },
+                ]}>
                 {!sidebarCollapsed ? (
                   <>
-                    <Text style={styles.sidebarFootLabel}>Agora</Text>
+                    <Text style={[styles.sidebarFootLabel, { color: currentAccent }]}>Agora</Text>
                     <Text style={styles.sidebarFootValue}>{currentItem.label}</Text>
                   </>
                 ) : (
-                  <AppIcon name={currentItem.icon} size={16} color={tokens.colors.brandStrong} />
+                  <AppIcon name={currentItem.icon} size={16} color={currentAccent} />
                 )}
               </View>
             </View>
@@ -389,6 +428,7 @@ export function AppShell() {
                   paddingHorizontal: isProcessRoute ? 0 : contentHorizontalPadding,
                 },
               ]}>
+              <View pointerEvents="none" style={[styles.pageAccentBar, { backgroundColor: currentAccent }]} />
               <View
                 style={[
                   styles.contentInner,
@@ -427,7 +467,6 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     opacity: 0.12,
   },
   glowTop: {
-    backgroundColor: tokens.colors.brand,
     top: -180,
     left: -140,
   },
@@ -474,17 +513,17 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     minWidth: 220,
   },
   brandMark: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: tokens.colors.brandStrong,
     shadowColor: tokens.colors.brand,
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
   },
   brandLetter: {
     fontSize: 17,
@@ -492,7 +531,7 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   },
   brandText: {
     flex: 1,
-    gap: 0,
+    gap: 2,
   },
   brandEyebrow: {
     color: tokens.colors.brand,
@@ -503,13 +542,17 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   },
   brandTitle: {
     color: tokens.colors.text,
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '900',
     fontFamily: tokens.typography.display,
+    letterSpacing: -0.6,
+    lineHeight: 28,
   },
   brandSubtitle: {
     color: tokens.colors.textMuted,
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   headerMeta: {
     minWidth: 0,
@@ -645,8 +688,8 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     paddingHorizontal: tokens.spacing.sm,
     borderRadius: tokens.radii.pill,
     borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    backgroundColor: tokens.colors.surfaceRaised,
+    borderColor: 'rgba(248, 113, 113, 0.45)',
+    backgroundColor: 'rgba(248, 113, 113, 0.12)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -691,7 +734,7 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     opacity: 0.7,
   },
   headerLogoutText: {
-    color: tokens.colors.text,
+    color: tokens.colors.red,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -897,6 +940,13 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   },
   mainColumnFullBleed: {
     paddingTop: 0,
+  },
+  pageAccentBar: {
+    height: 3,
+    marginHorizontal: tokens.spacing.sm,
+    marginBottom: tokens.spacing.sm,
+    borderRadius: 999,
+    opacity: 0.85,
   },
   contentInner: {
     flex: 1,

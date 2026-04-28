@@ -166,21 +166,30 @@ export function PageHeader({
   aside,
   tooltip,
 }: {
-  title: string;
+  title?: string;
   subtitle?: string;
   aside?: React.ReactNode;
   tooltip?: string;
 }) {
   const styles = useThemedStyles(createStyles);
+  if (!title && !subtitle && !aside) {
+    return null;
+  }
   return (
     <View style={styles.pageHeader}>
-      <View style={styles.pageHeaderText}>
-        <View style={styles.pageTitleRow}>
-          <Text style={styles.pageTitle}>{title}</Text>
-          {tooltip ? <HelpHint text={tooltip} /> : null}
+      {title || subtitle ? (
+        <View style={styles.pageHeaderText}>
+          {title ? (
+            <View style={styles.pageTitleRow}>
+              <Text style={styles.pageTitle}>{title}</Text>
+              {tooltip ? <HelpHint text={tooltip} /> : null}
+            </View>
+          ) : tooltip ? (
+            <HelpHint text={tooltip} />
+          ) : null}
+          {subtitle ? <Text style={styles.pageSubtitle}>{subtitle}</Text> : null}
         </View>
-        {subtitle ? <Text style={styles.pageSubtitle}>{subtitle}</Text> : null}
-      </View>
+      ) : null}
       {aside ? <View style={styles.pageAside}>{aside}</View> : null}
     </View>
   );

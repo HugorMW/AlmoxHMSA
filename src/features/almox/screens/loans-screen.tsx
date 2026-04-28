@@ -17,13 +17,15 @@ import {
 } from '@/features/almox/components/common';
 import { useAlmoxData } from '@/features/almox/almox-provider';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
-import { almoxTheme } from '@/features/almox/tokens';
+import { AlmoxTheme } from '@/features/almox/tokens';
+import { useThemedStyles } from '@/features/almox/theme-provider';
 import { Product } from '@/features/almox/types';
 import { formatDecimal, matchesQuery, paginate } from '@/features/almox/utils';
 
 type LoanTab = 'need' | 'lend';
 
 export default function LoansScreen() {
+  const styles = useThemedStyles(createStyles);
   const [activeTab, setActiveTab] = useState<LoanTab>('need');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -46,7 +48,6 @@ export default function LoansScreen() {
   return (
     <ScreenScrollView>
       <PageHeader
-        title="Empréstimos"
         subtitle="Painel focado em redistribuição entre unidades e itens com sobra operacional."
         aside={
           <ActionButton
@@ -173,6 +174,7 @@ export default function LoansScreen() {
 }
 
 function NeedTable({ items, showMaterialLabel }: { items: Product[]; showMaterialLabel: boolean }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.tableWrap}>
       <View style={styles.tableHeader}>
@@ -223,6 +225,7 @@ function NeedTable({ items, showMaterialLabel }: { items: Product[]; showMateria
 }
 
 function LendTable({ items, showMaterialLabel }: { items: Product[]; showMaterialLabel: boolean }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.tableWrap}>
       <View style={styles.tableHeader}>
@@ -259,30 +262,30 @@ function LendTable({ items, showMaterialLabel }: { items: Product[]; showMateria
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   needBanner: {
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
     borderColor: 'rgba(249, 115, 22, 0.35)',
     backgroundColor: 'rgba(249, 115, 22, 0.12)',
-    padding: almoxTheme.spacing.md,
+    padding: tokens.spacing.md,
     gap: 6,
   },
   lendBanner: {
-    borderRadius: almoxTheme.radii.md,
+    borderRadius: tokens.radii.md,
     borderWidth: 1,
     borderColor: 'rgba(20, 184, 166, 0.35)',
     backgroundColor: 'rgba(20, 184, 166, 0.12)',
-    padding: almoxTheme.spacing.md,
+    padding: tokens.spacing.md,
     gap: 6,
   },
   bannerTitle: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   bannerText: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -291,12 +294,12 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: 'row',
-    paddingBottom: almoxTheme.spacing.sm,
+    paddingBottom: tokens.spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: almoxTheme.colors.lineStrong,
+    borderBottomColor: tokens.colors.lineStrong,
   },
   tableHeadCell: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -305,10 +308,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 72,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: almoxTheme.colors.line,
+    borderBottomColor: tokens.colors.line,
   },
   tableCell: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
   },
   tableBadgeCell: {
@@ -316,7 +319,7 @@ const styles = StyleSheet.create({
   },
   productColumn: {
     width: 260,
-    paddingRight: almoxTheme.spacing.md,
+    paddingRight: tokens.spacing.md,
   },
   codeColumn: {
     width: 120,
@@ -335,12 +338,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   productName: {
-    color: almoxTheme.colors.text,
+    color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   productMeta: {
-    color: almoxTheme.colors.textMuted,
+    color: tokens.colors.textMuted,
     fontSize: 11,
   },
 });
+

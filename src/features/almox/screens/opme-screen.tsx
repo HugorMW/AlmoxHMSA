@@ -10,10 +10,7 @@ import {
 export default function OpmeScreen() {
   return (
     <ScreenScrollView>
-      <PageHeader
-        title="OPME"
-        subtitle="Órteses, Próteses e Materiais Especiais."
-      />
+      <PageHeader subtitle="Órteses, Próteses e Materiais Especiais." />
 
       <SectionCard>
         <EmptyState

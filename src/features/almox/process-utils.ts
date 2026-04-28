@@ -7,7 +7,7 @@ import {
   ProductProcessSummaryParcel,
 } from './types';
 
-const PROCESSO_ALERTA_DIAS_UTEIS = 7;
+const PROCESSO_ALERTA_DIAS = 7;
 
 type ParcelaVisualLike = Partial<Record<number, { adiadaDiasUteis?: number | null }>>;
 
@@ -24,18 +24,9 @@ function parseIsoDate(value: string | null | undefined) {
   return new Date(year, month - 1, day);
 }
 
-function addBusinessDays(date: Date, days: number) {
+function addDays(date: Date, days: number) {
   const nextDate = new Date(date);
-  let added = 0;
-
-  while (added < days) {
-    nextDate.setDate(nextDate.getDate() + 1);
-    const weekday = nextDate.getDay();
-    if (weekday !== 0 && weekday !== 6) {
-      added += 1;
-    }
-  }
-
+  nextDate.setDate(nextDate.getDate() + days);
   return nextDate;
 }
 
@@ -63,7 +54,7 @@ function getParcelaAdjustedDueDate(
     return null;
   }
 
-  const dueDate = addBusinessDays(
+  const dueDate = addDays(
     baseDate,
     getProcessoParcelaDiasUteis(config, item.categoria_material, item.tipo_processo, index)
   );
@@ -74,7 +65,7 @@ function getParcelaAdjustedDueDate(
   const visualExtraDays = Math.max(0, Math.trunc(visualParcelas?.[index]?.adiadaDiasUteis ?? 0));
   const extraDays = visualExtraDays || savedExtraDays;
 
-  return extraDays > 0 ? addBusinessDays(dueDate, extraDays) : dueDate;
+  return extraDays > 0 ? addDays(dueDate, extraDays) : dueDate;
 }
 
 function isParcelaNearDue(dueDate: Date | null, today: Date) {
@@ -82,7 +73,7 @@ function isParcelaNearDue(dueDate: Date | null, today: Date) {
     return false;
   }
 
-  const limit = addBusinessDays(today, PROCESSO_ALERTA_DIAS_UTEIS);
+  const limit = addDays(today, PROCESSO_ALERTA_DIAS);
   return dueDate <= limit;
 }
 
