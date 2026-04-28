@@ -19,8 +19,8 @@ import {
   getLevelRangeLabels,
   getLevelTooltips,
 } from "@/features/almox/configuracao";
-import { AlmoxTheme, levelColors } from "@/features/almox/tokens";
 import { useAppTheme } from "@/features/almox/theme-provider";
+import { AlmoxTheme, levelColors } from "@/features/almox/tokens";
 import { Hospital, Level } from "@/features/almox/types";
 import { paginate } from "@/features/almox/utils";
 
@@ -58,6 +58,7 @@ export default function DashboardScreen() {
     systemConfig,
     dashboardHospital,
     openProcessSummaryByProductCode,
+    kpiHistoricoByHospital,
   } = useAlmoxData();
   const showMaterialLabel = categoryFilter === "todos";
   const levelRanges = getLevelRangeLabels(systemConfig);
@@ -73,7 +74,8 @@ export default function DashboardScreen() {
   const dashboard = dataset.dashboardByHospital[activeHospital];
 
   const filteredProducts = useMemo(() => {
-    const allHospitalProducts = dataset.productsByHospital[activeHospital] ?? [];
+    const allHospitalProducts =
+      dataset.productsByHospital[activeHospital] ?? [];
     const base =
       selectedView === "all"
         ? allHospitalProducts
@@ -117,7 +119,10 @@ export default function DashboardScreen() {
             }
           }
         }
-        if ((product.level === "URGENTE" || product.level === "CRÍTICO") && summary.overdue_count > 0) {
+        if (
+          (product.level === "URGENTE" || product.level === "CRÍTICO") &&
+          summary.overdue_count > 0
+        ) {
           collecting += 1;
         }
       }
@@ -125,9 +130,22 @@ export default function DashboardScreen() {
     return { buyUrgent, processOverdue, processNearDue, collecting };
   }, [dataset.productsByHospital, openProcessSummaryByProductCode]);
 
+  const seriesByLevel = useMemo(() => {
+    const history = kpiHistoricoByHospital[activeHospital] ?? [];
+    return {
+      URGENTE: history.map((point) => point.urgent),
+      CRÍTICO: history.map((point) => point.critical),
+      ALTO: history.map((point) => point.high),
+      MÉDIO: history.map((point) => point.medium),
+      BAIXO: history.map((point) => point.low),
+      ESTÁVEL: history.map((point) => point.stable),
+    } satisfies Record<Level, number[]>;
+  }, [kpiHistoricoByHospital, activeHospital]);
+
   const compositionSegments = useMemo(() => {
     const total = dashboard.kpi.total_products;
-    if (total <= 0) return [] as { level: Level; value: number; percent: number }[];
+    if (total <= 0)
+      return [] as { level: Level; value: number; percent: number }[];
     return (
       [
         { level: "URGENTE" as Level, value: dashboard.kpi.urgent },
@@ -139,7 +157,10 @@ export default function DashboardScreen() {
       ] as const
     )
       .filter((segment) => segment.value > 0)
-      .map((segment) => ({ ...segment, percent: (segment.value / total) * 100 }));
+      .map((segment) => ({
+        ...segment,
+        percent: (segment.value / total) * 100,
+      }));
   }, [dashboard.kpi]);
 
   function handleSelectView(view: SelectedView) {
@@ -249,18 +270,6 @@ export default function DashboardScreen() {
         onPress={() => handleSelectView("all")}
       />
 
-      {compositionSegments.length > 0 ? (
-        <CompositionBar segments={compositionSegments} total={dashboard.kpi.total_products} />
-      ) : null}
-
-      {dataset.hospitals.length > 1 ? (
-        <HospitalLevelHeatmap
-          hospitals={dataset.hospitals}
-          dashboardByHospital={dataset.dashboardByHospital}
-          activeHospital={activeHospital}
-        />
-      ) : null}
-
       <View style={styles.metricGrid}>
         <LevelMetricCard
           label="Urgente"
@@ -270,6 +279,7 @@ export default function DashboardScreen() {
           range={levelRanges.URGENTE}
           isActive={selectedView === "URGENTE"}
           onPress={() => handleSelectView("URGENTE")}
+          series={seriesByLevel.URGENTE}
         />
         <LevelMetricCard
           label="Crítico"
@@ -279,6 +289,7 @@ export default function DashboardScreen() {
           range={levelRanges["CRÍTICO"]}
           isActive={selectedView === "CRÍTICO"}
           onPress={() => handleSelectView("CRÍTICO")}
+          series={seriesByLevel["CRÍTICO"]}
         />
         <LevelMetricCard
           label="Alto"
@@ -288,6 +299,7 @@ export default function DashboardScreen() {
           range={levelRanges.ALTO}
           isActive={selectedView === "ALTO"}
           onPress={() => handleSelectView("ALTO")}
+          series={seriesByLevel.ALTO}
         />
         <LevelMetricCard
           label="Médio"
@@ -297,6 +309,7 @@ export default function DashboardScreen() {
           range={levelRanges["MÉDIO"]}
           isActive={selectedView === "MÉDIO"}
           onPress={() => handleSelectView("MÉDIO")}
+          series={seriesByLevel["MÉDIO"]}
         />
         <LevelMetricCard
           label="Baixo"
@@ -306,6 +319,7 @@ export default function DashboardScreen() {
           range={levelRanges.BAIXO}
           isActive={selectedView === "BAIXO"}
           onPress={() => handleSelectView("BAIXO")}
+          series={seriesByLevel.BAIXO}
         />
         <LevelMetricCard
           label="Estável"
@@ -315,6 +329,7 @@ export default function DashboardScreen() {
           range={levelRanges["ESTÁVEL"]}
           isActive={selectedView === "ESTÁVEL"}
           onPress={() => handleSelectView("ESTÁVEL")}
+          series={seriesByLevel["ESTÁVEL"]}
         />
       </View>
 
@@ -376,7 +391,13 @@ export default function DashboardScreen() {
           )}
         </View>
       ) : null}
-
+      {dataset.hospitals.length > 1 ? (
+        <HospitalLevelHeatmap
+          hospitals={dataset.hospitals}
+          dashboardByHospital={dataset.dashboardByHospital}
+          activeHospital={activeHospital}
+        />
+      ) : null}
     </ScreenScrollView>
   );
 }
@@ -432,6 +453,7 @@ function LevelMetricCard({
   range,
   isActive,
   onPress,
+  series,
 }: {
   label: string;
   value: number;
@@ -440,11 +462,22 @@ function LevelMetricCard({
   range: string;
   isActive: boolean;
   onPress: () => void;
+  series?: number[];
 }) {
   const { tokens } = useAppTheme();
   const styles = useDashboardStyles();
   const palette = levelColors[level];
   const percent = total > 0 ? Math.round((value / total) * 100) : 0;
+  const trend =
+    series && series.length >= 2 ? series[series.length - 1] - series[0] : 0;
+  const trendLabel =
+    series && series.length >= 2
+      ? trend > 0
+        ? `+${trend} desde ${series.length} dias`
+        : trend < 0
+          ? `${trend} desde ${series.length} dias`
+          : `estável em ${series.length} dias`
+      : null;
 
   return (
     <Pressable
@@ -487,7 +520,53 @@ function LevelMetricCard({
         />
       </View>
       <Text style={styles.proportionText}>{percent}% do total</Text>
+
+      {series && series.length >= 2 ? (
+        <View style={styles.sparklineWrap}>
+          <Sparkline values={series} color={palette.background} />
+          {trendLabel ? (
+            <Text
+              style={[
+                styles.sparklineLabel,
+                trend > 0
+                  ? { color: tokens.colors.red }
+                  : trend < 0
+                    ? { color: tokens.colors.green }
+                    : null,
+              ]}
+            >
+              {trendLabel}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
     </Pressable>
+  );
+}
+
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+  const styles = useDashboardStyles();
+  const max = Math.max(...values, 1);
+  return (
+    <View style={styles.sparklineBars}>
+      {values.map((value, index) => {
+        const height =
+          max > 0 ? Math.max(2, Math.round((value / max) * 22)) : 2;
+        return (
+          <View
+            key={index}
+            style={[
+              styles.sparklineBar,
+              {
+                height,
+                backgroundColor: color,
+                opacity: index === values.length - 1 ? 1 : 0.55,
+              },
+            ]}
+          />
+        );
+      })}
+    </View>
   );
 }
 
@@ -613,7 +692,9 @@ function AttentionStrip({ counts }: { counts: AttentionCounts }) {
       <View style={styles.attentionStripHeader}>
         <AppIcon name="spark" size={14} color={tokens.colors.brand} />
         <Text style={styles.attentionStripTitle}>Atenção hoje</Text>
-        <Text style={styles.attentionStripHint}>Toque em um card para abrir o detalhe</Text>
+        <Text style={styles.attentionStripHint}>
+          Toque em um card para abrir o detalhe
+        </Text>
       </View>
       <View style={styles.attentionStripGrid}>
         {cards.map((card) => (
@@ -624,12 +705,20 @@ function AttentionStrip({ counts }: { counts: AttentionCounts }) {
               styles.attentionCard,
               { borderLeftColor: card.color },
               pressed ? styles.metricCardPressed : null,
-            ]}>
+            ]}
+          >
             <View style={styles.attentionCardTop}>
-              <View style={[styles.attentionIcon, { backgroundColor: `${card.color}22` }]}>
+              <View
+                style={[
+                  styles.attentionIcon,
+                  { backgroundColor: `${card.color}22` },
+                ]}
+              >
                 <AppIcon name={card.icon} size={16} color={card.color} />
               </View>
-              <Text style={[styles.attentionValue, { color: card.color }]}>{counts[card.key]}</Text>
+              <Text style={[styles.attentionValue, { color: card.color }]}>
+                {counts[card.key]}
+              </Text>
             </View>
             <Text style={styles.attentionLabel}>{card.label}</Text>
             <Text style={styles.attentionHint}>{card.hint}</Text>
@@ -687,7 +776,9 @@ function CompositionBar({
                 { backgroundColor: levelColors[segment.level].background },
               ]}
             />
-            <Text style={styles.compositionLegendLabel}>{COMPOSITION_LABELS[segment.level]}</Text>
+            <Text style={styles.compositionLegendLabel}>
+              {COMPOSITION_LABELS[segment.level]}
+            </Text>
             <Text style={styles.compositionLegendValue}>
               {segment.value} · {segment.percent.toFixed(0)}%
             </Text>
@@ -698,7 +789,14 @@ function CompositionBar({
   );
 }
 
-const HEATMAP_LEVELS: Level[] = ["URGENTE", "CRÍTICO", "ALTO", "MÉDIO", "BAIXO", "ESTÁVEL"];
+const HEATMAP_LEVELS: Level[] = [
+  "URGENTE",
+  "CRÍTICO",
+  "ALTO",
+  "MÉDIO",
+  "BAIXO",
+  "ESTÁVEL",
+];
 
 function HospitalLevelHeatmap({
   hospitals,
@@ -706,7 +804,20 @@ function HospitalLevelHeatmap({
   activeHospital,
 }: {
   hospitals: Hospital[];
-  dashboardByHospital: Record<Hospital, { kpi: { urgent: number; critical: number; high: number; medium: number; low: number; stable: number; total_products: number } }>;
+  dashboardByHospital: Record<
+    Hospital,
+    {
+      kpi: {
+        urgent: number;
+        critical: number;
+        high: number;
+        medium: number;
+        low: number;
+        stable: number;
+        total_products: number;
+      };
+    }
+  >;
   activeHospital: Hospital;
 }) {
   const styles = useDashboardStyles();
@@ -718,16 +829,16 @@ function HospitalLevelHeatmap({
     const cells = HEATMAP_LEVELS.map((level) => {
       const value =
         level === "URGENTE"
-          ? kpi?.urgent ?? 0
+          ? (kpi?.urgent ?? 0)
           : level === "CRÍTICO"
-            ? kpi?.critical ?? 0
+            ? (kpi?.critical ?? 0)
             : level === "ALTO"
-              ? kpi?.high ?? 0
+              ? (kpi?.high ?? 0)
               : level === "MÉDIO"
-                ? kpi?.medium ?? 0
+                ? (kpi?.medium ?? 0)
                 : level === "BAIXO"
-                  ? kpi?.low ?? 0
-                  : kpi?.stable ?? 0;
+                  ? (kpi?.low ?? 0)
+                  : (kpi?.stable ?? 0);
       const ratio = total > 0 ? value / total : 0;
       return { level, value, ratio };
     });
@@ -738,14 +849,21 @@ function HospitalLevelHeatmap({
     <View style={styles.heatmapWrap}>
       <View style={styles.heatmapHeader}>
         <Text style={styles.heatmapTitle}>Distribuição por hospital</Text>
-        <Text style={styles.heatmapHint}>Intensidade representa a fatia do nível na carteira</Text>
+        <Text style={styles.heatmapHint}>
+          Intensidade representa a fatia do nível na carteira
+        </Text>
       </View>
       <View>
         <View style={styles.heatmapHeadRow}>
           <View style={styles.heatmapRowLabel} />
           {HEATMAP_LEVELS.map((level) => (
             <View key={level} style={styles.heatmapHeadCell}>
-              <View style={[styles.heatmapHeadDot, { backgroundColor: levelColors[level].background }]} />
+              <View
+                style={[
+                  styles.heatmapHeadDot,
+                  { backgroundColor: levelColors[level].background },
+                ]}
+              />
               <Text style={styles.heatmapHeadText}>{level}</Text>
             </View>
           ))}
@@ -755,13 +873,19 @@ function HospitalLevelHeatmap({
             <View
               style={[
                 styles.heatmapRowLabel,
-                row.hospital === activeHospital ? styles.heatmapRowLabelActive : null,
-              ]}>
+                row.hospital === activeHospital
+                  ? styles.heatmapRowLabelActive
+                  : null,
+              ]}
+            >
               <Text
                 style={[
                   styles.heatmapRowLabelText,
-                  row.hospital === activeHospital ? styles.heatmapRowLabelTextActive : null,
-                ]}>
+                  row.hospital === activeHospital
+                    ? styles.heatmapRowLabelTextActive
+                    : null,
+                ]}
+              >
                 {row.hospital}
               </Text>
               <Text style={styles.heatmapRowLabelMeta}>{row.total}</Text>
@@ -776,17 +900,22 @@ function HospitalLevelHeatmap({
                   style={[
                     styles.heatmapCell,
                     {
-                      backgroundColor: cell.value > 0 ? `${palette.background}` : tokens.colors.surfaceMuted,
+                      backgroundColor:
+                        cell.value > 0
+                          ? `${palette.background}`
+                          : tokens.colors.surfaceMuted,
                       opacity,
                     },
-                  ]}>
+                  ]}
+                >
                   <Text
                     style={[
                       styles.heatmapCellText,
                       cell.value > 0
                         ? { color: palette.foreground }
                         : { color: tokens.colors.textMuted },
-                    ]}>
+                    ]}
+                  >
                     {cell.value}
                   </Text>
                 </View>
@@ -806,599 +935,620 @@ function useDashboardStyles() {
 
 function createDashboardStyles(tokens: AlmoxTheme) {
   return StyleSheet.create({
-  dataStatusStrip: {
-    minHeight: 58,
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    backgroundColor: tokens.colors.surfaceRaised,
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.sm,
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: tokens.spacing.md,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.14,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  dataStatusItem: {
-    gap: 2,
-    minWidth: 180,
-  },
-  dataStatusLabel: {
-    color: tokens.colors.brand,
-    fontSize: 10,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  dataStatusValue: {
-    color: tokens.colors.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  dataStatusPill: {
-    marginLeft: "auto",
-    borderRadius: tokens.radii.pill,
-    borderWidth: 1,
-    borderColor: "rgba(52, 211, 153, 0.45)",
-    backgroundColor: "rgba(52, 211, 153, 0.14)",
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: 7,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  dataStatusPillWarning: {
-    borderColor: "rgba(251, 191, 36, 0.45)",
-    backgroundColor: "rgba(251, 191, 36, 0.14)",
-  },
-  dataStatusPillText: {
-    color: tokens.colors.text,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  metricGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: tokens.spacing.md,
-  },
-  metricCard: {
-    flexGrow: 1,
-    flexBasis: 160,
-    minHeight: 142,
-    borderRadius: tokens.radii.lg,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    backgroundColor: tokens.colors.surfaceRaised,
-    padding: tokens.spacing.lg,
-    gap: tokens.spacing.xs,
-    position: "relative",
-    overflow: "visible",
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.14,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  levelMetricCard: {
-    borderTopWidth: 3,
-    paddingTop: tokens.spacing.md,
-  },
-  levelCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: tokens.spacing.xs,
-  },
-  metricCardPressable: {
-    justifyContent: "space-between",
-  },
-  metricCardPressed: {
-    opacity: 0.9,
-  },
-  metricIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  metricValue: {
-    color: tokens.colors.text,
-    fontSize: 24,
-    fontWeight: "800",
-    letterSpacing: -0.4,
-  },
-  metricLabel: {
-    color: tokens.colors.text,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  metricLabelTitle: {
-    color: tokens.colors.text,
-    fontSize: 16,
-    fontWeight: "800",
-    letterSpacing: -0.2,
-  },
-  metricHint: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  rangeBadge: {
-    paddingHorizontal: tokens.spacing.sm,
-    paddingVertical: 4,
-    borderRadius: tokens.radii.sm,
-  },
-  rangeBadgeText: {
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.2,
-  },
-  proportionBarTrack: {
-    height: 5,
-    borderRadius: tokens.radii.pill,
-    backgroundColor: tokens.colors.surfaceStrong,
-    borderWidth: 1,
-    borderColor: tokens.colors.line,
-    overflow: "hidden",
-    marginTop: tokens.spacing.xs,
-  },
-  proportionBarFill: {
-    height: "100%",
-    borderRadius: tokens.radii.pill,
-  },
-  proportionText: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  totalHero: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: tokens.spacing.md,
-    padding: tokens.spacing.lg,
-    borderRadius: tokens.radii.lg,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    backgroundColor: tokens.colors.surfaceRaised,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.14,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  totalHeroActive: {
-    borderColor: tokens.colors.brand,
-    backgroundColor: tokens.colors.surfaceStrong,
-  },
-  totalHeroMain: {
-    flex: 1,
-    gap: 4,
-  },
-  totalHeroLabel: {
-    color: tokens.colors.text,
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: -0.2,
-  },
-  totalHeroSub: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-  },
-  totalHeroValue: {
-    color: tokens.colors.brandStrong,
-    fontSize: 32,
-    fontWeight: "800",
-    letterSpacing: -0.8,
-  },
-  tooltipBubble: {
-    position: "absolute",
-    left: tokens.spacing.sm,
-    right: tokens.spacing.sm,
-    bottom: "100%",
-    marginBottom: tokens.spacing.xs,
-    paddingHorizontal: tokens.spacing.sm,
-    paddingVertical: tokens.spacing.sm,
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    backgroundColor: tokens.colors.surface,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
-    zIndex: 20,
-  },
-  tooltipText: {
-    color: tokens.colors.text,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  detailList: {
-    gap: tokens.spacing.md,
-  },
-  detailRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: tokens.spacing.md,
-    paddingBottom: tokens.spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: tokens.colors.line,
-  },
-  detailMain: {
-    flex: 1,
-    gap: 6,
-  },
-  detailAside: {
-    width: 180,
-    gap: 8,
-    alignItems: "flex-end",
-  },
-  detailTitle: {
-    color: tokens.colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  detailMeta: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-  },
-  detailRecommendation: {
-    color: tokens.colors.textSoft,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  detailTag: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-  },
-  insightList: {
-    gap: tokens.spacing.sm,
-  },
-  criticalList: {
-    gap: tokens.spacing.sm,
-  },
-  criticalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: tokens.spacing.md,
-    paddingVertical: tokens.spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: tokens.colors.line,
-  },
-  criticalMain: {
-    flex: 1,
-    gap: 4,
-  },
-  criticalName: {
-    color: tokens.colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  criticalMeta: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-  },
-  criticalBadges: {
-    gap: tokens.spacing.xs,
-    alignItems: "flex-end",
-  },
-  rankingList: {
-    gap: tokens.spacing.sm,
-  },
-  rankingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: tokens.spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: tokens.colors.line,
-  },
-  rankingLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: tokens.spacing.sm,
-  },
-  rankingBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: tokens.colors.surfaceStrong,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rankingHospital: {
-    color: tokens.colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  rankingMeta: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-  },
-  rankingValue: {
-    color: tokens.colors.brand,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  expandHandle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: tokens.spacing.sm,
-    marginVertical: -tokens.spacing.sm,
-  },
-  expandHandleLine: {
-    flex: 1,
-    height: 3,
-    borderRadius: 1,
-    opacity: 0.35,
-  },
-  expandHandleIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1.5,
-    backgroundColor: tokens.colors.surfaceRaised,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
-  },
-  listPanelTitle: {
-    color: tokens.colors.text,
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: -0.2,
-  },
-  listPanelMeta: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  listPanelBody: {
-    padding: tokens.spacing.lg,
-    gap: tokens.spacing.md,
-    borderRadius: tokens.radii.lg,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    backgroundColor: tokens.colors.surfaceRaised,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.14,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  attentionStrip: {
-    gap: tokens.spacing.sm,
-  },
-  attentionStripHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: tokens.spacing.xs,
-  },
-  attentionStripTitle: {
-    color: tokens.colors.text,
-    fontSize: 12,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  attentionStripHint: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-    marginLeft: tokens.spacing.xs,
-  },
-  attentionStripGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: tokens.spacing.sm,
-  },
-  attentionCard: {
-    flexGrow: 1,
-    flexBasis: 180,
-    minHeight: 92,
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: tokens.colors.line,
-    borderLeftWidth: 4,
-    backgroundColor: tokens.colors.surface,
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.sm,
-    gap: 4,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  attentionCardTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: tokens.spacing.sm,
-  },
-  attentionIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  attentionValue: {
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: -0.4,
-  },
-  attentionLabel: {
-    color: tokens.colors.text,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  attentionHint: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-  },
-  compositionWrap: {
-    gap: tokens.spacing.sm,
-    padding: tokens.spacing.md,
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: tokens.colors.line,
-    backgroundColor: tokens.colors.surface,
-  },
-  compositionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  compositionTitle: {
-    color: tokens.colors.text,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  compositionTotal: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  compositionBar: {
-    height: 14,
-    flexDirection: "row",
-    borderRadius: tokens.radii.pill,
-    overflow: "hidden",
-    backgroundColor: tokens.colors.surfaceStrong,
-  },
-  compositionSegment: {
-    height: "100%",
-  },
-  compositionLegend: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: tokens.spacing.sm,
-  },
-  compositionLegendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  compositionLegendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  compositionLegendLabel: {
-    color: tokens.colors.text,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  compositionLegendValue: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-  },
-  heatmapWrap: {
-    gap: tokens.spacing.sm,
-    padding: tokens.spacing.md,
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: tokens.colors.line,
-    backgroundColor: tokens.colors.surface,
-  },
-  heatmapHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: tokens.spacing.xs,
-  },
-  heatmapTitle: {
-    color: tokens.colors.text,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  heatmapHint: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-  },
-  heatmapHeadRow: {
-    flexDirection: "row",
-    gap: 4,
-    paddingBottom: 4,
-  },
-  heatmapHeadCell: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
-  heatmapHeadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  heatmapHeadText: {
-    color: tokens.colors.textMuted,
-    fontSize: 10,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  heatmapRow: {
-    flexDirection: "row",
-    gap: 4,
-    marginTop: 4,
-  },
-  heatmapRowLabel: {
-    width: 64,
-    paddingHorizontal: tokens.spacing.xs,
-    paddingVertical: 6,
-    borderRadius: tokens.radii.sm,
-    backgroundColor: tokens.colors.surfaceMuted,
-    justifyContent: "center",
-  },
-  heatmapRowLabelActive: {
-    backgroundColor: tokens.colors.surfaceActiveSoft,
-    borderWidth: 1,
-    borderColor: tokens.colors.brand,
-  },
-  heatmapRowLabelText: {
-    color: tokens.colors.text,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  heatmapRowLabelTextActive: {
-    color: tokens.colors.brand,
-  },
-  heatmapRowLabelMeta: {
-    color: tokens.colors.textMuted,
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  heatmapCell: {
-    flex: 1,
-    minHeight: 38,
-    borderRadius: tokens.radii.sm,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  heatmapCellText: {
-    fontSize: 13,
-    fontWeight: "800",
-  },
+    dataStatusStrip: {
+      minHeight: 58,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surfaceRaised,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: tokens.spacing.md,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.14,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 6,
+    },
+    dataStatusItem: {
+      gap: 2,
+      minWidth: 180,
+    },
+    dataStatusLabel: {
+      color: tokens.colors.brand,
+      fontSize: 10,
+      fontWeight: "800",
+      textTransform: "uppercase",
+      letterSpacing: 0.4,
+    },
+    dataStatusValue: {
+      color: tokens.colors.text,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    dataStatusPill: {
+      marginLeft: "auto",
+      borderRadius: tokens.radii.pill,
+      borderWidth: 1,
+      borderColor: "rgba(52, 211, 153, 0.45)",
+      backgroundColor: "rgba(52, 211, 153, 0.14)",
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: 7,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.12,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 3,
+    },
+    dataStatusPillWarning: {
+      borderColor: "rgba(251, 191, 36, 0.45)",
+      backgroundColor: "rgba(251, 191, 36, 0.14)",
+    },
+    dataStatusPillText: {
+      color: tokens.colors.text,
+      fontSize: 11,
+      fontWeight: "800",
+    },
+    metricGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.md,
+    },
+    metricCard: {
+      flexGrow: 1,
+      flexBasis: 160,
+      minHeight: 142,
+      borderRadius: tokens.radii.lg,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surfaceRaised,
+      padding: tokens.spacing.lg,
+      gap: tokens.spacing.xs,
+      position: "relative",
+      overflow: "visible",
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.14,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 6,
+    },
+    levelMetricCard: {
+      borderTopWidth: 3,
+      paddingTop: tokens.spacing.md,
+    },
+    levelCardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.xs,
+    },
+    metricCardPressable: {
+      justifyContent: "space-between",
+    },
+    metricCardPressed: {
+      opacity: 0.9,
+    },
+    metricIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    metricValue: {
+      color: tokens.colors.text,
+      fontSize: 24,
+      fontWeight: "800",
+      letterSpacing: -0.4,
+    },
+    metricLabel: {
+      color: tokens.colors.text,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    metricLabelTitle: {
+      color: tokens.colors.text,
+      fontSize: 16,
+      fontWeight: "800",
+      letterSpacing: -0.2,
+    },
+    metricHint: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    rangeBadge: {
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: 4,
+      borderRadius: tokens.radii.sm,
+    },
+    rangeBadgeText: {
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 0.2,
+    },
+    proportionBarTrack: {
+      height: 5,
+      borderRadius: tokens.radii.pill,
+      backgroundColor: tokens.colors.surfaceStrong,
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+      overflow: "hidden",
+      marginTop: tokens.spacing.xs,
+    },
+    proportionBarFill: {
+      height: "100%",
+      borderRadius: tokens.radii.pill,
+    },
+    proportionText: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+      fontWeight: "600",
+      marginTop: 2,
+    },
+    totalHero: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      padding: tokens.spacing.lg,
+      borderRadius: tokens.radii.lg,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surfaceRaised,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.14,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 6,
+    },
+    totalHeroActive: {
+      borderColor: tokens.colors.brand,
+      backgroundColor: tokens.colors.surfaceStrong,
+    },
+    totalHeroMain: {
+      flex: 1,
+      gap: 4,
+    },
+    totalHeroLabel: {
+      color: tokens.colors.text,
+      fontSize: 15,
+      fontWeight: "800",
+      letterSpacing: -0.2,
+    },
+    totalHeroSub: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+    },
+    totalHeroValue: {
+      color: tokens.colors.brandStrong,
+      fontSize: 32,
+      fontWeight: "800",
+      letterSpacing: -0.8,
+    },
+    tooltipBubble: {
+      position: "absolute",
+      left: tokens.spacing.sm,
+      right: tokens.spacing.sm,
+      bottom: "100%",
+      marginBottom: tokens.spacing.xs,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.sm,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surface,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.1,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 12,
+      zIndex: 20,
+    },
+    tooltipText: {
+      color: tokens.colors.text,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    detailList: {
+      gap: tokens.spacing.md,
+    },
+    detailRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      paddingBottom: tokens.spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: tokens.colors.line,
+    },
+    detailMain: {
+      flex: 1,
+      gap: 6,
+    },
+    detailAside: {
+      width: 180,
+      gap: 8,
+      alignItems: "flex-end",
+    },
+    detailTitle: {
+      color: tokens.colors.text,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    detailMeta: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+    },
+    detailRecommendation: {
+      color: tokens.colors.textSoft,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    detailTag: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+    },
+    insightList: {
+      gap: tokens.spacing.sm,
+    },
+    criticalList: {
+      gap: tokens.spacing.sm,
+    },
+    criticalRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: tokens.colors.line,
+    },
+    criticalMain: {
+      flex: 1,
+      gap: 4,
+    },
+    criticalName: {
+      color: tokens.colors.text,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    criticalMeta: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+    },
+    criticalBadges: {
+      gap: tokens.spacing.xs,
+      alignItems: "flex-end",
+    },
+    rankingList: {
+      gap: tokens.spacing.sm,
+    },
+    rankingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: tokens.spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: tokens.colors.line,
+    },
+    rankingLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
+    rankingBadge: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      backgroundColor: tokens.colors.surfaceStrong,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    rankingHospital: {
+      color: tokens.colors.text,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    rankingMeta: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+    },
+    rankingValue: {
+      color: tokens.colors.brand,
+      fontSize: 16,
+      fontWeight: "800",
+    },
+    expandHandle: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      marginVertical: -tokens.spacing.sm,
+    },
+    expandHandleLine: {
+      flex: 1,
+      height: 3,
+      borderRadius: 1,
+      opacity: 0.35,
+    },
+    expandHandleIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      borderWidth: 1.5,
+      backgroundColor: tokens.colors.surfaceRaised,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.18,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 4,
+    },
+    listPanelTitle: {
+      color: tokens.colors.text,
+      fontSize: 15,
+      fontWeight: "800",
+      letterSpacing: -0.2,
+    },
+    listPanelMeta: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    listPanelBody: {
+      padding: tokens.spacing.lg,
+      gap: tokens.spacing.md,
+      borderRadius: tokens.radii.lg,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surfaceRaised,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.14,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 6,
+    },
+
+    attentionStrip: {
+      gap: tokens.spacing.sm,
+    },
+    attentionStripHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    attentionStripTitle: {
+      color: tokens.colors.text,
+      fontSize: 12,
+      fontWeight: "800",
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    attentionStripHint: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+      marginLeft: tokens.spacing.xs,
+    },
+    attentionStripGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+    },
+    attentionCard: {
+      flexGrow: 1,
+      flexBasis: 180,
+      minHeight: 92,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+      borderLeftWidth: 4,
+      backgroundColor: tokens.colors.surface,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      gap: 4,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.08,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 3,
+    },
+    attentionCardTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
+    },
+    attentionIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    attentionValue: {
+      fontSize: 22,
+      fontWeight: "800",
+      letterSpacing: -0.4,
+    },
+    attentionLabel: {
+      color: tokens.colors.text,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    attentionHint: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+    },
+    compositionWrap: {
+      gap: tokens.spacing.sm,
+      padding: tokens.spacing.md,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+      backgroundColor: tokens.colors.surface,
+    },
+    compositionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    compositionTitle: {
+      color: tokens.colors.text,
+      fontSize: 13,
+      fontWeight: "800",
+    },
+    compositionTotal: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    compositionBar: {
+      height: 14,
+      flexDirection: "row",
+      borderRadius: tokens.radii.pill,
+      overflow: "hidden",
+      backgroundColor: tokens.colors.surfaceStrong,
+    },
+    compositionSegment: {
+      height: "100%",
+    },
+    compositionLegend: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+    },
+    compositionLegendItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    compositionLegendDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    compositionLegendLabel: {
+      color: tokens.colors.text,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    compositionLegendValue: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+    },
+    heatmapWrap: {
+      gap: tokens.spacing.sm,
+      padding: tokens.spacing.md,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+      backgroundColor: tokens.colors.surface,
+    },
+    heatmapHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+      gap: tokens.spacing.xs,
+    },
+    heatmapTitle: {
+      color: tokens.colors.text,
+      fontSize: 13,
+      fontWeight: "800",
+    },
+    heatmapHint: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+    },
+    heatmapHeadRow: {
+      flexDirection: "row",
+      gap: 4,
+      paddingBottom: 4,
+    },
+    heatmapHeadCell: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
+    heatmapHeadDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    heatmapHeadText: {
+      color: tokens.colors.textMuted,
+      fontSize: 10,
+      fontWeight: "700",
+      textTransform: "uppercase",
+      letterSpacing: 0.4,
+    },
+    heatmapRow: {
+      flexDirection: "row",
+      gap: 4,
+      marginTop: 4,
+    },
+    heatmapRowLabel: {
+      width: 64,
+      paddingHorizontal: tokens.spacing.xs,
+      paddingVertical: 6,
+      borderRadius: tokens.radii.sm,
+      backgroundColor: tokens.colors.surfaceMuted,
+      justifyContent: "center",
+    },
+    heatmapRowLabelActive: {
+      backgroundColor: tokens.colors.surfaceActiveSoft,
+      borderWidth: 1,
+      borderColor: tokens.colors.brand,
+    },
+    heatmapRowLabelText: {
+      color: tokens.colors.text,
+      fontSize: 12,
+      fontWeight: "800",
+    },
+    heatmapRowLabelTextActive: {
+      color: tokens.colors.brand,
+    },
+    heatmapRowLabelMeta: {
+      color: tokens.colors.textMuted,
+      fontSize: 10,
+      fontWeight: "600",
+    },
+    heatmapCell: {
+      flex: 1,
+      minHeight: 38,
+      borderRadius: tokens.radii.sm,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    heatmapCellText: {
+      fontSize: 13,
+      fontWeight: "800",
+    },
+    sparklineWrap: {
+      marginTop: tokens.spacing.xs,
+      gap: 4,
+    },
+    sparklineBars: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: 2,
+      height: 24,
+    },
+    sparklineBar: {
+      flex: 1,
+      minWidth: 2,
+      borderRadius: 1,
+    },
+    sparklineLabel: {
+      color: tokens.colors.textMuted,
+      fontSize: 10,
+      fontWeight: "700",
+    },
   });
 }

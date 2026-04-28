@@ -87,6 +87,17 @@ type MonthlyConsumptionRow = {
   percentual_consumido: number | string | null;
 };
 
+export type KpiHistoricoPoint = {
+  data: string;
+  urgent: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  stable: number;
+  total_products: number;
+};
+
 type AlmoxDataContextValue = {
   dataset: AlmoxDataset;
   loading: boolean;
@@ -119,6 +130,9 @@ type AlmoxDataContextValue = {
   processItemsError: string | null;
   openProcessSummaryByProductCode: Record<string, ProductProcessSummary>;
   refreshProcessItems: (options?: { force?: boolean }) => Promise<void>;
+  kpiHistoricoByHospital: Record<Hospital, KpiHistoricoPoint[]>;
+  kpiHistoricoLoading: boolean;
+  refreshKpiHistorico: () => Promise<void>;
   systemConfig: ConfiguracaoSistema;
   systemConfigLoading: boolean;
   systemConfigSaving: boolean;
@@ -624,9 +638,17 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [systemConfigError, setSystemConfigError] = useState<string | null>(null);
   const [systemConfigNotice, setSystemConfigNotice] = useState<string | null>(null);
   const [systemConfigUpdatedAt, setSystemConfigUpdatedAt] = useState<string | null>(null);
+  const [kpiHistoricoByHospital, setKpiHistoricoByHospital] = useState<Record<Hospital, KpiHistoricoPoint[]>>({
+    HMSA: [],
+    HEC: [],
+    HDDS: [],
+    HABF: [],
+  });
+  const [kpiHistoricoLoading, setKpiHistoricoLoading] = useState(false);
   const mountedRef = useRef(true);
   const hasLoadedRef = useRef(false);
   const processItemsLoadedRef = useRef(false);
+  const kpiHistoricoLoadedRef = useRef(false);
 
   const openProcessSummaryByProductCode = useMemo(
     () => buildOpenProcessSummaryByProductCode(processItems, systemConfig),
@@ -926,6 +948,44 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       }
 
       setProcessItemsLoading(false);
+    }
+  }, []);
+
+  const refreshKpiHistorico = useCallback(async function refreshKpiHistorico() {
+    if (!mountedRef.current) {
+      return;
+    }
+    setKpiHistoricoLoading(true);
+    try {
+      const response = await fetch('/api/dashboard/kpi-historico?dias=14', { credentials: 'include' });
+      if (!response.ok) {
+        return;
+      }
+      const payload = (await response.json().catch(() => null)) as
+        | { ok?: boolean; byHospital?: Record<string, KpiHistoricoPoint[]> }
+        | null;
+      if (!payload?.ok || !payload.byHospital) {
+        return;
+      }
+      if (!mountedRef.current) {
+        return;
+      }
+      const next: Record<Hospital, KpiHistoricoPoint[]> = {
+        HMSA: payload.byHospital.HMSA ?? [],
+        HEC: payload.byHospital.HEC ?? [],
+        HDDS: payload.byHospital.HDDS ?? [],
+        HABF: payload.byHospital.HABF ?? [],
+      };
+      startTransition(() => {
+        setKpiHistoricoByHospital(next);
+      });
+      kpiHistoricoLoadedRef.current = true;
+    } catch (kpiError) {
+      logScopedError('/api/dashboard/kpi-historico', kpiError);
+    } finally {
+      if (mountedRef.current) {
+        setKpiHistoricoLoading(false);
+      }
     }
   }, []);
 
@@ -1579,10 +1639,12 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       void refreshSystemConfig();
     }
 
+    void refreshKpiHistorico();
+
     return () => {
       mountedRef.current = false;
     };
-  }, [refresh, refreshProcessItems, refreshSystemConfig]);
+  }, [refresh, refreshProcessItems, refreshSystemConfig, refreshKpiHistorico]);
 
   useEffect(() => {
     if (!pendingSync) {
@@ -1751,6 +1813,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         processItemsError,
         openProcessSummaryByProductCode,
         refreshProcessItems,
+        kpiHistoricoByHospital,
+        kpiHistoricoLoading,
+        refreshKpiHistorico,
         systemConfig,
         systemConfigLoading,
         systemConfigSaving,

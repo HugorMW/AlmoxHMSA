@@ -7,5 +7,8 @@
       "Bash(node_modules/.bin/tsc --noEmit)",
       "Bash(node ./scripts/diagnosticar-blacklist-orfas.mjs)"
     ]
+  },
+  "enabledPlugins": {
+    "claude-pace@claude-pace-marketplace": true
   }
 }
