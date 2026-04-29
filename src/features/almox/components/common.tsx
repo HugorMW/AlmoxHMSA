@@ -1,6 +1,6 @@
-import { Link, Href } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React from 'react';
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Href, Link } from "expo-router";
+import React from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -10,121 +10,126 @@ import {
   TextInput,
   TextInputProps,
   View,
-} from 'react-native';
+} from "react-native";
 
-import { AlmoxTheme } from '@/features/almox/tokens';
-import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
+import { useAppTheme, useThemedStyles } from "@/features/almox/theme-provider";
+import { AlmoxTheme } from "@/features/almox/tokens";
 
 type IconName =
-  | 'dashboard'
-  | 'products'
-  | 'loans'
-  | 'orders'
-  | 'processes'
-  | 'blacklist'
-  | 'settings'
-  | 'refresh'
-  | 'upload'
-  | 'package'
-  | 'alert'
-  | 'cart'
-  | 'borrow'
-  | 'lend'
-  | 'downtrend'
-  | 'uptrend'
-  | 'spark'
-  | 'search'
-  | 'download'
-  | 'mail'
-  | 'eye'
-  | 'eyeOff'
-  | 'edit'
-  | 'filter'
-  | 'send'
-  | 'save'
-  | 'bell'
-  | 'bellOff'
-  | 'plus'
-  | 'trash'
-  | 'blocked'
-  | 'hospital'
-  | 'trophy'
-  | 'file'
-  | 'receipt'
-  | 'clock'
-  | 'info'
-  | 'chevronDown'
-  | 'chevronUp'
-  | 'chevronLeft'
-  | 'chevronRight'
-  | 'check'
-  | 'logout'
-  | 'opme'
-  | 'consumo'
-  | 'monitor'
-  | 'themeLight'
-  | 'themeDark';
+  | "dashboard"
+  | "products"
+  | "loans"
+  | "orders"
+  | "processes"
+  | "blacklist"
+  | "settings"
+  | "refresh"
+  | "upload"
+  | "package"
+  | "alert"
+  | "cart"
+  | "borrow"
+  | "lend"
+  | "downtrend"
+  | "uptrend"
+  | "spark"
+  | "search"
+  | "download"
+  | "mail"
+  | "eye"
+  | "eyeOff"
+  | "edit"
+  | "filter"
+  | "send"
+  | "save"
+  | "bell"
+  | "bellOff"
+  | "plus"
+  | "trash"
+  | "blocked"
+  | "hospital"
+  | "trophy"
+  | "file"
+  | "receipt"
+  | "clock"
+  | "info"
+  | "chevronDown"
+  | "chevronUp"
+  | "chevronLeft"
+  | "chevronRight"
+  | "check"
+  | "logout"
+  | "consumo"
+  | "monitor"
+  | "themeLight"
+  | "themeDark";
 
-const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> = {
-  dashboard: 'view-dashboard-outline',
-  products: 'package-variant-closed',
-  loans: 'swap-horizontal',
-  orders: 'cart-outline',
-  processes: 'timeline-clock-outline',
-  blacklist: 'playlist-remove',
-  settings: 'cog-outline',
-  refresh: 'refresh',
-  upload: 'upload-outline',
-  package: 'clipboard-list-outline',
-  alert: 'alert-outline',
-  cart: 'cart-outline',
-  borrow: 'arrow-down-bold-circle-outline',
-  lend: 'arrow-up-bold-circle-outline',
-  downtrend: 'chart-line-variant',
-  uptrend: 'chart-timeline-variant',
-  spark: 'lightbulb-on-outline',
-  search: 'magnify',
-  download: 'download',
-  mail: 'email-outline',
-  eye: 'eye-outline',
-  eyeOff: 'eye-off-outline',
-  edit: 'pencil-outline',
-  filter: 'filter-variant',
-  send: 'send-outline',
-  save: 'content-save-outline',
-  bell: 'bell-outline',
-  bellOff: 'bell-off-outline',
-  plus: 'plus-circle-outline',
-  trash: 'trash-can-outline',
-  blocked: 'cancel',
-  hospital: 'hospital-box-outline',
-  trophy: 'trophy-outline',
-  file: 'file-document-outline',
-  receipt: 'receipt-text-outline',
-  clock: 'clock-outline',
-  info: 'information-outline',
-  chevronDown: 'chevron-down',
-  chevronUp: 'chevron-up',
-  chevronLeft: 'chevron-left',
-  chevronRight: 'chevron-right',
-  check: 'check',
-  logout: 'logout',
-  opme: 'medical-bag',
-  consumo: 'speedometer',
-  monitor: 'monitor-dashboard',
-  themeLight: 'white-balance-sunny',
-  themeDark: 'weather-night',
-};
+const iconMap: Record<IconName, keyof typeof MaterialCommunityIcons.glyphMap> =
+  {
+    dashboard: "view-dashboard-outline",
+    products: "package-variant-closed",
+    loans: "swap-horizontal",
+    orders: "cart-outline",
+    processes: "timeline-clock-outline",
+    blacklist: "playlist-remove",
+    settings: "cog-outline",
+    refresh: "refresh",
+    upload: "upload-outline",
+    package: "clipboard-list-outline",
+    alert: "alert-outline",
+    cart: "cart-outline",
+    borrow: "arrow-down-bold-circle-outline",
+    lend: "arrow-up-bold-circle-outline",
+    downtrend: "chart-line-variant",
+    uptrend: "chart-timeline-variant",
+    spark: "lightbulb-on-outline",
+    search: "magnify",
+    download: "download",
+    mail: "email-outline",
+    eye: "eye-outline",
+    eyeOff: "eye-off-outline",
+    edit: "pencil-outline",
+    filter: "filter-variant",
+    send: "send-outline",
+    save: "content-save-outline",
+    bell: "bell-outline",
+    bellOff: "bell-off-outline",
+    plus: "plus-circle-outline",
+    trash: "trash-can-outline",
+    blocked: "cancel",
+    hospital: "hospital-box-outline",
+    trophy: "trophy-outline",
+    file: "file-document-outline",
+    receipt: "receipt-text-outline",
+    clock: "clock-outline",
+    info: "information-outline",
+    chevronDown: "chevron-down",
+    chevronUp: "chevron-up",
+    chevronLeft: "chevron-left",
+    chevronRight: "chevron-right",
+    check: "check",
+    logout: "logout",
+    consumo: "speedometer",
+    monitor: "monitor-dashboard",
+    themeLight: "white-balance-sunny",
+    themeDark: "weather-night",
+  };
 
-type ButtonTone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
+type ButtonTone = "primary" | "success" | "warning" | "danger" | "neutral";
 
 function createButtonTones(tokens: AlmoxTheme) {
   return {
-    primary: { background: tokens.colors.brandStrong, foreground: tokens.colors.black },
-    success: { background: '#2a8f7b', foreground: tokens.colors.white },
-    warning: { background: '#b57433', foreground: tokens.colors.white },
-    danger: { background: '#b85773', foreground: tokens.colors.white },
-    neutral: { background: tokens.colors.surfaceStrong, foreground: tokens.colors.text },
+    primary: {
+      background: tokens.colors.brandStrong,
+      foreground: tokens.colors.black,
+    },
+    success: { background: "#2a8f7b", foreground: tokens.colors.white },
+    warning: { background: "#b57433", foreground: tokens.colors.white },
+    danger: { background: "#b85773", foreground: tokens.colors.white },
+    neutral: {
+      background: tokens.colors.surfaceStrong,
+      foreground: tokens.colors.text,
+    },
   } as const;
 }
 
@@ -144,7 +149,13 @@ export function AppIcon({
   color?: string;
 }) {
   const { tokens } = useAppTheme();
-  return <MaterialCommunityIcons name={iconMap[name]} size={size} color={color ?? tokens.colors.textMuted} />;
+  return (
+    <MaterialCommunityIcons
+      name={iconMap[name]}
+      size={size}
+      color={color ?? tokens.colors.textMuted}
+    />
+  );
 }
 
 export function ScreenScrollView({ children }: { children: React.ReactNode }) {
@@ -154,7 +165,8 @@ export function ScreenScrollView({ children }: { children: React.ReactNode }) {
       style={styles.scroll}
       contentContainerStyle={styles.scrollContent}
       keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}>
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.pageInner}>{children}</View>
     </ScrollView>
   );
@@ -187,7 +199,9 @@ export function PageHeader({
           ) : tooltip ? (
             <HelpHint text={tooltip} />
           ) : null}
-          {subtitle ? <Text style={styles.pageSubtitle}>{subtitle}</Text> : null}
+          {subtitle ? (
+            <Text style={styles.pageSubtitle}>{subtitle}</Text>
+          ) : null}
         </View>
       ) : null}
       {aside ? <View style={styles.pageAside}>{aside}</View> : null}
@@ -203,7 +217,11 @@ export function SectionCard({
   accent?: string;
 }) {
   const styles = useThemedStyles(createStyles);
-  return <View style={[styles.card, accent ? { borderColor: accent } : null]}>{children}</View>;
+  return (
+    <View style={[styles.card, accent ? { borderColor: accent } : null]}>
+      {children}
+    </View>
+  );
 }
 
 export function SectionTitle({
@@ -223,11 +241,15 @@ export function SectionTitle({
     <View style={styles.sectionTitleRow}>
       <View style={styles.sectionTitleText}>
         <View style={styles.sectionTitleTop}>
-          {icon ? <AppIcon name={icon} size={16} color={tokens.colors.brand} /> : null}
+          {icon ? (
+            <AppIcon name={icon} size={16} color={tokens.colors.brand} />
+          ) : null}
           <Text style={styles.sectionTitle}>{title}</Text>
           {tooltip ? <HelpHint text={tooltip} /> : null}
         </View>
-        {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
+        {subtitle ? (
+          <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+        ) : null}
       </View>
     </View>
   );
@@ -235,11 +257,11 @@ export function SectionTitle({
 
 export function HelpHint({
   text,
-  align = 'end',
+  align = "end",
   onVisibilityChange,
 }: {
   text: string;
-  align?: 'start' | 'end';
+  align?: "start" | "end";
   onVisibilityChange?: (visible: boolean) => void;
 }) {
   const { tokens } = useAppTheme();
@@ -251,7 +273,7 @@ export function HelpHint({
       setShowTooltip(visible);
       onVisibilityChange?.(visible);
     },
-    [onVisibilityChange]
+    [onVisibilityChange],
   );
 
   return (
@@ -260,11 +282,21 @@ export function HelpHint({
       onHoverOut={() => setVisible(false)}
       onPressIn={() => setVisible(true)}
       onPressOut={() => setVisible(false)}
-      style={[styles.helpHintWrap, showTooltip ? styles.helpHintWrapActive : null]}>
+      style={[
+        styles.helpHintWrap,
+        showTooltip ? styles.helpHintWrapActive : null,
+      ]}
+    >
       {showTooltip ? (
         <View
           pointerEvents="none"
-          style={[styles.helpHintTooltip, align === 'start' ? styles.helpHintTooltipStart : styles.helpHintTooltipEnd]}>
+          style={[
+            styles.helpHintTooltip,
+            align === "start"
+              ? styles.helpHintTooltipStart
+              : styles.helpHintTooltipEnd,
+          ]}
+        >
           <Text style={styles.helpHintTooltipText}>{text}</Text>
         </View>
       ) : null}
@@ -278,11 +310,11 @@ export function HelpHint({
 export function InfoBanner({
   title,
   description,
-  tone = 'neutral',
+  tone = "neutral",
 }: {
   title: string;
   description: string;
-  tone?: 'neutral' | 'warning' | 'danger' | 'success' | 'info';
+  tone?: "neutral" | "warning" | "danger" | "success" | "info";
 }) {
   const { tokens } = useAppTheme();
   const styles = useThemedStyles(createStyles);
@@ -293,30 +325,37 @@ export function InfoBanner({
       color: tokens.colors.textSoft,
     },
     warning: {
-      background: 'rgba(251, 191, 36, 0.14)',
-      border: 'rgba(251, 191, 36, 0.45)',
+      background: "rgba(251, 191, 36, 0.14)",
+      border: "rgba(251, 191, 36, 0.45)",
       color: tokens.colors.amber,
     },
     danger: {
-      background: 'rgba(248, 113, 113, 0.14)',
-      border: 'rgba(248, 113, 113, 0.45)',
+      background: "rgba(248, 113, 113, 0.14)",
+      border: "rgba(248, 113, 113, 0.45)",
       color: tokens.colors.red,
     },
     success: {
-      background: 'rgba(52, 211, 153, 0.14)',
-      border: 'rgba(52, 211, 153, 0.45)',
+      background: "rgba(52, 211, 153, 0.14)",
+      border: "rgba(52, 211, 153, 0.45)",
       color: tokens.colors.green,
     },
     info: {
-      background: 'rgba(140, 168, 217, 0.12)',
-      border: 'rgba(140, 168, 217, 0.26)',
+      background: "rgba(140, 168, 217, 0.12)",
+      border: "rgba(140, 168, 217, 0.26)",
       color: tokens.colors.brandStrong,
     },
   }[tone];
 
   return (
-    <View style={[styles.banner, { backgroundColor: palette.background, borderColor: palette.border }]}>
-      <Text style={[styles.bannerTitle, { color: palette.color }]}>{title}</Text>
+    <View
+      style={[
+        styles.banner,
+        { backgroundColor: palette.background, borderColor: palette.border },
+      ]}
+    >
+      <Text style={[styles.bannerTitle, { color: palette.color }]}>
+        {title}
+      </Text>
       <Text style={styles.bannerDescription}>{description}</Text>
     </View>
   );
@@ -325,7 +364,7 @@ export function InfoBanner({
 export function ActionButton({
   label,
   icon,
-  tone = 'primary',
+  tone = "primary",
   disabled,
   loading,
   onPress,
@@ -350,16 +389,30 @@ export function ActionButton({
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: isDisabled ? tokens.colors.surfaceStrong : palette.background,
+          backgroundColor: isDisabled
+            ? tokens.colors.surfaceStrong
+            : palette.background,
           opacity: pressed && !isDisabled ? 0.85 : 1,
         },
-      ]}>
+      ]}
+    >
       {loading ? (
         <ActivityIndicator size={15} color={tokens.colors.textMuted} />
       ) : icon ? (
-        <AppIcon name={icon} size={15} color={isDisabled ? tokens.colors.textMuted : palette.foreground} />
+        <AppIcon
+          name={icon}
+          size={15}
+          color={isDisabled ? tokens.colors.textMuted : palette.foreground}
+        />
       ) : null}
-      <Text style={[styles.buttonText, { color: isDisabled ? tokens.colors.textMuted : palette.foreground }]}>{label}</Text>
+      <Text
+        style={[
+          styles.buttonText,
+          { color: isDisabled ? tokens.colors.textMuted : palette.foreground },
+        ]}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 
@@ -378,12 +431,12 @@ export function InlineTabs<T extends string>({
   options,
   value,
   onChange,
-  size = 'md',
+  size = "md",
 }: {
   options: { label: string; value: T; tooltip?: string }[];
   value: T;
   onChange: (nextValue: T) => void;
-  size?: 'md' | 'sm';
+  size?: "md" | "sm";
 }) {
   const styles = useThemedStyles(createStyles);
   return (
@@ -411,7 +464,7 @@ export function PaginationFooter({
   page,
   totalPages,
   pageSize,
-  itemLabel = 'item(ns)',
+  itemLabel = "item(ns)",
   onPageChange,
   onPageSizeChange,
 }: {
@@ -429,13 +482,15 @@ export function PaginationFooter({
   const safeTotalPages = Math.max(1, totalPages);
   const safePage = Math.min(Math.max(1, page), safeTotalPages);
   const pageSizeValue = String(pageSize);
-  const [customPageSizeText, setCustomPageSizeText] = React.useState(pageSizeValue);
+  const [customPageSizeText, setCustomPageSizeText] =
+    React.useState(pageSizeValue);
   const customPageSize = Number(customPageSizeText);
   const isCustomPageSizeValid =
     Number.isInteger(customPageSize) &&
     customPageSize >= MIN_CUSTOM_PAGE_SIZE &&
     customPageSize <= MAX_CUSTOM_PAGE_SIZE;
-  const canApplyCustomPageSize = isCustomPageSizeValid && customPageSize !== pageSize;
+  const canApplyCustomPageSize =
+    isCustomPageSizeValid && customPageSize !== pageSize;
 
   React.useEffect(() => {
     setCustomPageSizeText(pageSizeValue);
@@ -477,14 +532,18 @@ export function PaginationFooter({
         <View style={styles.paginationCustomSize}>
           <TextInput
             value={customPageSizeText}
-            onChangeText={(text) => setCustomPageSizeText(text.replace(/\D/g, '').slice(0, 3))}
+            onChangeText={(text) =>
+              setCustomPageSizeText(text.replace(/\D/g, "").slice(0, 3))
+            }
             onSubmitEditing={handleApplyCustomPageSize}
             placeholder="Outro"
             placeholderTextColor={tokens.colors.textMuted}
             keyboardType="number-pad"
             style={[
               styles.paginationCustomInput,
-              customPageSizeText && !isCustomPageSizeValid ? styles.paginationCustomInputInvalid : null,
+              customPageSizeText && !isCustomPageSizeValid
+                ? styles.paginationCustomInputInvalid
+                : null,
             ]}
           />
           <ActionButton
@@ -524,7 +583,7 @@ function InlineTabButton({
   label: string;
   tooltip?: string;
   isActive: boolean;
-  size: 'md' | 'sm';
+  size: "md" | "sm";
   onPress: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
@@ -545,16 +604,18 @@ function InlineTabButton({
         onPressOut={() => setShowTooltip(false)}
         style={({ pressed }) => [
           styles.inlineTab,
-          size === 'sm' ? styles.inlineTabCompact : null,
+          size === "sm" ? styles.inlineTabCompact : null,
           isActive ? styles.inlineTabActive : null,
           pressed && !isActive ? styles.inlineTabPressed : null,
-        ]}>
+        ]}
+      >
         <Text
           style={[
             styles.inlineTabText,
-            size === 'sm' ? styles.inlineTabTextCompact : null,
+            size === "sm" ? styles.inlineTabTextCompact : null,
             isActive ? styles.inlineTabTextActive : null,
-          ]}>
+          ]}
+        >
           {label}
         </Text>
       </Pressable>
@@ -562,7 +623,11 @@ function InlineTabButton({
   );
 }
 
-export function SearchField({ value, onChangeText, placeholder }: TextInputProps) {
+export function SearchField({
+  value,
+  onChangeText,
+  placeholder,
+}: TextInputProps) {
   const { tokens } = useAppTheme();
   const styles = useThemedStyles(createStyles);
   return (
@@ -623,352 +688,352 @@ export function EmptyState({
   );
 }
 
-const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: tokens.layout.pageBottomPadding,
-  },
-  pageInner: {
-    width: '100%',
-    gap: tokens.spacing.lg,
-  },
-  pageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    flexWrap: 'wrap',
-    gap: tokens.spacing.md,
-  },
-  pageHeaderText: {
-    gap: tokens.spacing.xs,
-    flex: 1,
-    minWidth: 240,
-  },
-  pageTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: tokens.spacing.xs,
-    flexWrap: 'wrap',
-  },
-  pageTitle: {
-    color: tokens.colors.text,
-    fontSize: 28,
-    fontWeight: '800',
-    fontFamily: tokens.typography.display,
-    letterSpacing: -0.6,
-  },
-  pageSubtitle: {
-    color: tokens.colors.textMuted,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  pageAside: {
-    flexDirection: 'row',
-    gap: tokens.spacing.sm,
-    flexWrap: 'wrap',
-  },
-  card: {
-    backgroundColor: tokens.colors.surfaceRaised,
-    borderRadius: tokens.radii.lg,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    padding: tokens.spacing.lg,
-    gap: tokens.spacing.md,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.14,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: tokens.spacing.md,
-  },
-  sectionTitleText: {
-    flex: 1,
-    gap: tokens.spacing.xs,
-  },
-  sectionTitleTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: tokens.spacing.xs,
-    flexWrap: 'wrap',
-  },
-  sectionTitle: {
-    color: tokens.colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  sectionSubtitle: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-  },
-  banner: {
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    padding: tokens.spacing.md,
-    gap: tokens.spacing.xs,
-  },
-  bannerTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  bannerDescription: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  button: {
-    minHeight: 42,
-    borderRadius: tokens.radii.md,
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: tokens.spacing.xs,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  buttonText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  inlineTabs: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: tokens.spacing.xs,
-  },
-  inlineTabWrap: {
-    position: 'relative',
-    overflow: 'visible',
-  },
-  inlineTab: {
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: tokens.spacing.sm,
-    borderRadius: tokens.radii.pill,
-    backgroundColor: tokens.colors.surface,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-  },
-  inlineTabCompact: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  inlineTabActive: {
-    backgroundColor: 'rgba(140, 168, 217, 0.12)',
-    borderColor: 'rgba(140, 168, 217, 0.26)',
-  },
-  inlineTabPressed: {
-    opacity: 0.82,
-  },
-  inlineTabText: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  inlineTabTextCompact: {
-    fontSize: 11,
-  },
-  inlineTabTextActive: {
-    color: tokens.colors.brandStrong,
-  },
-  inlineTabTooltip: {
-    position: 'absolute',
-    left: 0,
-    bottom: '100%',
-    marginBottom: tokens.spacing.xs,
-    minWidth: 180,
-    maxWidth: 280,
-    paddingHorizontal: tokens.spacing.sm,
-    paddingVertical: tokens.spacing.sm,
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    backgroundColor: tokens.colors.surface,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
-    zIndex: 20,
-  },
-  inlineTabTooltipText: {
-    color: tokens.colors.text,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  paginationFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: tokens.spacing.md,
-    paddingTop: tokens.spacing.sm,
-  },
-  paginationSummary: {
-    gap: 3,
-  },
-  paginationText: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-  },
-  paginationPageText: {
-    color: tokens.colors.text,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  paginationPageSize: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: tokens.spacing.sm,
-    flex: 1,
-  },
-  paginationControlLabel: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  paginationCustomSize: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: tokens.spacing.xs,
-  },
-  paginationCustomInput: {
-    width: 82,
-    minHeight: 42,
-    borderRadius: tokens.radii.md,
-    backgroundColor: tokens.colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: tokens.colors.line,
-    color: tokens.colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-    paddingHorizontal: tokens.spacing.sm,
-    paddingVertical: 0,
-    textAlign: 'center',
-  },
-  paginationCustomInputInvalid: {
-    borderColor: 'rgba(248, 113, 113, 0.55)',
-    backgroundColor: 'rgba(248, 113, 113, 0.14)',
-  },
-  paginationActions: {
-    flexDirection: 'row',
-    gap: tokens.spacing.sm,
-  },
-  helpHintWrap: {
-    position: 'relative',
-    overflow: 'visible',
-  },
-  helpHintWrapActive: {
-    zIndex: 1200,
-  },
-  helpHintBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: tokens.colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: tokens.colors.line,
-  },
-  helpHintTooltip: {
-    position: 'absolute',
-    bottom: '100%',
-    marginBottom: tokens.spacing.xs,
-    minWidth: 200,
-    maxWidth: 300,
-    paddingHorizontal: tokens.spacing.sm,
-    paddingVertical: tokens.spacing.sm,
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    backgroundColor: tokens.colors.surface,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
-    zIndex: 20,
-  },
-  helpHintTooltipStart: {
-    left: 0,
-  },
-  helpHintTooltipEnd: {
-    right: 0,
-  },
-  helpHintTooltipText: {
-    color: tokens.colors.text,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  searchField: {
-    minHeight: 48,
-    borderRadius: tokens.radii.md,
-    paddingHorizontal: tokens.spacing.md,
-    backgroundColor: tokens.colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: tokens.spacing.sm,
-  },
-  searchInput: {
-    flex: 1,
-    color: tokens.colors.text,
-    fontSize: 14,
-    paddingVertical: 0,
-  },
-  field: {
-    gap: tokens.spacing.xs,
-  },
-  fieldLabel: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  fieldInput: {
-    minHeight: 46,
-    borderRadius: tokens.radii.md,
-    backgroundColor: tokens.colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: tokens.colors.lineStrong,
-    paddingHorizontal: tokens.spacing.md,
-    color: tokens.colors.text,
-    fontSize: 14,
-  },
-  emptyState: {
-    minHeight: 160,
-    borderRadius: tokens.radii.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: tokens.spacing.xs,
-    paddingHorizontal: tokens.spacing.lg,
-    backgroundColor: tokens.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: tokens.colors.line,
-  },
-  emptyTitle: {
-    color: tokens.colors.text,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  emptyDescription: {
-    color: tokens.colors.textMuted,
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: 'center',
-  },
-});
-
+const createStyles = (tokens: AlmoxTheme) =>
+  StyleSheet.create({
+    scroll: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingBottom: tokens.layout.pageBottomPadding,
+    },
+    pageInner: {
+      width: "100%",
+      gap: tokens.spacing.lg,
+    },
+    pageHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      flexWrap: "wrap",
+      gap: tokens.spacing.md,
+    },
+    pageHeaderText: {
+      gap: tokens.spacing.xs,
+      flex: 1,
+      minWidth: 240,
+    },
+    pageTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      flexWrap: "wrap",
+    },
+    pageTitle: {
+      color: tokens.colors.text,
+      fontSize: 28,
+      fontWeight: "800",
+      fontFamily: tokens.typography.display,
+      letterSpacing: -0.6,
+    },
+    pageSubtitle: {
+      color: tokens.colors.textMuted,
+      fontSize: 13,
+      lineHeight: 20,
+    },
+    pageAside: {
+      flexDirection: "row",
+      gap: tokens.spacing.sm,
+      flexWrap: "wrap",
+    },
+    card: {
+      backgroundColor: tokens.colors.surfaceRaised,
+      borderRadius: tokens.radii.lg,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      padding: tokens.spacing.lg,
+      gap: tokens.spacing.md,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.14,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 6,
+    },
+    sectionTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+    },
+    sectionTitleText: {
+      flex: 1,
+      gap: tokens.spacing.xs,
+    },
+    sectionTitleTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      flexWrap: "wrap",
+    },
+    sectionTitle: {
+      color: tokens.colors.text,
+      fontSize: 16,
+      fontWeight: "700",
+    },
+    sectionSubtitle: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+    },
+    banner: {
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      padding: tokens.spacing.md,
+      gap: tokens.spacing.xs,
+    },
+    bannerTitle: {
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    bannerDescription: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    button: {
+      minHeight: 42,
+      borderRadius: tokens.radii.md,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: tokens.spacing.xs,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.14,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 4,
+    },
+    buttonText: {
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    inlineTabs: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.xs,
+    },
+    inlineTabWrap: {
+      position: "relative",
+      overflow: "visible",
+    },
+    inlineTab: {
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      borderRadius: tokens.radii.pill,
+      backgroundColor: tokens.colors.surface,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+    },
+    inlineTabCompact: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    inlineTabActive: {
+      backgroundColor: "rgba(140, 168, 217, 0.12)",
+      borderColor: "rgba(140, 168, 217, 0.26)",
+    },
+    inlineTabPressed: {
+      opacity: 0.82,
+    },
+    inlineTabText: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    inlineTabTextCompact: {
+      fontSize: 11,
+    },
+    inlineTabTextActive: {
+      color: tokens.colors.brandStrong,
+    },
+    inlineTabTooltip: {
+      position: "absolute",
+      left: 0,
+      bottom: "100%",
+      marginBottom: tokens.spacing.xs,
+      minWidth: 180,
+      maxWidth: 280,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.sm,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surface,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.1,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 12,
+      zIndex: 20,
+    },
+    inlineTabTooltipText: {
+      color: tokens.colors.text,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    paginationFooter: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+      gap: tokens.spacing.md,
+      paddingTop: tokens.spacing.sm,
+    },
+    paginationSummary: {
+      gap: 3,
+    },
+    paginationText: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+    },
+    paginationPageText: {
+      color: tokens.colors.text,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    paginationPageSize: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+      flex: 1,
+    },
+    paginationControlLabel: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    paginationCustomSize: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    paginationCustomInput: {
+      width: 82,
+      minHeight: 42,
+      borderRadius: tokens.radii.md,
+      backgroundColor: tokens.colors.surfaceRaised,
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+      color: tokens.colors.text,
+      fontSize: 13,
+      fontWeight: "700",
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: 0,
+      textAlign: "center",
+    },
+    paginationCustomInputInvalid: {
+      borderColor: "rgba(248, 113, 113, 0.55)",
+      backgroundColor: "rgba(248, 113, 113, 0.14)",
+    },
+    paginationActions: {
+      flexDirection: "row",
+      gap: tokens.spacing.sm,
+    },
+    helpHintWrap: {
+      position: "relative",
+      overflow: "visible",
+    },
+    helpHintWrapActive: {
+      zIndex: 1200,
+    },
+    helpHintBadge: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: tokens.colors.surfaceRaised,
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+    },
+    helpHintTooltip: {
+      position: "absolute",
+      bottom: "100%",
+      marginBottom: tokens.spacing.xs,
+      minWidth: 200,
+      maxWidth: 300,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.sm,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surface,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.1,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 12,
+      zIndex: 20,
+    },
+    helpHintTooltipStart: {
+      left: 0,
+    },
+    helpHintTooltipEnd: {
+      right: 0,
+    },
+    helpHintTooltipText: {
+      color: tokens.colors.text,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    searchField: {
+      minHeight: 48,
+      borderRadius: tokens.radii.md,
+      paddingHorizontal: tokens.spacing.md,
+      backgroundColor: tokens.colors.surfaceRaised,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
+    searchInput: {
+      flex: 1,
+      color: tokens.colors.text,
+      fontSize: 14,
+      paddingVertical: 0,
+    },
+    field: {
+      gap: tokens.spacing.xs,
+    },
+    fieldLabel: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    fieldInput: {
+      minHeight: 46,
+      borderRadius: tokens.radii.md,
+      backgroundColor: tokens.colors.surfaceRaised,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      paddingHorizontal: tokens.spacing.md,
+      color: tokens.colors.text,
+      fontSize: 14,
+    },
+    emptyState: {
+      minHeight: 160,
+      borderRadius: tokens.radii.lg,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: tokens.spacing.xs,
+      paddingHorizontal: tokens.spacing.lg,
+      backgroundColor: tokens.colors.surfaceMuted,
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+    },
+    emptyTitle: {
+      color: tokens.colors.text,
+      fontSize: 15,
+      fontWeight: "700",
+    },
+    emptyDescription: {
+      color: tokens.colors.textMuted,
+      fontSize: 13,
+      lineHeight: 20,
+      textAlign: "center",
+    },
+  });

@@ -69,9 +69,33 @@ function withAlpha(color: string, alphaHex: string) {
 }
 
 function createProcessTheme(tokens: AlmoxTheme, mode: ThemeMode): ProcessTheme {
+  if (mode === 'dark') {
+    return {
+      bg: '#090b10',
+      panel: '#11151b',
+      surface: '#171c24',
+      surfaceHi: '#1d232d',
+      surfacePressed: '#262f3b',
+      border: 'rgba(255, 255, 255, 0.08)',
+      borderHi: 'rgba(255, 255, 255, 0.14)',
+      text: '#f3f4f7',
+      muted: '#b7bfca',
+      dim: '#8d97a8',
+      accent: '#74c6c1',
+      green: '#46d393',
+      amber: '#f3b55f',
+      red: '#ff6d78',
+      blue: '#8398ba',
+      purple: '#a89bc0',
+      slate: '#96a0b0',
+      critical: '#ff5967',
+      ink: '#0a1016',
+    };
+  }
+
   return {
     bg: tokens.colors.canvas,
-    panel: mode === 'dark' ? tokens.colors.surfaceStrong : tokens.colors.surfaceRaised,
+    panel: tokens.colors.surfaceRaised,
     surface: tokens.colors.surfaceMuted,
     surfaceHi: tokens.colors.surfaceRaised,
     surfacePressed: tokens.colors.surfaceStrong,
@@ -88,7 +112,7 @@ function createProcessTheme(tokens: AlmoxTheme, mode: ThemeMode): ProcessTheme {
     purple: tokens.colors.violet,
     slate: tokens.colors.textMuted,
     critical: tokens.colors.red,
-    ink: mode === 'dark' ? tokens.colors.black : tokens.colors.white,
+    ink: tokens.colors.white,
   };
 }
 
@@ -177,14 +201,37 @@ function normalizeInlineText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-function addDays(date: Date, days: number) {
+function addCalendarDays(date: Date, days: number) {
   const nextDate = new Date(date);
   nextDate.setDate(nextDate.getDate() + days);
   return nextDate;
 }
 
-function formatDaysLabel(days: number) {
+function addBusinessDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  let added = 0;
+
+  while (added < days) {
+    nextDate.setDate(nextDate.getDate() + 1);
+    const weekday = nextDate.getDay();
+    if (weekday !== 0 && weekday !== 6) {
+      added += 1;
+    }
+  }
+
+  return nextDate;
+}
+
+function formatBusinessDaysLabel(days: number) {
+  return days === 1 ? '1 dia útil' : `${days} dias úteis`;
+}
+
+function formatCalendarDaysLabel(days: number) {
   return days === 1 ? '1 dia' : `${days} dias`;
+}
+
+function addParcelaDays(date: Date, days: number, index: number) {
+  return index === 0 ? addBusinessDays(date, days) : addCalendarDays(date, days);
 }
 
 function getParcelaDueDate(
@@ -197,9 +244,10 @@ function getParcelaDueDate(
     return null;
   }
 
-  return addDays(
+  return addParcelaDays(
     baseDate,
-    getProcessoParcelaDiasUteis(config, item.categoria_material, item.tipo_processo, index)
+    getProcessoParcelaDiasUteis(config, item.categoria_material, item.tipo_processo, index),
+    index
   );
 }
 
@@ -291,7 +339,7 @@ function getParcelaAdjustedDueDate(
     return dueDate;
   }
 
-  return addDays(dueDate, extraDays);
+  return addParcelaDays(dueDate, extraDays, index);
 }
 
 function getParcelaLabel(
@@ -300,7 +348,8 @@ function getParcelaLabel(
   categoria: CategoriaMaterial,
   tipo: ProcessoTipo
 ) {
-  return formatDaysLabel(getProcessoParcelaDiasUteis(config, categoria, tipo, index));
+  const days = getProcessoParcelaDiasUteis(config, categoria, tipo, index);
+  return index === 0 ? formatBusinessDaysLabel(days) : formatCalendarDaysLabel(days);
 }
 
 function getTodayPtBrDate() {
@@ -398,12 +447,59 @@ function countDelivered(item: ProcessoAcompanhamento) {
 
 const PROCESSO_ALERTA_DIAS = 1;
 
-function isParcelaNearDue(dueDate: Date | null, today: Date) {
+function getCalendarDayDifference(targetDate: Date | null, referenceDate: Date) {
+  if (!targetDate) {
+    return null;
+  }
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.round((targetDate.getTime() - referenceDate.getTime()) / msPerDay);
+}
+
+function getBusinessDayDifference(targetDate: Date | null, referenceDate: Date) {
+  if (!targetDate) {
+    return null;
+  }
+
+  const normalizedTarget = new Date(targetDate);
+  normalizedTarget.setHours(0, 0, 0, 0);
+
+  const normalizedReference = new Date(referenceDate);
+  normalizedReference.setHours(0, 0, 0, 0);
+
+  if (normalizedTarget.getTime() === normalizedReference.getTime()) {
+    return 0;
+  }
+
+  const step = normalizedTarget > normalizedReference ? 1 : -1;
+  const cursor = new Date(normalizedReference);
+  let difference = 0;
+
+  while (
+    (step === 1 && cursor.getTime() < normalizedTarget.getTime()) ||
+    (step === -1 && cursor.getTime() > normalizedTarget.getTime())
+  ) {
+    cursor.setDate(cursor.getDate() + step);
+    const weekday = cursor.getDay();
+    if (weekday !== 0 && weekday !== 6) {
+      difference += step;
+    }
+  }
+
+  return difference;
+}
+
+function isParcelaNearDue(dueDate: Date | null, today: Date, index: number) {
   if (!dueDate) {
     return false;
   }
-  const limit = addDays(today, PROCESSO_ALERTA_DIAS);
-  return dueDate > today && dueDate <= limit;
+
+  const daysUntilDue =
+    index === 0
+      ? getBusinessDayDifference(dueDate, today)
+      : getCalendarDayDifference(dueDate, today);
+
+  return daysUntilDue != null && daysUntilDue > 0 && daysUntilDue <= PROCESSO_ALERTA_DIAS;
 }
 
 function hasAndamentoComAlerta(
@@ -419,7 +515,7 @@ function hasAndamentoComAlerta(
     }
 
     const dueDate = getParcelaAdjustedDueDate(item, index, config, visualParcelas?.[index]);
-    if (isParcelaNearDue(dueDate, today)) {
+    if (isParcelaNearDue(dueDate, today, index)) {
       return true;
     }
   }
@@ -657,6 +753,8 @@ export default function ProcessesScreen() {
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       <View style={styles.darkStage}>
+        <View pointerEvents="none" style={styles.stageGlowTop} />
+        <View pointerEvents="none" style={styles.stageGlowBottom} />
         <View style={styles.topBar}>
           <DarkTabGroup
             options={[
@@ -1373,7 +1471,7 @@ function ParcelaTimeline({
         const visualState = getParcelaVisualState(item, index);
         const dueDate = getParcelaAdjustedDueDate(item, index, systemConfig, visualState);
         const overdue = !delivered && dueDate != null && dueDate < today;
-        const nearDue = !delivered && !overdue && isParcelaNearDue(dueDate, today);
+        const nearDue = !delivered && !overdue && isParcelaNearDue(dueDate, today, index);
         const color = delivered
           ? processTheme.green
           : overdue
@@ -2017,7 +2115,7 @@ function ParcelasModal({
   const selectedOverdue =
     !selectedDelivered && adjustedDueDate != null && adjustedDueDate < getTodayAtStartOfDay();
   const selectedNearDue =
-    !selectedDelivered && !selectedOverdue && isParcelaNearDue(adjustedDueDate, getTodayAtStartOfDay());
+    !selectedDelivered && !selectedOverdue && isParcelaNearDue(adjustedDueDate, getTodayAtStartOfDay(), selectedIndex);
   const selectedStatusColor = item.cancelado
     ? processTheme.slate
     : selectedDelivered
@@ -2115,7 +2213,7 @@ function ParcelasModal({
                 const dueDate = getParcelaAdjustedDueDate(item, index, systemConfig, parcelVisualState);
                 const today = getTodayAtStartOfDay();
                 const overdue = !delivered && dueDate != null && dueDate < today;
-                const nearDue = !delivered && !overdue && isParcelaNearDue(dueDate, today);
+                const nearDue = !delivered && !overdue && isParcelaNearDue(dueDate, today, index);
                 const color = delivered
                   ? processTheme.green
                   : overdue
@@ -2888,17 +2986,42 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     },
     processScrollContent: {
       flexGrow: 1,
+      paddingBottom: tokens.spacing.xl,
     },
     darkStage: {
       flexGrow: 1,
       minHeight: '100%',
-      borderRadius: 0,
-      borderWidth: 0,
-      borderColor: 'transparent',
-      backgroundColor: processTheme.bg,
+      position: 'relative',
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.panel,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.lg,
       overflow: 'hidden',
+      shadowColor: '#000000',
+      shadowOpacity: 0.24,
+      shadowRadius: 28,
+      shadowOffset: { width: 0, height: 16 },
+      elevation: 10,
+    },
+    stageGlowTop: {
+      position: 'absolute',
+      width: 320,
+      height: 320,
+      borderRadius: 160,
+      top: -170,
+      right: -96,
+      backgroundColor: withAlpha(processTheme.accent, '0f'),
+    },
+    stageGlowBottom: {
+      position: 'absolute',
+      width: 260,
+      height: 260,
+      borderRadius: 130,
+      bottom: -160,
+      left: -84,
+      backgroundColor: withAlpha(processTheme.blue, '0b'),
     },
     topBar: {
       flexDirection: 'row',
@@ -2935,9 +3058,13 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       gap: 3,
       borderRadius: 14,
       borderWidth: 1,
-      borderColor: processTheme.border,
-      backgroundColor: processTheme.surface,
+      borderColor: processTheme.borderHi,
+      backgroundColor: withAlpha(processTheme.surfaceHi, 'f4'),
       padding: 4,
+      shadowColor: '#000000',
+      shadowOpacity: 0.12,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 10 },
     },
     darkTabsCompact: {
       borderRadius: 12,
@@ -2992,8 +3119,12 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       borderRadius: 11,
       borderWidth: 1,
       borderColor: processTheme.borderHi,
-      backgroundColor: processTheme.surfaceHi,
+      backgroundColor: processTheme.surface,
       paddingHorizontal: 14,
+      shadowColor: '#000000',
+      shadowOpacity: 0.12,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
     },
     darkSearchInput: {
       flex: 1,
@@ -3071,7 +3202,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       borderRadius: 10,
       borderWidth: 1,
       borderColor: processTheme.borderHi,
-      backgroundColor: 'rgba(255,255,255,0.06)',
+      backgroundColor: processTheme.surfaceHi,
       color: processTheme.text,
       paddingHorizontal: 12,
       paddingVertical: 9,
@@ -3088,11 +3219,15 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       minWidth: 130,
       borderRadius: 14,
       borderWidth: 1,
-      borderColor: processTheme.border,
+      borderColor: processTheme.borderHi,
       backgroundColor: processTheme.surface,
       paddingHorizontal: 16,
       paddingVertical: 14,
       gap: 6,
+      shadowColor: '#000000',
+      shadowOpacity: 0.14,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 10 },
     },
     metricCardPressed: {
       backgroundColor: processTheme.surfacePressed,
@@ -3125,9 +3260,13 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       gap: 10,
       borderRadius: 14,
       borderWidth: 1,
-      borderColor: processTheme.border,
-      backgroundColor: 'rgba(255,255,255,0.03)',
+      borderColor: processTheme.borderHi,
+      backgroundColor: processTheme.surface,
       padding: 14,
+      shadowColor: '#000000',
+      shadowOpacity: 0.12,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 10 },
     },
     filterBlock: {
       flex: 1,
@@ -3144,9 +3283,13 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       minWidth: PROCESS_TABLE_MIN_WIDTH,
       borderRadius: 16,
       borderWidth: 1,
-      borderColor: processTheme.border,
-      backgroundColor: 'rgba(255,255,255,0.03)',
+      borderColor: processTheme.borderHi,
+      backgroundColor: processTheme.panel,
       overflow: 'hidden',
+      shadowColor: '#000000',
+      shadowOpacity: 0.16,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 12 },
     },
     tableViewport: {
       width: '100%',
@@ -3161,8 +3304,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     tableHeader: {
       flexDirection: 'row',
       borderBottomWidth: 1,
-      borderBottomColor: processTheme.border,
-      backgroundColor: processTheme.surface,
+      borderBottomColor: processTheme.borderHi,
+      backgroundColor: processTheme.surfaceHi,
       paddingHorizontal: 16,
       paddingVertical: 10,
     },
@@ -3179,19 +3322,19 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       borderBottomColor: processTheme.border,
       borderLeftWidth: 3,
       borderLeftColor: 'transparent',
-      backgroundColor: 'transparent',
+      backgroundColor: processTheme.surface,
       paddingHorizontal: 16,
       paddingVertical: 14,
     },
     criticalRow: {
       borderLeftColor: processTheme.critical,
-      backgroundColor: 'rgba(255,68,68,0.045)',
+      backgroundColor: withAlpha(processTheme.red, '10'),
     },
     canceledRow: {
-      backgroundColor: 'rgba(150,164,197,0.06)',
+      backgroundColor: withAlpha(processTheme.slate, '10'),
     },
     overdueRow: {
-      backgroundColor: 'rgba(255,95,95,0.035)',
+      backgroundColor: withAlpha(processTheme.red, '0a'),
     },
     tableCellBlock: {
       paddingRight: 12,
@@ -3252,7 +3395,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       borderRadius: 8,
       borderWidth: 1,
       borderColor: processTheme.border,
-      backgroundColor: 'rgba(255,255,255,0.05)',
+      backgroundColor: processTheme.surfaceHi,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -3264,7 +3407,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       borderTopColor: processTheme.border,
       paddingHorizontal: 16,
       paddingVertical: 10,
-      backgroundColor: 'rgba(255,255,255,0.02)',
+      backgroundColor: processTheme.surfaceHi,
     },
     tableFooterText: {
       color: processTheme.dim,
@@ -3285,11 +3428,11 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       marginHorizontal: -8,
     },
     timelineItemDelayed: {
-      borderColor: 'rgba(90,175,255,0.22)',
-      backgroundColor: 'rgba(90,175,255,0.06)',
+      borderColor: withAlpha(processTheme.blue, '3d'),
+      backgroundColor: withAlpha(processTheme.blue, '14'),
     },
     timelineItemNotified: {
-      borderColor: 'rgba(177,151,252,0.22)',
+      borderColor: withAlpha(processTheme.purple, '3d'),
     },
     timelineItemPressed: {
       backgroundColor: processTheme.surfacePressed,
@@ -3344,7 +3487,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(4,6,14,0.78)',
+      backgroundColor: 'rgba(5, 8, 16, 0.74)',
       alignItems: 'center',
       justifyContent: 'center',
       padding: tokens.spacing.lg,
@@ -3362,10 +3505,10 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       backgroundColor: processTheme.panel,
       overflow: 'hidden',
       shadowColor: '#000000',
-      shadowOpacity: 0.48,
-      shadowRadius: 32,
-      shadowOffset: { width: 0, height: 20 },
-      elevation: 12,
+      shadowOpacity: 0.38,
+      shadowRadius: 36,
+      shadowOffset: { width: 0, height: 22 },
+      elevation: 14,
     },
     parcelasModalCard: {
       maxWidth: 760,
@@ -3380,8 +3523,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       paddingHorizontal: 22,
       paddingVertical: 18,
       borderBottomWidth: 1,
-      borderBottomColor: processTheme.border,
-      backgroundColor: 'rgba(90,175,255,0.045)',
+      borderBottomColor: processTheme.borderHi,
+      backgroundColor: processTheme.surfaceHi,
     },
     modalTitle: {
       color: processTheme.text,
@@ -3424,8 +3567,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     lookupBox: {
       borderRadius: 14,
       borderWidth: 1,
-      borderColor: 'rgba(34,211,160,0.35)',
-      backgroundColor: 'rgba(34,211,160,0.08)',
+      borderColor: withAlpha(processTheme.green, '57'),
+      backgroundColor: withAlpha(processTheme.green, '14'),
       padding: 14,
       gap: 5,
     },
@@ -3449,23 +3592,23 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     lockedFieldOverlay: {
       ...StyleSheet.absoluteFillObject,
       borderRadius: 10,
-      backgroundColor: 'rgba(7,10,17,0.06)',
+      backgroundColor: 'rgba(7,10,17,0.12)',
     },
     lockedFieldOverlayPressed: {
-      backgroundColor: 'rgba(90,175,255,0.1)',
+      backgroundColor: withAlpha(processTheme.blue, '22'),
     },
     lockedInputSurface: {
       opacity: 0.52,
     },
     lockedInput: {
       opacity: 0.52,
-      borderColor: 'rgba(255,255,255,0.05)',
-      backgroundColor: 'rgba(255,255,255,0.025)',
+      borderColor: processTheme.border,
+      backgroundColor: withAlpha(processTheme.surfaceHi, 'd8'),
       color: processTheme.dim,
     },
     lockedPrefix: {
-      borderColor: 'rgba(255,255,255,0.05)',
-      backgroundColor: 'rgba(255,255,255,0.025)',
+      borderColor: processTheme.border,
+      backgroundColor: withAlpha(processTheme.surfaceHi, 'd8'),
     },
     lockedPrefixText: {
       color: processTheme.dim,
@@ -3506,8 +3649,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       justifyContent: 'center',
     },
     stepperButtonPrimary: {
-      borderColor: 'rgba(0,212,160,0.36)',
-      backgroundColor: 'rgba(0,212,160,0.13)',
+      borderColor: withAlpha(processTheme.accent, '5c'),
+      backgroundColor: withAlpha(processTheme.accent, '1f'),
     },
     stepperButtonText: {
       color: processTheme.text,
@@ -3572,8 +3715,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       paddingVertical: 10,
     },
     criticalToggleActive: {
-      borderColor: 'rgba(255,68,68,0.35)',
-      backgroundColor: 'rgba(255,68,68,0.08)',
+      borderColor: withAlpha(processTheme.critical, '57'),
+      backgroundColor: withAlpha(processTheme.critical, '16'),
     },
     checkbox: {
       width: 20,
@@ -3623,8 +3766,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       paddingVertical: 9,
     },
     parcelaSelectorButtonActive: {
-      borderColor: 'rgba(90,175,255,0.35)',
-      backgroundColor: 'rgba(90,175,255,0.08)',
+      borderColor: withAlpha(processTheme.blue, '57'),
+      backgroundColor: withAlpha(processTheme.blue, '16'),
     },
     parcelaSelectorIndex: {
       width: 32,
@@ -3660,8 +3803,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     parcelaFocusCard: {
       borderRadius: 16,
       borderWidth: 1,
-      borderColor: processTheme.border,
-      backgroundColor: 'rgba(255,255,255,0.035)',
+      borderColor: processTheme.borderHi,
+      backgroundColor: processTheme.surface,
       padding: 16,
       gap: 14,
     },
@@ -3834,8 +3977,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       justifyContent: 'center',
     },
     delayStepperButtonPrimary: {
-      borderColor: 'rgba(90,175,255,0.36)',
-      backgroundColor: 'rgba(90,175,255,0.13)',
+      borderColor: withAlpha(processTheme.blue, '5c'),
+      backgroundColor: withAlpha(processTheme.blue, '1f'),
     },
     delayStepperButtonText: {
       color: processTheme.text,

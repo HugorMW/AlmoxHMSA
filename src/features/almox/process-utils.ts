@@ -24,9 +24,24 @@ function parseIsoDate(value: string | null | undefined) {
   return new Date(year, month - 1, day);
 }
 
-function addDays(date: Date, days: number) {
+function addCalendarDays(date: Date, days: number) {
   const nextDate = new Date(date);
   nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function addBusinessDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  let added = 0;
+
+  while (added < days) {
+    nextDate.setDate(nextDate.getDate() + 1);
+    const weekday = nextDate.getDay();
+    if (weekday !== 0 && weekday !== 6) {
+      added += 1;
+    }
+  }
+
   return nextDate;
 }
 
@@ -38,6 +53,10 @@ function getTodayAtStartOfDay() {
 
 function countDelivered(item: ProcessoAcompanhamento) {
   return item.parcelas_entregues.filter(Boolean).length;
+}
+
+function addParcelaDays(date: Date, days: number, index: number) {
+  return index === 0 ? addBusinessDays(date, days) : addCalendarDays(date, days);
 }
 
 function getParcelaAdjustedDueDate(
@@ -54,9 +73,10 @@ function getParcelaAdjustedDueDate(
     return null;
   }
 
-  const dueDate = addDays(
+  const dueDate = addParcelaDays(
     baseDate,
-    getProcessoParcelaDiasUteis(config, item.categoria_material, item.tipo_processo, index)
+    getProcessoParcelaDiasUteis(config, item.categoria_material, item.tipo_processo, index),
+    index
   );
   const savedExtraDays = Math.max(
     0,
@@ -65,16 +85,20 @@ function getParcelaAdjustedDueDate(
   const visualExtraDays = Math.max(0, Math.trunc(visualParcelas?.[index]?.adiadaDiasUteis ?? 0));
   const extraDays = visualExtraDays || savedExtraDays;
 
-  return extraDays > 0 ? addDays(dueDate, extraDays) : dueDate;
+  return extraDays > 0 ? addParcelaDays(dueDate, extraDays, index) : dueDate;
 }
 
-function isParcelaNearDue(dueDate: Date | null, today: Date) {
+function isParcelaNearDue(dueDate: Date | null, today: Date, index: number) {
   if (!dueDate) {
     return false;
   }
 
-  const limit = addDays(today, PROCESSO_ALERTA_DIAS);
-  return dueDate <= limit;
+  const daysUntilDue =
+    index === 0
+      ? getBusinessDayDifference(dueDate, today)
+      : getCalendarDayDifference(dueDate, today);
+
+  return daysUntilDue != null && daysUntilDue >= 0 && daysUntilDue <= PROCESSO_ALERTA_DIAS;
 }
 
 function getCalendarDayDifference(targetDate: Date | null, referenceDate: Date) {
@@ -84,6 +108,39 @@ function getCalendarDayDifference(targetDate: Date | null, referenceDate: Date) 
 
   const msPerDay = 24 * 60 * 60 * 1000;
   return Math.round((targetDate.getTime() - referenceDate.getTime()) / msPerDay);
+}
+
+function getBusinessDayDifference(targetDate: Date | null, referenceDate: Date) {
+  if (!targetDate) {
+    return null;
+  }
+
+  const normalizedTarget = new Date(targetDate);
+  normalizedTarget.setHours(0, 0, 0, 0);
+
+  const normalizedReference = new Date(referenceDate);
+  normalizedReference.setHours(0, 0, 0, 0);
+
+  if (normalizedTarget.getTime() === normalizedReference.getTime()) {
+    return 0;
+  }
+
+  const step = normalizedTarget > normalizedReference ? 1 : -1;
+  const cursor = new Date(normalizedReference);
+  let difference = 0;
+
+  while (
+    (step === 1 && cursor.getTime() < normalizedTarget.getTime()) ||
+    (step === -1 && cursor.getTime() > normalizedTarget.getTime())
+  ) {
+    cursor.setDate(cursor.getDate() + step);
+    const weekday = cursor.getDay();
+    if (weekday !== 0 && weekday !== 6) {
+      difference += step;
+    }
+  }
+
+  return difference;
 }
 
 function normalizeProductCode(value: string) {
@@ -115,9 +172,12 @@ function buildParcelasSummary(
       Math.trunc(Number(item.parcelas_detalhes?.[index]?.adiamento_dias_uteis) || 0)
     );
     const dueDate = getParcelaAdjustedDueDate(item, index, config);
-    const dueInDays = getCalendarDayDifference(dueDate, today);
+    const dueInDays =
+      index === 0
+        ? getBusinessDayDifference(dueDate, today)
+        : getCalendarDayDifference(dueDate, today);
     const overdue = dueDate ? dueDate < today : false;
-    const nearDue = !overdue && isParcelaNearDue(dueDate, today);
+    const nearDue = !overdue && isParcelaNearDue(dueDate, today, index);
     const empresaNotificada = item.parcelas_detalhes?.[index]?.empresa_notificada === true;
     const empresaNotificadaEm = item.parcelas_detalhes?.[index]?.empresa_notificada_em ?? null;
 
@@ -160,7 +220,7 @@ export function hasAndamentoComAlerta(
     }
 
     const dueDate = getParcelaAdjustedDueDate(item, index, config, visualParcelas);
-    if (isParcelaNearDue(dueDate, today)) {
+    if (isParcelaNearDue(dueDate, today, index)) {
       return true;
     }
   }
