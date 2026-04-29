@@ -25,6 +25,7 @@ import {
   FiltroCategoriaMaterial,
   Hospital,
   LowConsumptionCandidate,
+  MonthlyConsumptionRow,
   ProcessoAcompanhamento,
   ProcessoParcelaDetalhe,
   ProcessoProdutoLookup,
@@ -34,8 +35,8 @@ import {
 import { buildOpenProcessSummaryByProductCode } from './process-utils';
 
 const PAGE_SIZE = 1000;
-const ALMOX_CACHE_KEY = 'almox:base:v2';
-const ALMOX_SESSION_KEY = 'almox:base:session:v2';
+const ALMOX_CACHE_KEY = 'almox:base:v3';
+const ALMOX_SESSION_KEY = 'almox:base:session:v3';
 const ALMOX_CACHE_TTL_MS = 5 * 60 * 1000;
 const ALMOX_CONFIG_CACHE_KEY = 'almox:config:v1';
 const ALMOX_CONFIG_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -55,6 +56,21 @@ const ESTOQUE_ATUAL_SELECT_COLUMNS = [
   'data_ultima_entrada',
   'consumo_medio',
   'estoque_atual',
+].join(',');
+const MONTHLY_CONSUMPTION_SELECT_COLUMNS = [
+  'categoria_material',
+  'codigo_unidade',
+  'nome_unidade',
+  'codigo_produto',
+  'nome_produto',
+  'unidade_medida_produto',
+  'estoque_atual',
+  'consumo_medio',
+  'suficiencia_em_dias',
+  'data_snapshot_inicio',
+  'estoque_inicio_mes',
+  'consumo_mes_ate_hoje',
+  'percentual_consumido',
 ].join(',');
 const emailConfig = getEmailConfig();
 export const ALMOX_SYNC_COMPLETED_EVENT = 'almox:sync-completed';
@@ -77,14 +93,6 @@ type SyncTrackedJob = {
 type SyncSuccessMetadata = {
   categoria?: string;
   skipped?: boolean;
-};
-
-type MonthlyConsumptionRow = {
-  codigo_unidade: string;
-  codigo_produto: string;
-  data_snapshot_inicio: string | null;
-  consumo_mes_ate_hoje: number | string | null;
-  percentual_consumido: number | string | null;
 };
 
 export type KpiHistoricoPoint = {
@@ -120,6 +128,7 @@ type AlmoxDataContextValue = {
   };
   cmmExceptionItems: CmmExceptionItem[];
   lowConsumptionCandidates: LowConsumptionCandidate[];
+  monthlyConsumptionRows: MonthlyConsumptionRow[];
   cmmExceptionSummary: {
     hospitalar: number;
     farmacologico: number;
@@ -230,14 +239,14 @@ async function loadMonthlyConsumptionRows() {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('almox_consumo_mes_atual')
-    .select('codigo_unidade, codigo_produto, data_snapshot_inicio, consumo_mes_ate_hoje, percentual_consumido')
+    .select(MONTHLY_CONSUMPTION_SELECT_COLUMNS)
     .eq('codigo_unidade', 'HMSASOUL');
 
   if (error) {
     throw createScopedError('almox_consumo_mes_atual', error);
   }
 
-  return (data ?? []) as MonthlyConsumptionRow[];
+  return (data ?? []) as unknown as MonthlyConsumptionRow[];
 }
 
 function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanhamento {
@@ -1807,6 +1816,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         blacklistSummary,
         cmmExceptionItems,
         lowConsumptionCandidates,
+        monthlyConsumptionRows,
         cmmExceptionSummary,
         processItems,
         processItemsLoading,

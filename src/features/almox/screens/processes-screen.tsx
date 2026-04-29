@@ -1003,14 +1003,6 @@ export default function ProcessesScreen() {
           initialSelectedIndex={modal.selectedIndex}
           systemConfig={systemConfig}
           onClose={() => setModal(null)}
-          onApplyVisualState={(nextVisualState) => {
-            applyParcelasVisualState(modal.item, nextVisualState);
-            setFeedback({
-              tone: 'info',
-              message: 'Visual das parcelas aplicado apenas na interface desta sessão.',
-            });
-            setModal(null);
-          }}
           onSave={(parcelasEntregues, nextVisualState) =>
             modal.item.id
               ? handleAction(async () => {
@@ -2086,7 +2078,6 @@ function ParcelasModal({
   initialSelectedIndex,
   systemConfig,
   onClose,
-  onApplyVisualState,
   onSave,
 }: {
   item: ProcessoEnriquecido;
@@ -2094,7 +2085,6 @@ function ParcelasModal({
   initialSelectedIndex: number | null;
   systemConfig: ConfiguracaoSistema;
   onClose: () => void;
-  onApplyVisualState: (visualState: ProcessoParcelasVisualMap) => void;
   onSave: (parcelasEntregues: boolean[], visualState: ProcessoParcelasVisualMap) => Promise<void> | undefined;
 }) {
   const { processTheme, styles } = useProcessScreenSkin();
@@ -2269,13 +2259,27 @@ function ParcelasModal({
 
               <View style={styles.parcelaBadgesRow}>
                 {selectedVisualState.adiadaDiasUteis > 0 ? (
-                  <View style={styles.parcelaBadge}>
+                  <View
+                    style={[
+                      styles.parcelaBadge,
+                      {
+                        borderColor: withAlpha(processTheme.blue, '52'),
+                        backgroundColor: withAlpha(processTheme.blue, '14'),
+                      },
+                    ]}>
                     <AppIcon name="clock" size={12} color={processTheme.blue} />
                     <Text style={styles.parcelaBadgeText}>Adiada em {selectedVisualState.adiadaDiasUteis} dias</Text>
                   </View>
                 ) : null}
                 {selectedVisualState.empresaNotificada ? (
-                  <View style={styles.parcelaBadge}>
+                  <View
+                    style={[
+                      styles.parcelaBadge,
+                      {
+                        borderColor: withAlpha(processTheme.purple, '52'),
+                        backgroundColor: withAlpha(processTheme.purple, '14'),
+                      },
+                    ]}>
                     <AppIcon name="bell" size={12} color={processTheme.purple} />
                     <Text style={styles.parcelaBadgeText}>Empresa notificada</Text>
                   </View>
@@ -2283,30 +2287,62 @@ function ParcelasModal({
               </View>
 
               <View style={[styles.parcelaInfoGrid, compactModal ? styles.parcelaInfoGridCompact : null]}>
-                <View style={[styles.parcelaInfoCard, compactModal ? styles.parcelaInfoCardCompact : null]}>
+                <View
+                  style={[
+                    styles.parcelaInfoCard,
+                    compactModal ? styles.parcelaInfoCardCompact : null,
+                    {
+                      borderColor: withAlpha(processTheme.blue, '45'),
+                      backgroundColor: withAlpha(processTheme.blue, '10'),
+                    },
+                  ]}>
                   <Text style={styles.parcelaInfoLabel}>Prazo padrão</Text>
                   <Text style={styles.parcelaInfoValue}>{formatDate(standardDueDate)}</Text>
                   <Text style={styles.parcelaInfoHelper}>
                     {getParcelaLabel(selectedIndex, systemConfig, item.categoria_material, item.tipo_processo)}
                   </Text>
                 </View>
-                <View style={[styles.parcelaInfoCard, compactModal ? styles.parcelaInfoCardCompact : null]}>
+                <View
+                  style={[
+                    styles.parcelaInfoCard,
+                    compactModal ? styles.parcelaInfoCardCompact : null,
+                    {
+                      borderColor: withAlpha(processTheme.amber, '45'),
+                      backgroundColor: withAlpha(processTheme.amber, '10'),
+                    },
+                  ]}>
                   <Text style={styles.parcelaInfoLabel}>Adiamento aplicado</Text>
                   <Text style={styles.parcelaInfoValue}>
                     {selectedVisualState.adiadaDiasUteis > 0
                       ? `+${selectedVisualState.adiadaDiasUteis} dias`
                       : 'Sem adiamento'}
                   </Text>
-                  <Text style={styles.parcelaInfoHelper}>Ajuste visual desta etapa</Text>
+                  <Text style={styles.parcelaInfoHelper}>Ajuste salvo desta etapa</Text>
                 </View>
-                <View style={[styles.parcelaInfoCard, compactModal ? styles.parcelaInfoCardCompact : null]}>
+                <View
+                  style={[
+                    styles.parcelaInfoCard,
+                    compactModal ? styles.parcelaInfoCardCompact : null,
+                    {
+                      borderColor: withAlpha(selectedStatusColor, '45'),
+                      backgroundColor: withAlpha(selectedStatusColor, '10'),
+                    },
+                  ]}>
                   <Text style={styles.parcelaInfoLabel}>Prazo atual</Text>
                   <Text style={styles.parcelaInfoValue}>{formatDate(adjustedDueDate)}</Text>
                   <Text style={styles.parcelaInfoHelper}>
                     {selectedOverdue ? 'Prazo vencido' : 'Dentro do prazo atual'}
                   </Text>
                 </View>
-                <View style={[styles.parcelaInfoCard, compactModal ? styles.parcelaInfoCardCompact : null]}>
+                <View
+                  style={[
+                    styles.parcelaInfoCard,
+                    compactModal ? styles.parcelaInfoCardCompact : null,
+                    {
+                      borderColor: withAlpha(processTheme.purple, '45'),
+                      backgroundColor: withAlpha(processTheme.purple, '10'),
+                    },
+                  ]}>
                   <Text style={styles.parcelaInfoLabel}>Aviso para a empresa</Text>
                   <Text style={styles.parcelaInfoValue}>
                     {selectedVisualState.empresaNotificada ? 'Empresa avisada' : 'Ainda não marcada'}
@@ -2360,7 +2396,7 @@ function ParcelasModal({
                   <View style={styles.parcelaToggleText}>
                     <Text style={styles.parcelaToggleLabel}>Adiamento da parcela</Text>
                     <Text style={styles.parcelaToggleHelper}>
-                      Ajuste visual em dias para testar o comportamento da interface.
+                      Ajuste em dias desta parcela. A alteração será salva ao confirmar abaixo.
                     </Text>
                   </View>
                   <View style={styles.delayStepper}>
@@ -2431,12 +2467,6 @@ function ParcelasModal({
             ) : null}
 
             <View style={styles.parcelasModalActions}>
-              <DarkButton
-                label="Aplicar visual"
-                icon="edit"
-                tone="infoSoft"
-                onPress={() => onApplyVisualState(visualState)}
-              />
               <DarkButton
                 label="Salvar parcelas"
                 icon="save"
@@ -3524,7 +3554,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       paddingVertical: 18,
       borderBottomWidth: 1,
       borderBottomColor: processTheme.borderHi,
-      backgroundColor: processTheme.surfaceHi,
+      backgroundColor: withAlpha(processTheme.blue, '10'),
     },
     modalTitle: {
       color: processTheme.text,
@@ -3554,6 +3584,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       paddingHorizontal: 22,
       paddingVertical: 20,
       gap: 14,
+      backgroundColor: processTheme.panel,
     },
     modalBodyScroll: {
       flexShrink: 1,
@@ -3767,7 +3798,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     },
     parcelaSelectorButtonActive: {
       borderColor: withAlpha(processTheme.blue, '57'),
-      backgroundColor: withAlpha(processTheme.blue, '16'),
+      backgroundColor: withAlpha(processTheme.blue, '1d'),
     },
     parcelaSelectorIndex: {
       width: 32,
@@ -3803,8 +3834,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     parcelaFocusCard: {
       borderRadius: 16,
       borderWidth: 1,
-      borderColor: processTheme.borderHi,
-      backgroundColor: processTheme.surface,
+      borderColor: withAlpha(processTheme.blue, '32'),
+      backgroundColor: withAlpha(processTheme.blue, '0c'),
       padding: 16,
       gap: 14,
     },
@@ -3852,7 +3883,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       paddingVertical: 6,
     },
     parcelaBadgeText: {
-      color: processTheme.muted,
+      color: processTheme.text,
       fontSize: 11,
       fontWeight: '800',
     },
@@ -3869,8 +3900,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       minWidth: 150,
       borderRadius: 12,
       borderWidth: 1,
-      borderColor: processTheme.border,
-      backgroundColor: processTheme.surface,
+      borderColor: processTheme.borderHi,
+      backgroundColor: processTheme.surfaceHi,
       padding: 12,
       gap: 4,
     },
@@ -3911,7 +3942,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       gap: 10,
       borderRadius: 12,
       borderWidth: 1,
-      borderColor: processTheme.border,
+      borderColor: processTheme.borderHi,
       backgroundColor: processTheme.surface,
       padding: 12,
     },
@@ -4025,6 +4056,7 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       flexWrap: 'wrap',
       justifyContent: 'flex-end',
       gap: 10,
+      paddingTop: 4,
     },
     parcelaOption: {
       flexDirection: 'row',

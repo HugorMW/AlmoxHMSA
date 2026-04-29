@@ -35,7 +35,9 @@ Redistribuicao:
 
 Consumo recente:
 - existe a view `public.almox_consumo_mes_atual`;
-- ela compara o estoque do snapshot mais antigo do mes corrente com o estoque atual;
+- ela usa snapshots diarios do mes corrente;
+- o consumo do mes passa a ser a soma das quedas diarias de estoque;
+- aumentos de estoque por entrada no meio do mes sao ignorados nesse calculo;
 - campos relevantes: `data_snapshot_inicio`, `estoque_inicio_mes`, `consumo_mes_ate_hoje`, `percentual_consumido`.
 
 ## 2. Limitacoes confirmadas

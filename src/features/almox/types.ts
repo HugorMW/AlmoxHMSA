@@ -152,6 +152,22 @@ export interface LowConsumptionCandidate {
   estoque_atual: number;
 }
 
+export interface MonthlyConsumptionRow {
+  categoria_material: CategoriaMaterial | string | null;
+  codigo_unidade: string;
+  nome_unidade: string | null;
+  codigo_produto: string;
+  nome_produto: string | null;
+  unidade_medida_produto: string | null;
+  estoque_atual: number | string | null;
+  consumo_medio: number | string | null;
+  suficiencia_em_dias: number | string | null;
+  data_snapshot_inicio: string | null;
+  estoque_inicio_mes: number | string | null;
+  consumo_mes_ate_hoje: number | string | null;
+  percentual_consumido: number | string | null;
+}
+
 export interface ProcessoParcelaDetalhe {
   numero: number;
   entregue: boolean;
