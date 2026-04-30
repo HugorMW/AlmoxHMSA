@@ -391,8 +391,12 @@ function getProcessReference(entry?: ProductProcessSummaryEntry | null) {
   }
 
   const refs = [
-    entry.numero_processo ? `${entry.tipo_processo} ${entry.numero_processo}` : entry.tipo_processo,
-    entry.edocs ? `E-DOCS ${entry.edocs}` : null,
+    entry.edocs ? `Processo E-DOCS ${entry.edocs}` : entry.tipo_processo,
+    entry.tipo_processo === 'ARP' && entry.edocs_ata_origem
+      ? `ATA (E-DOCS original) ${entry.edocs_ata_origem}`
+      : entry.numero_pedido
+        ? `${entry.tipo_processo === 'ARP' ? 'ATA' : 'Pedido'} ${entry.numero_pedido}`
+        : null,
   ].filter(Boolean);
   const refLabel = refs.join(' / ');
 

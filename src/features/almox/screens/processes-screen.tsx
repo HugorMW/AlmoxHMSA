@@ -42,7 +42,12 @@ import {
 } from '@/features/almox/categorias-processo';
 import { matchesQuery } from '@/features/almox/utils';
 
-const PROCESS_TYPES: ProcessoTipo[] = ['ARP', 'Processo Simplificado', 'Processo Excepcional'];
+const PROCESS_TYPES: ProcessoTipo[] = [
+  'ARP',
+  'Processo Simplificado',
+  'Processo Excepcional',
+  'Processo de Dispensa',
+];
 const PROCESS_TABLE_MIN_WIDTH = 1160;
 
 type ProcessTheme = {
@@ -209,6 +214,29 @@ function normalizeInlineText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function getProcessPrimaryLabel(item: Pick<ProcessoAcompanhamento, 'edocs' | 'numero_pedido'>) {
+  const edocs = item.edocs?.trim();
+  return edocs ? `Processo E-DOCS ${edocs}` : item.numero_pedido;
+}
+
+function getProcessSecondaryLabel(
+  item: Pick<ProcessoAcompanhamento, 'edocs' | 'numero_pedido' | 'tipo_processo' | 'edocs_ata_origem'>,
+) {
+  const edocs = item.edocs?.trim();
+  const ataOrigem = item.edocs_ata_origem?.trim() || item.numero_pedido.trim();
+  const pedido = item.numero_pedido.trim();
+
+  if (item.tipo_processo === 'ARP' && edocs && ataOrigem) {
+    return `ATA (E-DOCS original) ${ataOrigem}`;
+  }
+
+  if (edocs && pedido) {
+    return `Pedido ${pedido}`;
+  }
+
+  return null;
+}
+
 function addCalendarDays(date: Date, days: number) {
   const nextDate = new Date(date);
   nextDate.setDate(nextDate.getDate() + days);
@@ -281,12 +309,12 @@ function convertParcelaDetalheToVisualDraft(detalhe?: ProcessoParcelaDetalhe | n
   };
 }
 
-function getProcessItemKey(item: Pick<ProcessoAcompanhamento, 'id' | 'numero_processo'>) {
-  return item.id ?? item.numero_processo;
+function getProcessItemKey(item: Pick<ProcessoAcompanhamento, 'id' | 'numero_pedido'>) {
+  return item.id ?? item.numero_pedido;
 }
 
 function createVisualParcelasMap(
-  item: Pick<ProcessoAcompanhamento, 'id' | 'numero_processo' | 'total_parcelas' | 'parcelas_detalhes'>,
+  item: Pick<ProcessoAcompanhamento, 'id' | 'numero_pedido' | 'total_parcelas' | 'parcelas_detalhes'>,
   current?: ProcessoParcelasVisualMap
 ) {
   return Object.fromEntries(
@@ -570,6 +598,10 @@ function getProcessTypeColor(processTheme: ProcessTheme, tipo: ProcessoTipo) {
     return processTheme.accent;
   }
 
+  if (tipo === 'Processo de Dispensa') {
+    return processTheme.amber;
+  }
+
   if (tipo === 'Processo Excepcional') {
     return processTheme.purple;
   }
@@ -702,8 +734,9 @@ export default function ProcessesScreen() {
 
         return matchesQuery(
           [
-            item.numero_processo,
+            item.numero_pedido,
             item.edocs,
+            item.edocs_ata_origem,
             ...productHaystack,
             item.fornecedor,
             item.marca,
@@ -724,7 +757,7 @@ export default function ProcessesScreen() {
         return (
           getProcessListRank(left) - getProcessListRank(right) ||
           String(left.data_resgate ?? '9999-12-31').localeCompare(String(right.data_resgate ?? '9999-12-31')) ||
-          left.numero_processo.localeCompare(right.numero_processo, 'pt-BR')
+          left.numero_pedido.localeCompare(right.numero_pedido, 'pt-BR')
         );
       });
   }, [categoryItems, search, sortOption, statusFilter, tipoFilter]);
@@ -831,7 +864,7 @@ export default function ProcessesScreen() {
         {error ? (
           <DarkNotice
             title="Falha ao consultar a base"
-            description={`${error} A busca por Cod. Bionexo depende da última base de estoque carregada.`}
+            description={`${error} A busca por nº do produto ou Cod. Bionexo depende da última base de estoque carregada.`}
             tone="danger"
           />
         ) : null}
@@ -902,7 +935,7 @@ export default function ProcessesScreen() {
             <DarkSearchField
               value={search}
               onChange={setSearch}
-              placeholder="Buscar pedido, E-DOCS, Bionexo, produto, marca ou fornecedor"
+              placeholder="Buscar Processo E-DOCS, ATA/pedido, produto, Bionexo, marca ou fornecedor"
             />
           </View>
           <DarkButton
@@ -969,7 +1002,7 @@ export default function ProcessesScreen() {
         ) : visibleItems.length === 0 ? (
           <DarkEmptyState
             title="Nenhum processo encontrado"
-            description="Ajuste os filtros ou cadastre um novo processo com Cod. Bionexo ou nº do produto."
+            description="Ajuste os filtros ou cadastre um novo processo com nº do produto ou Cod. Bionexo."
           />
         ) : (
           <ProcessTable
@@ -1351,7 +1384,7 @@ function ProcessTable({
         contentContainerStyle={[styles.tableScrollContent, { width: tableWidth }]}>
         <View style={[styles.table, { width: tableWidth }]}>
           <View style={styles.tableHeader}>
-            {['Pedido / Tipo', 'Produto / Fornecedor', 'Data resgate', 'Parcelas e prazos', 'Situação', 'Ações'].map(
+            {['Processo / Tipo', 'Produto / Fornecedor', 'Data resgate', 'Parcelas e prazos', 'Situação', 'Ações'].map(
               (header, index) => (
                 <Text key={header} style={[styles.tableHeadCell, tableColumnStyle(styles, index)]}>
                   {header}
@@ -1362,7 +1395,7 @@ function ProcessTable({
 
           {items.map((item) => (
             <ProcessRow
-              key={item.id ?? `${item.numero_processo}-${item.produtos[0]?.cd_produto ?? ''}`}
+              key={item.id ?? `${item.numero_pedido}-${item.produtos[0]?.cd_produto ?? ''}`}
               item={item}
               systemConfig={systemConfig}
               onEdit={() => onEdit(item)}
@@ -1425,9 +1458,11 @@ function ProcessRow({
         ]}>
         <View style={styles.numberLine}>
           {item.critico ? <AppIcon name="alert" size={14} color={processTheme.critical} /> : null}
-          <Text style={styles.processNumber}>{item.numero_processo}</Text>
+          <Text style={styles.processNumber}>{getProcessPrimaryLabel(item)}</Text>
         </View>
-        {item.edocs ? <Text style={styles.productMeta}>E-DOCS {item.edocs}</Text> : null}
+        {getProcessSecondaryLabel(item) ? (
+          <Text style={styles.productMeta}>{getProcessSecondaryLabel(item)}</Text>
+        ) : null}
         <Pill label={item.tipo_processo} color={typeColor} />
       </Pressable>
 
@@ -1688,7 +1723,9 @@ function ProdutosListModal({
             <View>
               <Text style={styles.modalTitle}>Produtos do processo</Text>
               <Text style={styles.modalSubtitle}>
-                {item.numero_processo} · {produtos.length} {produtos.length === 1 ? 'item' : 'itens'}
+                {getProcessPrimaryLabel(item)}
+                {getProcessSecondaryLabel(item) ? ` · ${getProcessSecondaryLabel(item)}` : ''}
+                {` · ${produtos.length} ${produtos.length === 1 ? 'item' : 'itens'}`}
               </Text>
             </View>
             <Pressable style={styles.modalCloseButton} onPress={onClose}>
@@ -1759,8 +1796,13 @@ function ProcessFormModal({
   const [showAddProduct, setShowAddProduct] = useState<boolean>(
     !initial || (initial.produtos ?? []).length === 0
   );
-  const [numeroPedido, setNumeroPedido] = useState(initial?.numero_processo ?? '');
+  const [numeroPedido, setNumeroPedido] = useState(
+    initial?.tipo_processo === 'ARP' ? '' : (initial?.numero_pedido ?? '')
+  );
   const [edocs, setEdocs] = useState(initial?.edocs ?? '');
+  const [edocsAtaOrigem, setEdocsAtaOrigem] = useState(
+    initial?.edocs_ata_origem ?? (initial?.tipo_processo === 'ARP' ? (initial?.numero_pedido ?? '') : '')
+  );
   const [marca, setMarca] = useState(initial?.marca ?? '');
   const [tipoProcesso, setTipoProcesso] = useState<ProcessoTipo>(initial?.tipo_processo ?? 'ARP');
   const [fornecedor, setFornecedor] = useState(initial?.fornecedor ?? '');
@@ -1783,9 +1825,16 @@ function ProcessFormModal({
 
   const previewCategoria: ProcessoCategoria =
     produtos[0]?.categoria_material ?? initial?.categoria_material ?? initialCategoria;
+  const isAtaExecutionProcess = tipoProcesso === 'ARP';
+  const primaryProcessFieldLabel = 'Processo E-DOCS';
+  const secondaryProcessFieldLabel = isAtaExecutionProcess ? 'ATA (E-DOCS original)' : 'Pedido';
+  const secondaryProcessPlaceholder = isAtaExecutionProcess ? '2024-AB12C' : '4131/2025';
+  const normalizedPrimaryProcess = edocs.trim().toUpperCase();
+  const normalizedSecondaryProcess = numeroPedido.trim();
+  const normalizedAtaOrigem = edocsAtaOrigem.trim().toUpperCase();
 
   const canSave =
-    numeroPedido.trim().length > 0 &&
+    normalizedPrimaryProcess.length > 0 &&
     !saving &&
     dataResgateValida &&
     produtos.length > 0;
@@ -1816,8 +1865,9 @@ function ProcessFormModal({
         id: initial?.id,
         categoria_material: previewCategoria,
         produtos,
-        numero_processo: numeroPedido.trim(),
-        edocs: edocs.trim(),
+        numero_pedido: isAtaExecutionProcess ? '' : normalizedSecondaryProcess,
+        edocs: normalizedPrimaryProcess,
+        edocs_ata_origem: isAtaExecutionProcess ? normalizedAtaOrigem : '',
         marca: marca.trim(),
         tipo_processo: tipoProcesso,
         fornecedor: fornecedor.trim(),
@@ -1849,6 +1899,19 @@ function ProcessFormModal({
           </View>
 
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <DarkField label="Tipo de processo">
+              <DarkTabGroup
+                compact
+                options={PROCESS_TYPES.map((tipo) => ({
+                  label: tipo,
+                  value: tipo,
+                  color: getProcessTypeColor(processTheme, tipo),
+                }))}
+                value={tipoProcesso}
+                onChange={setTipoProcesso}
+              />
+            </DarkField>
+
             <View style={styles.produtosSection}>
               <Text style={styles.darkFieldLabel}>Produtos do processo</Text>
               {produtos.length === 0 ? (
@@ -1916,35 +1979,30 @@ function ProcessFormModal({
             )}
 
             <View style={styles.modalGrid}>
-              <DarkField label="Nº do pedido">
-                <DarkInput value={numeroPedido} onChangeText={setNumeroPedido} placeholder="4131/2025" />
-              </DarkField>
-              <DarkField label="E-DOCS">
+              <DarkField label={primaryProcessFieldLabel}>
                 <DarkInput value={edocs} onChangeText={(value) => setEdocs(value.toUpperCase())} placeholder="2025-BK7DX" />
               </DarkField>
-            </View>
-
-            <View style={styles.modalGrid}>
-              <DarkField label="Marca">
-                <DarkInput value={marca} onChangeText={setMarca} placeholder="Marca do item" />
-              </DarkField>
-              <DarkField label="Tipo">
-                <DarkTabGroup
-                  compact
-                  options={PROCESS_TYPES.map((tipo) => ({
-                    label: tipo,
-                    value: tipo,
-                    color: getProcessTypeColor(processTheme, tipo),
-                  }))}
-                  value={tipoProcesso}
-                  onChange={setTipoProcesso}
+              <DarkField label={secondaryProcessFieldLabel}>
+                <DarkInput
+                  value={isAtaExecutionProcess ? edocsAtaOrigem : numeroPedido}
+                  onChangeText={(value) =>
+                    isAtaExecutionProcess
+                      ? setEdocsAtaOrigem(value.toUpperCase())
+                      : setNumeroPedido(value)
+                  }
+                  placeholder={secondaryProcessPlaceholder}
                 />
               </DarkField>
             </View>
 
-            <DarkField label="Fornecedor">
-              <DarkInput value={fornecedor} onChangeText={setFornecedor} placeholder="Razão social" />
-            </DarkField>
+            <View style={styles.modalGrid}>
+              <DarkField label="Fornecedor">
+                <DarkInput value={fornecedor} onChangeText={setFornecedor} placeholder="Razão social" />
+              </DarkField>
+              <DarkField label="Marca">
+                <DarkInput value={marca} onChangeText={setMarca} placeholder="Marca do item" />
+              </DarkField>
+            </View>
 
             <View style={styles.modalGrid}>
               <DarkField label="Data de resgate">
@@ -2270,6 +2328,38 @@ function ProdutoPickerForm({
       </View>
 
       <View style={styles.modalGrid}>
+        <DarkField label="Nº do produto">
+          <View style={styles.lockableFieldWrap}>
+            <DarkInput
+              value={productInputValue}
+              onChangeText={handleProductCodeChange}
+              placeholder="Digite o código do produto"
+              keyboardType="default"
+              editable={!productLocked}
+              selectTextOnFocus={!productLocked}
+              style={productLocked ? styles.lockedInput : null}
+            />
+            {productLocked ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setLockedFieldHint('produto')}
+                style={({ pressed }) => [
+                  styles.lockedFieldOverlay,
+                  pressed ? styles.lockedFieldOverlayPressed : null,
+                ]}
+              />
+            ) : null}
+          </View>
+          {productLocked ? (
+            <Text
+              style={[
+                styles.fieldHelperText,
+                lockedFieldHint === 'produto' ? styles.fieldHelperTextActive : null,
+              ]}>
+              {productLockMessage}
+            </Text>
+          ) : null}
+        </DarkField>
         <DarkField label="Cod. Bionexo">
           <View style={styles.lockableFieldWrap}>
             <View style={[styles.bionexoInputRow, bionexoLocked ? styles.lockedInputSurface : null]}>
@@ -2304,38 +2394,6 @@ function ProdutoPickerForm({
                 lockedFieldHint === 'bionexo' ? styles.fieldHelperTextActive : null,
               ]}>
               {bionexoLockMessage}
-            </Text>
-          ) : null}
-        </DarkField>
-        <DarkField label="Nº do produto">
-          <View style={styles.lockableFieldWrap}>
-            <DarkInput
-              value={productInputValue}
-              onChangeText={handleProductCodeChange}
-              placeholder="Digite o código do produto"
-              keyboardType="default"
-              editable={!productLocked}
-              selectTextOnFocus={!productLocked}
-              style={productLocked ? styles.lockedInput : null}
-            />
-            {productLocked ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setLockedFieldHint('produto')}
-                style={({ pressed }) => [
-                  styles.lockedFieldOverlay,
-                  pressed ? styles.lockedFieldOverlayPressed : null,
-                ]}
-              />
-            ) : null}
-          </View>
-          {productLocked ? (
-            <Text
-              style={[
-                styles.fieldHelperText,
-                lockedFieldHint === 'produto' ? styles.fieldHelperTextActive : null,
-              ]}>
-              {productLockMessage}
             </Text>
           ) : null}
         </DarkField>
@@ -2478,7 +2536,7 @@ function ProdutoPickerForm({
           description={
             lockedMode === 'manual'
               ? 'Os produtos deste processo são manuais. Continue cadastrando manualmente.'
-              : 'Use o Cod. Bionexo ou o número do produto para preencher automaticamente a descrição.'
+              : 'Use o número do produto ou o Cod. Bionexo para preencher automaticamente a descrição.'
           }
           tone="info"
         />
@@ -2606,7 +2664,8 @@ function ParcelasModal({
             <View>
               <Text style={styles.modalTitle}>{mode === 'single' ? 'Parcela do processo' : 'Parcelas do processo'}</Text>
               <Text style={styles.modalSubtitle}>
-                {item.numero_processo}
+                {getProcessPrimaryLabel(item)}
+                {getProcessSecondaryLabel(item) ? ` · ${getProcessSecondaryLabel(item)}` : ''}
                 {item.produtos[0]?.ds_produto ? ` · ${item.produtos[0].ds_produto}` : ''}
                 {item.produtos.length > 1 ? ` (+${item.produtos.length - 1} ${item.produtos.length - 1 === 1 ? 'item' : 'itens'})` : ''}
               </Text>

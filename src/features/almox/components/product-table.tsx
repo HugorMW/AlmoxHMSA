@@ -25,7 +25,7 @@ const PRODUCT_TABLE_COLUMNS_CACHE_TTL_MS = 365 * DAY_IN_MS;
 const EMPTY_LEGACY_CACHE_KEYS: string[] = [];
 
 const OBSERVATION_EMPHASIS_REGEX =
-  /(Estoque:|Entrada:|VALIDAR USO|Processo:|Parcela:|Cobrança:|Compra:|Remanejamento:|Contingência:|Backup:|Objetivo:|Limite:|Próximo passo:|Status:|Consumo:|sem processo aberto|retirar da lista se obsoleto|E-DOCS\s+[A-Za-z0-9./-]+|(?:ARP|Processo Simplificado|Processo Excepcional)\s+[A-Za-z0-9./-]+|P\d+|\b(?:HMSA|HEC|HDDS|HABF)\b|\d{2}\/\d{2}\/\d{4}|\+\d+d|>\s*\d+\s+anos|\d+\s+un\.|\d+\s+dias|\d+%|(?:há|daqui a)\s+\d+\s+(?:ano\(s\)|mes\(es\)|dia\(s\))|hoje)/g;
+  /(Estoque:|Entrada:|VALIDAR USO|Processo:|Parcela:|Cobrança:|Compra:|Remanejamento:|Contingência:|Backup:|Objetivo:|Limite:|Próximo passo:|Status:|Consumo:|sem processo aberto|retirar da lista se obsoleto|E-DOCS\s+[A-Za-z0-9./-]+|(?:ARP|Processo Simplificado|Processo Excepcional|Processo de Dispensa)\s+[A-Za-z0-9./-]+|P\d+|\b(?:HMSA|HEC|HDDS|HABF)\b|\d{2}\/\d{2}\/\d{4}|\+\d+d|>\s*\d+\s+anos|\d+\s+un\.|\d+\s+dias|\d+%|(?:há|daqui a)\s+\d+\s+(?:ano\(s\)|mes\(es\)|dia\(s\))|hoje)/g;
 
 type ProductColumnId =
   | "product"

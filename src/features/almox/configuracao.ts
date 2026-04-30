@@ -21,7 +21,7 @@ type ConfiguracaoSistemaBase = {
 export const PROCESSO_TOTAL_PARCELAS_MAX = 6;
 
 type ProcessoPrazoCategoriaSlug = 'MaterialHospitalar' | 'MaterialFarmacologico';
-type ProcessoPrazoTipoSlug = 'Arp' | 'Simplificado' | 'Excepcional';
+type ProcessoPrazoTipoSlug = 'Arp' | 'Simplificado' | 'Excepcional' | 'Dispensa';
 type ProcessoPrazoParcelaNumero = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type ProcessoPrazoParcelaKey =
@@ -38,6 +38,7 @@ export const processoPrazoTipos = [
   { tipo: 'ARP', label: 'ARP', slug: 'Arp' },
   { tipo: 'Processo Simplificado', label: 'Processo Simplificado', slug: 'Simplificado' },
   { tipo: 'Processo Excepcional', label: 'Processo Excepcional', slug: 'Excepcional' },
+  { tipo: 'Processo de Dispensa', label: 'Processo de Dispensa', slug: 'Dispensa' },
 ] as const satisfies readonly { tipo: ProcessoTipo; label: string; slug: ProcessoPrazoTipoSlug }[];
 
 export const processoPrazoParcelaNumeros = [1, 2, 3, 4, 5, 6] as const;
@@ -60,6 +61,7 @@ const tipoSlugByValue: Record<ProcessoTipo, ProcessoPrazoTipoSlug> = {
   ARP: 'Arp',
   'Processo Simplificado': 'Simplificado',
   'Processo Excepcional': 'Excepcional',
+  'Processo de Dispensa': 'Dispensa',
 };
 
 function resolveCategoriaSlug(categoria: ProcessoCategoria): ProcessoPrazoCategoriaSlug {

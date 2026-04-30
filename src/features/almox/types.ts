@@ -17,7 +17,11 @@ export type Priority = 'URGENTE' | 'ALTA' | 'NORMAL';
 export type RuptureRisk = 'RISCO ALTO' | 'RISCO MÉDIO' | 'ESTÁVEL';
 export type NotaFiscalStatusSincronizacao = 'ativo' | 'alterado' | 'removido_no_siscore' | 'reativado';
 export type NotaFiscalStatusConferencia = 'ok' | 'nota_com_item_duplicado';
-export type ProcessoTipo = 'ARP' | 'Processo Simplificado' | 'Processo Excepcional';
+export type ProcessoTipo =
+  | 'ARP'
+  | 'Processo Simplificado'
+  | 'Processo Excepcional'
+  | 'Processo de Dispensa';
 export type ProcessoStatus = 'andamento' | 'atrasado' | 'concluido' | 'cancelado';
 
 export interface Product {
@@ -193,8 +197,9 @@ export interface ProcessoAcompanhamento {
   id?: string;
   categoria_material: ProcessoCategoria;
   produtos: ProcessoProduto[];
-  numero_processo: string;
+  numero_pedido: string;
   edocs: string;
+  edocs_ata_origem: string;
   marca: string;
   tipo_processo: ProcessoTipo;
   fornecedor: string;
@@ -231,8 +236,9 @@ export interface ProductProcessSummaryParcel {
 }
 
 export interface ProductProcessSummaryEntry {
-  numero_processo: string;
+  numero_pedido: string;
   edocs: string;
+  edocs_ata_origem: string;
   fornecedor: string;
   marca: string;
   tipo_processo: ProcessoTipo;

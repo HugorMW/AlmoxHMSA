@@ -274,9 +274,15 @@ function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanha
 
   return {
     ...item,
+    numero_pedido: String(
+      (item as { numero_pedido?: string; numero_processo?: string }).numero_pedido ??
+        (item as { numero_processo?: string }).numero_processo ??
+        ''
+    ).trim(),
     total_parcelas: totalParcelas,
     produtos,
     edocs: item.edocs ?? '',
+    edocs_ata_origem: (item as { edocs_ata_origem?: string }).edocs_ata_origem ?? '',
     marca: item.marca ?? '',
     fornecedor: item.fornecedor ?? '',
     data_resgate: item.data_resgate ?? null,
@@ -293,12 +299,12 @@ async function loadProcessItems() {
   const { data, error } = await supabase
     .from('almox_processos_acompanhamento')
     .select(
-      'id, categoria_material, numero_processo, edocs, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
+      'id, categoria_material, numero_pedido, edocs, edocs_ata_origem, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
     )
     .eq('ativo', true)
     .order('critico', { ascending: false })
     .order('data_resgate', { ascending: true, nullsFirst: false })
-    .order('numero_processo', { ascending: true });
+    .order('numero_pedido', { ascending: true });
 
   if (error) {
     throw createScopedError('almox_processos_acompanhamento', error);
@@ -603,7 +609,7 @@ function ordenarProcessos(items: ProcessoAcompanhamento[]) {
     (left, right) =>
       Number(right.critico) - Number(left.critico) ||
       String(left.data_resgate ?? '9999-12-31').localeCompare(String(right.data_resgate ?? '9999-12-31')) ||
-      left.numero_processo.localeCompare(right.numero_processo, 'pt-BR')
+      left.numero_pedido.localeCompare(right.numero_pedido, 'pt-BR')
   );
 }
 
@@ -1449,7 +1455,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
   async function saveProcessItem(input: ProcessoSaveInput) {
     const supabase = getSupabaseClient();
-    const numeroProcesso = String(input.numero_processo ?? '').trim();
+    const numeroPedido = String(input.numero_pedido ?? '').trim();
+    const edocs = String(input.edocs ?? '').trim();
+    const edocsAtaOrigem = String((input as { edocs_ata_origem?: string }).edocs_ata_origem ?? '').trim();
     const totalParcelas = Math.min(Math.max(Number(input.total_parcelas) || 3, 1), PROCESSO_TOTAL_PARCELAS_MAX);
     const parcelasEntregues = normalizarParcelasEntregues(input.parcelas_entregues ?? [], totalParcelas);
     const parcelasDetalhes = normalizarParcelasDetalhes(input.parcelas_detalhes, parcelasEntregues, totalParcelas);
@@ -1457,8 +1465,8 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       .map((produto, index) => normalizarProcessoProduto(produto, index))
       .filter((produto) => produto.cd_produto && produto.ds_produto);
 
-    if (!numeroProcesso) {
-      throw new Error('Informe o número do pedido.');
+    if (!edocs) {
+      throw new Error('Informe o Processo E-DOCS.');
     }
     if (produtosNormalizados.length === 0) {
       throw new Error('Adicione pelo menos um produto ao processo.');
@@ -1484,8 +1492,9 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
     const payload = {
       categoria_material: categoriaProcesso,
-      numero_processo: numeroProcesso,
-      edocs: String(input.edocs ?? '').trim(),
+      numero_pedido: numeroPedido,
+      edocs,
+      edocs_ata_origem: edocsAtaOrigem,
       marca: String(input.marca ?? '').trim(),
       tipo_processo: input.tipo_processo,
       fornecedor: String(input.fornecedor ?? '').trim(),
@@ -1546,7 +1555,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     const { data: processoCompleto, error: fetchError } = await supabase
       .from('almox_processos_acompanhamento')
       .select(
-        'id, categoria_material, numero_processo, edocs, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
+        'id, categoria_material, numero_pedido, edocs, edocs_ata_origem, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
       )
       .eq('id', processoId)
       .single();
