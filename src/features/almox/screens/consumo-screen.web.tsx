@@ -19,7 +19,6 @@ import { CSS } from '@dnd-kit/utilities';
 import { createColumnHelper, getCoreRowModel, getSortedRowModel, type SortingState, useReactTable } from '@tanstack/react-table';
 
 import { useAlmoxData } from '@/features/almox/almox-provider';
-import { readCachedValue, writeCachedValue } from '@/features/almox/cache';
 import {
   ActionButton,
   AppIcon,
@@ -35,12 +34,15 @@ import {
 } from '@/features/almox/components/common';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
 import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
+import { usePersistentUserPreference } from '@/features/almox/use-persistent-user-preference';
 import type { AlmoxTheme } from '@/features/almox/tokens';
 import type { CategoriaMaterial, MonthlyConsumptionRow } from '@/features/almox/types';
 import { formatDecimal, matchesQuery, paginate } from '@/features/almox/utils';
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const CONSUMO_COLUMNS_CACHE_KEY = 'almox:consumo:columns:v2';
+const CONSUMO_COLUMNS_CACHE_KEY_PREFIX = 'almox:consumo:columns:v3';
+const CONSUMO_COLUMNS_PREFERENCE_SCOPE = 'consumo.columns';
+const CONSUMO_COLUMNS_LEGACY_CACHE_KEYS = ['almox:consumo:columns:v2'];
 const CONSUMO_COLUMNS_CACHE_TTL_MS = 365 * DAY_IN_MS;
 const DEFAULT_SORTING: SortingState = [
   { id: 'projectedSufficiency', desc: false },
@@ -785,12 +787,12 @@ export default function ConsumoScreenWeb() {
   const [sorting, setSorting] = useState<SortingState>(DEFAULT_SORTING);
   const [draggingColumnId, setDraggingColumnId] = useState<ConsumoColumnId | null>(null);
   const [dragOffsetX, setDragOffsetX] = useState(0);
-  const [columnLayout, setColumnLayout] = useState<ConsumoColumnLayout>(() => {
-    const cached = readCachedValue<ConsumoColumnLayout | ConsumoColumnId[]>(
-      CONSUMO_COLUMNS_CACHE_KEY,
-      CONSUMO_COLUMNS_CACHE_TTL_MS
-    );
-    return normalizeColumnLayout(cached?.value);
+  const { value: columnLayout, setValue: setColumnLayout } = usePersistentUserPreference<ConsumoColumnLayout>({
+    scope: CONSUMO_COLUMNS_PREFERENCE_SCOPE,
+    cacheKeyPrefix: CONSUMO_COLUMNS_CACHE_KEY_PREFIX,
+    cacheTtlMs: CONSUMO_COLUMNS_CACHE_TTL_MS,
+    legacyCacheKeys: CONSUMO_COLUMNS_LEGACY_CACHE_KEYS,
+    normalize: normalizeColumnLayout,
   });
 
   const deferredSearch = useDeferredValue(search);
@@ -802,10 +804,6 @@ export default function ConsumoScreenWeb() {
   useEffect(() => {
     setPage(1);
   }, [categoryFilter, deferredSearch, sorting]);
-
-  useEffect(() => {
-    writeCachedValue(CONSUMO_COLUMNS_CACHE_KEY, columnLayout);
-  }, [columnLayout]);
 
   const filteredRows = useMemo(() => {
     const hmsaRows = monthlyConsumptionRows.filter((row) => rowIsHmsa(row.codigo_unidade));

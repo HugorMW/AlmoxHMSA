@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import {
   ActionButton,
@@ -12,6 +12,7 @@ import {
   SectionTitle,
 } from '@/features/almox/components/common';
 import { useAlmoxData } from '@/features/almox/almox-provider';
+import { useConfirmAction } from '@/features/almox/confirm-action';
 import {
   ConfiguracaoSistema,
   ConfiguracaoSistemaKey,
@@ -206,23 +207,9 @@ function coverageChanged(current: ConfiguracaoSistema, next: ConfiguracaoSistema
   return coverageFields.some((field) => current[field.key] !== next[field.key]);
 }
 
-function confirmCoverageChange() {
-  const message = 'Alterar faixas de cobertura reclassifica produtos, KPIs, filtros e pedidos sugeridos. Continuar?';
-
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return Promise.resolve(window.confirm(message));
-  }
-
-  return new Promise<boolean>((resolve) => {
-    Alert.alert('Reclassificar produtos', message, [
-      { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
-      { text: 'Salvar', onPress: () => resolve(true) },
-    ]);
-  });
-}
-
 export default function SettingsScreen() {
   const styles = useThemedStyles(createStyles);
+  const confirmAction = useConfirmAction();
   const {
     dataset,
     error,
@@ -289,7 +276,12 @@ export default function SettingsScreen() {
     }
 
     if (coverageChanged(systemConfig, draftConfig)) {
-      const confirmed = await confirmCoverageChange();
+      const confirmed = await confirmAction({
+        title: 'Reclassificar produtos',
+        message:
+          'Alterar faixas de cobertura reclassifica produtos, KPIs, filtros e pedidos sugeridos. Continuar?',
+        confirmLabel: 'Salvar',
+      });
       if (!confirmed) {
         return;
       }

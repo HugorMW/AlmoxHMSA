@@ -229,11 +229,13 @@ export function SectionTitle({
   subtitle,
   icon,
   tooltip,
+  aside,
 }: {
   title: string;
   subtitle?: string;
   icon?: IconName;
   tooltip?: string;
+  aside?: React.ReactNode;
 }) {
   const { tokens } = useAppTheme();
   const styles = useThemedStyles(createStyles);
@@ -251,6 +253,7 @@ export function SectionTitle({
           <Text style={styles.sectionSubtitle}>{subtitle}</Text>
         ) : null}
       </View>
+      {aside ? <View style={styles.sectionTitleAside}>{aside}</View> : null}
     </View>
   );
 }
@@ -757,6 +760,9 @@ const createStyles = (tokens: AlmoxTheme) =>
     sectionTitleText: {
       flex: 1,
       gap: tokens.spacing.xs,
+    },
+    sectionTitleAside: {
+      alignSelf: "flex-start",
     },
     sectionTitleTop: {
       flexDirection: "row",

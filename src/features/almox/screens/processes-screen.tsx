@@ -24,15 +24,22 @@ import { getCategoriaMaterialLabel } from '@/features/almox/data';
 import { useAppTheme } from '@/features/almox/theme-provider';
 import { AlmoxTheme, ThemeMode } from '@/features/almox/tokens';
 import {
-  CategoriaMaterial,
   ProcessoAcompanhamento,
+  ProcessoCategoria,
   ProcessoParcelaDetalhe,
+  ProcessoProduto,
   ProcessoProdutoLookup,
   ProcessoSaveInput,
   ProcessoStatus,
   ProcessoTipo,
 } from '@/features/almox/types';
 import { computeProcessStatus } from '@/features/almox/process-utils';
+import {
+  getProcessoCategoriaCustomColor,
+  getProcessoCategoriaTabLabel,
+  listProcessoCategoriasFromItems,
+  slugifyProcessoCategoria,
+} from '@/features/almox/categorias-processo';
 import { matchesQuery } from '@/features/almox/utils';
 
 const PROCESS_TYPES: ProcessoTipo[] = ['ARP', 'Processo Simplificado', 'Processo Excepcional'];
@@ -159,9 +166,10 @@ type ParcelaVisualDraft = {
 type ProcessoParcelasVisualMap = Record<number, ParcelaVisualDraft>;
 
 type ModalState =
-  | { type: 'new'; categoria: CategoriaMaterial }
+  | { type: 'new'; categoria: ProcessoCategoria }
   | { type: 'edit'; item: ProcessoEnriquecido }
   | { type: 'parcelas'; item: ProcessoEnriquecido; selectedIndex: number | null; mode: 'single' | 'summary' }
+  | { type: 'produtos'; item: ProcessoEnriquecido }
   | null;
 
 type ProcessSortOption = 'prioridade' | 'suficiencia_asc';
@@ -273,12 +281,12 @@ function convertParcelaDetalheToVisualDraft(detalhe?: ProcessoParcelaDetalhe | n
   };
 }
 
-function getProcessItemKey(item: Pick<ProcessoAcompanhamento, 'id' | 'numero_processo' | 'cod_bionexo'>) {
-  return item.id ?? `${item.numero_processo}-${item.cod_bionexo}`;
+function getProcessItemKey(item: Pick<ProcessoAcompanhamento, 'id' | 'numero_processo'>) {
+  return item.id ?? item.numero_processo;
 }
 
 function createVisualParcelasMap(
-  item: Pick<ProcessoAcompanhamento, 'id' | 'numero_processo' | 'cod_bionexo' | 'total_parcelas' | 'parcelas_detalhes'>,
+  item: Pick<ProcessoAcompanhamento, 'id' | 'numero_processo' | 'total_parcelas' | 'parcelas_detalhes'>,
   current?: ProcessoParcelasVisualMap
 ) {
   return Object.fromEntries(
@@ -345,7 +353,7 @@ function getParcelaAdjustedDueDate(
 function getParcelaLabel(
   index: number,
   config: ConfiguracaoSistema,
-  categoria: CategoriaMaterial,
+  categoria: ProcessoCategoria,
   tipo: ProcessoTipo
 ) {
   const days = getProcessoParcelaDiasUteis(config, categoria, tipo, index);
@@ -607,7 +615,7 @@ export default function ProcessesScreen() {
     setProcessCanceled,
     deleteProcessItem,
   } = useAlmoxData();
-  const [categoria, setCategoria] = useState<CategoriaMaterial>('material_hospitalar');
+  const [categoria, setCategoria] = useState<ProcessoCategoria>('material_hospitalar');
   const [search, setSearch] = useState('');
   const [tipoFilter, setTipoFilter] = useState<ProcessoTipo | 'todos'>('todos');
   const [statusFilter, setStatusFilter] = useState<ProcessoStatus | 'todos' | 'critico'>('todos');
@@ -637,16 +645,23 @@ export default function ProcessesScreen() {
   const enrichedItems = useMemo<ProcessoEnriquecido[]>(
     () =>
       processItems.map((item) => {
-        const lookup =
-          (item.cod_bionexo ? findHmsaProductByBionexoCode(item.cod_bionexo) : null) ??
-          (item.cd_produto ? findHmsaProductByProductCode(item.cd_produto) : null);
+        const sufficiencyValues = (item.produtos ?? [])
+          .map((produto) => {
+            const lookup =
+              (produto.cod_bionexo ? findHmsaProductByBionexoCode(produto.cod_bionexo) : null) ??
+              (produto.cd_produto ? findHmsaProductByProductCode(produto.cd_produto) : null);
+            return lookup?.suficiencia_em_dias;
+          })
+          .filter((value): value is number => typeof value === 'number');
+        const minSufficiency =
+          sufficiencyValues.length > 0 ? Math.min(...sufficiencyValues) : undefined;
         const visual = parcelasVisualState[getProcessItemKey(item)];
         return {
           ...item,
           visualParcelas: createVisualParcelasMap(item, visual),
           status: computeProcessStatus(item, systemConfig, visual),
           entregues: countDelivered(item),
-          suficiencia_em_dias: lookup?.suficiencia_em_dias,
+          suficiencia_em_dias: minSufficiency,
           andamentoComAlerta: hasAndamentoComAlerta(item, systemConfig, visual),
         };
       }),
@@ -654,7 +669,12 @@ export default function ProcessesScreen() {
   );
 
   const categoryItems = useMemo(
-    () => enrichedItems.filter((item) => item.categoria_material === categoria),
+    () =>
+      enrichedItems.filter(
+        (item) =>
+          item.categoria_material === categoria ||
+          (item.produtos ?? []).some((produto) => produto.categoria_material === categoria)
+      ),
     [categoria, enrichedItems]
   );
 
@@ -674,13 +694,17 @@ export default function ProcessesScreen() {
           return false;
         }
 
+        const productHaystack = (item.produtos ?? []).flatMap((produto) => [
+          produto.cod_bionexo,
+          produto.cd_produto,
+          produto.ds_produto,
+        ]);
+
         return matchesQuery(
           [
             item.numero_processo,
             item.edocs,
-            item.cod_bionexo,
-            item.cd_produto,
-            item.ds_produto,
+            ...productHaystack,
             item.fornecedor,
             item.marca,
           ],
@@ -704,6 +728,23 @@ export default function ProcessesScreen() {
         );
       });
   }, [categoryItems, search, sortOption, statusFilter, tipoFilter]);
+
+  const allCategorias = useMemo(
+    () =>
+      listProcessoCategoriasFromItems(
+        processItems.flatMap((item) => [
+          item.categoria_material,
+          ...((item.produtos ?? []).map((produto) => produto.categoria_material)),
+        ])
+      ),
+    [processItems]
+  );
+
+  useEffect(() => {
+    if (!allCategorias.includes(categoria)) {
+      setCategoria(allCategorias[0] ?? 'material_hospitalar');
+    }
+  }, [allCategorias, categoria]);
 
   const counts = useMemo(
     () => ({
@@ -730,7 +771,7 @@ export default function ProcessesScreen() {
     }
   }
 
-  function resetFiltersForCategory(nextCategoria: CategoriaMaterial) {
+  function resetFiltersForCategory(nextCategoria: ProcessoCategoria) {
     setCategoria(nextCategoria);
     setSearch('');
     setTipoFilter('todos');
@@ -757,21 +798,23 @@ export default function ProcessesScreen() {
         <View pointerEvents="none" style={styles.stageGlowBottom} />
         <View style={styles.topBar}>
           <DarkTabGroup
-            options={[
-              {
-                label: `Materiais`,
-                count: enrichedItems.filter((item) => item.categoria_material === 'material_hospitalar' && !item.ignorado).length,
-                value: 'material_hospitalar',
-                color: processTheme.blue,
-              },
-              {
-                label: `Medicamentos`,
-                count: enrichedItems.filter((item) => item.categoria_material === 'material_farmacologico' && !item.ignorado).length,
-                value: 'material_farmacologico',
-                color: processTheme.purple,
-              },
-            ]}
-            value={categoria}
+            options={allCategorias.map((value) => {
+              const baseColor =
+                value === 'material_hospitalar'
+                  ? processTheme.blue
+                  : value === 'material_farmacologico'
+                    ? processTheme.purple
+                    : getProcessoCategoriaCustomColor(value);
+              return {
+                label: getProcessoCategoriaTabLabel(value),
+                count: enrichedItems.filter(
+                  (item) => item.categoria_material === value && !item.ignorado
+                ).length,
+                value: String(value),
+                color: baseColor,
+              };
+            })}
+            value={String(categoria)}
             onChange={resetFiltersForCategory}
           />
 
@@ -941,6 +984,7 @@ export default function ProcessesScreen() {
                 mode: selectedIndex == null ? 'summary' : 'single',
               })
             }
+            onOpenProdutos={(item) => setModal({ type: 'produtos', item })}
             onToggleCanceled={(item) =>
               item.id
                 ? void handleAction(
@@ -980,6 +1024,7 @@ export default function ProcessesScreen() {
         <ProcessFormModal
           initial={modal.type === 'edit' ? modal.item : null}
           initialCategoria={modal.type === 'new' ? modal.categoria : modal.item.categoria_material}
+          availableCategorias={allCategorias}
           systemConfig={systemConfig}
           lookupProductByCode={findHmsaProductByProductCode}
           lookupProduct={findHmsaProductByBionexoCode}
@@ -1016,6 +1061,14 @@ export default function ProcessesScreen() {
                 }, 'Parcelas atualizadas com sucesso.')
               : undefined
           }
+        />
+      ) : null}
+
+      {modal?.type === 'produtos' ? (
+        <ProdutosListModal
+          item={modal.item}
+          onClose={() => setModal(null)}
+          onEdit={() => setModal({ type: 'edit', item: modal.item })}
         />
       ) : null}
     </ScrollView>
@@ -1271,6 +1324,7 @@ function ProcessTable({
   systemConfig,
   onEdit,
   onOpenParcelas,
+  onOpenProdutos,
   onToggleCanceled,
   onDelete,
 }: {
@@ -1278,6 +1332,7 @@ function ProcessTable({
   systemConfig: ConfiguracaoSistema;
   onEdit: (item: ProcessoEnriquecido) => void;
   onOpenParcelas: (item: ProcessoEnriquecido, selectedIndex?: number) => void;
+  onOpenProdutos: (item: ProcessoEnriquecido) => void;
   onToggleCanceled: (item: ProcessoEnriquecido) => void;
   onDelete: (item: ProcessoAcompanhamento) => void;
 }) {
@@ -1307,11 +1362,12 @@ function ProcessTable({
 
           {items.map((item) => (
             <ProcessRow
-              key={item.id ?? `${item.numero_processo}-${item.cod_bionexo}`}
+              key={item.id ?? `${item.numero_processo}-${item.produtos[0]?.cd_produto ?? ''}`}
               item={item}
               systemConfig={systemConfig}
               onEdit={() => onEdit(item)}
               onOpenParcelas={(selectedIndex) => onOpenParcelas(item, selectedIndex)}
+              onOpenProdutos={() => onOpenProdutos(item)}
               onToggleCanceled={() => onToggleCanceled(item)}
               onDelete={() => onDelete(item)}
             />
@@ -1331,6 +1387,7 @@ function ProcessRow({
   systemConfig,
   onEdit,
   onOpenParcelas,
+  onOpenProdutos,
   onToggleCanceled,
   onDelete,
 }: {
@@ -1338,12 +1395,17 @@ function ProcessRow({
   systemConfig: ConfiguracaoSistema;
   onEdit: () => void;
   onOpenParcelas: (selectedIndex?: number) => void;
+  onOpenProdutos: () => void;
   onToggleCanceled: () => void;
   onDelete: () => void;
 }) {
   const { processTheme, statusMeta, styles } = useProcessScreenSkin();
   const status = statusMeta[item.status];
   const typeColor = getProcessTypeColor(processTheme, item.tipo_processo);
+  const produtos = item.produtos ?? [];
+  const primeiroProduto = produtos[0];
+  const extraProdutosCount = Math.max(0, produtos.length - 1);
+  const isManual = primeiroProduto?.produto_manual === true;
 
   return (
     <View
@@ -1371,15 +1433,34 @@ function ProcessRow({
 
       <View style={[styles.tableCellBlock, styles.productColumn]}>
         <Text style={styles.productName} numberOfLines={2}>
-          {normalizeInlineText(item.ds_produto)}
+          {primeiroProduto ? normalizeInlineText(primeiroProduto.ds_produto) : 'Sem produto cadastrado'}
         </Text>
-        <Text style={styles.productMeta} numberOfLines={1}>
-          Produto {item.cd_produto}
-          {item.cod_bionexo ? ` · Bionexo ${item.cod_bionexo}` : ' · Sem Cod. Bionexo'}
-          {item.suficiencia_em_dias != null
-            ? ` · Suficiência ${formatLookupNumber(item.suficiencia_em_dias)} dias`
-            : ''}
-        </Text>
+        <View style={styles.productBadgeRow}>
+          {isManual ? (
+            <View style={styles.manualBadge}>
+              <Text style={styles.manualBadgeText}>Manual</Text>
+            </View>
+          ) : null}
+          {extraProdutosCount > 0 ? (
+            <Pressable
+              onPress={onOpenProdutos}
+              style={({ pressed }) => [
+                styles.extraProdutosChip,
+                pressed ? styles.extraProdutosChipPressed : null,
+              ]}>
+              <Text style={styles.extraProdutosChipText}>+{extraProdutosCount} {extraProdutosCount === 1 ? 'item' : 'itens'}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {primeiroProduto ? (
+          <Text style={styles.productMeta} numberOfLines={1}>
+            Produto {primeiroProduto.cd_produto}
+            {primeiroProduto.cod_bionexo ? ` · Bionexo ${primeiroProduto.cod_bionexo}` : ' · Sem Cod. Bionexo'}
+            {item.suficiencia_em_dias != null
+              ? ` · Suficiência ${formatLookupNumber(item.suficiencia_em_dias)} dias`
+              : ''}
+          </Text>
+        ) : null}
         <Text style={styles.productMeta} numberOfLines={1}>
           {item.fornecedor || 'Fornecedor não informado'}
         </Text>
@@ -1587,9 +1668,73 @@ function LegendIcon({
   );
 }
 
+function ProdutosListModal({
+  item,
+  onClose,
+  onEdit,
+}: {
+  item: ProcessoEnriquecido;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const { processTheme, styles } = useProcessScreenSkin();
+  const produtos = item.produtos ?? [];
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Produtos do processo</Text>
+              <Text style={styles.modalSubtitle}>
+                {item.numero_processo} · {produtos.length} {produtos.length === 1 ? 'item' : 'itens'}
+              </Text>
+            </View>
+            <Pressable style={styles.modalCloseButton} onPress={onClose}>
+              <AppIcon name="chevronDown" size={18} color={processTheme.muted} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+            {produtos.length === 0 ? (
+              <Text style={styles.produtosListEmpty}>Nenhum produto cadastrado.</Text>
+            ) : (
+              produtos.map((produto, index) => (
+                <View key={produto.id ?? `${produto.cd_produto}-${index}`} style={styles.produtoCard}>
+                  <View style={styles.produtoCardHeader}>
+                    <Text style={styles.produtoCardName} numberOfLines={2}>
+                      {normalizeInlineText(produto.ds_produto)}
+                    </Text>
+                    {produto.produto_manual ? (
+                      <View style={styles.manualBadge}>
+                        <Text style={styles.manualBadgeText}>Manual</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.produtoCardMeta}>
+                    Produto {produto.cd_produto}
+                    {produto.cod_bionexo ? ` · Bionexo ${produto.cod_bionexo}` : ' · Sem Cod. Bionexo'}
+                  </Text>
+                  <Text style={styles.produtoCardMeta}>
+                    Classificação: {getProcessoCategoriaTabLabel(produto.categoria_material)}
+                  </Text>
+                </View>
+              ))
+            )}
+
+            <DarkButton label="Editar processo" icon="settings" tone="neutral" onPress={onEdit} />
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function ProcessFormModal({
   initial,
   initialCategoria,
+  availableCategorias,
   systemConfig,
   lookupProductByCode,
   lookupProduct,
@@ -1599,7 +1744,8 @@ function ProcessFormModal({
   onSave,
 }: {
   initial: ProcessoAcompanhamento | null;
-  initialCategoria: CategoriaMaterial;
+  initialCategoria: ProcessoCategoria;
+  availableCategorias: ProcessoCategoria[];
   systemConfig: ConfiguracaoSistema;
   lookupProductByCode: (cdProduto: string) => ProcessoProdutoLookup | null;
   lookupProduct: (codBionexo: string) => ProcessoProdutoLookup | null;
@@ -1609,8 +1755,10 @@ function ProcessFormModal({
   onSave: (input: ProcessoSaveInput) => Promise<void>;
 }) {
   const { processTheme, styles } = useProcessScreenSkin();
-  const [codBionexoText, setCodBionexoText] = useState(stripBionexoPrefix(initial?.cod_bionexo ?? ''));
-  const [cdProdutoText, setCdProdutoText] = useState(initial?.cd_produto ?? '');
+  const [produtos, setProdutos] = useState<ProcessoProduto[]>(initial?.produtos ?? []);
+  const [showAddProduct, setShowAddProduct] = useState<boolean>(
+    !initial || (initial.produtos ?? []).length === 0
+  );
   const [numeroPedido, setNumeroPedido] = useState(initial?.numero_processo ?? '');
   const [edocs, setEdocs] = useState(initial?.edocs ?? '');
   const [marca, setMarca] = useState(initial?.marca ?? '');
@@ -1623,180 +1771,51 @@ function ProcessFormModal({
     Math.min(initial?.total_parcelas ?? 3, PROCESSO_TOTAL_PARCELAS_MAX)
   );
   const [critico, setCritico] = useState(initial?.critico ?? false);
-  const [lookupSource, setLookupSource] = useState<'bionexo' | 'produto' | null>(null);
-  const [lockedFieldHint, setLockedFieldHint] = useState<'bionexo' | 'produto' | null>(null);
   const [saving, setSaving] = useState(false);
-  const [remoteLookup, setRemoteLookup] = useState<{
-    mode: 'bionexo' | 'produto' | '';
-    code: string;
-    loading: boolean;
-    product: ProcessoProdutoLookup | null;
-    error: string | null;
-  }>({ mode: '', code: '', loading: false, product: null, error: null });
 
-  const normalizedCodBionexo = normalizeBionexoCode(codBionexoText);
-  const normalizedCdProduto = normalizeProductCode(cdProdutoText);
-  const searchMode: 'bionexo' | 'produto' | null =
-    lookupSource === 'produto'
-      ? normalizedCdProduto
-        ? 'produto'
-        : normalizedCodBionexo
-          ? 'bionexo'
-          : null
-      : lookupSource === 'bionexo'
-        ? normalizedCodBionexo
-          ? 'bionexo'
-          : normalizedCdProduto
-            ? 'produto'
-            : null
-        : normalizedCodBionexo
-          ? 'bionexo'
-          : normalizedCdProduto
-            ? 'produto'
-            : null;
-  const localProductByCode = normalizedCdProduto ? lookupProductByCode(normalizedCdProduto) : null;
-  const localProductByBionexo = normalizedCodBionexo ? lookupProduct(normalizedCodBionexo) : null;
-  const lookup = searchMode === 'produto' ? localProductByCode : localProductByBionexo;
-  const initialAsLookup: ProcessoProdutoLookup | null =
-    initial &&
-    ((normalizedCdProduto && normalizedCdProduto === normalizeProductCode(initial.cd_produto)) ||
-      (normalizedCodBionexo && normalizedCodBionexo === normalizeBionexoCode(initial.cod_bionexo)))
-      ? {
-          cod_bionexo: initial.cod_bionexo ?? '',
-          cd_produto: initial.cd_produto,
-          ds_produto: initial.ds_produto,
-          categoria_material: initial.categoria_material,
-        }
-      : null;
-  const remoteProduct =
-    remoteLookup.mode === searchMode &&
-    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo) &&
-    !remoteLookup.loading
-      ? remoteLookup.product
-      : null;
-  const remoteLookupLoading =
-    remoteLookup.mode === searchMode &&
-    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo) &&
-    remoteLookup.loading;
-  const remoteLookupError =
-    remoteLookup.mode === searchMode &&
-    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo)
-      ? remoteLookup.error
-      : null;
-  const resolvedProduct = lookup ?? remoteProduct ?? initialAsLookup;
-  const bionexoLocked = lookupSource === 'produto' && resolvedProduct != null;
-  const productLocked = lookupSource === 'bionexo' && resolvedProduct != null;
-  const bionexoInputValue = bionexoLocked ? stripBionexoPrefix(resolvedProduct?.cod_bionexo ?? '') : codBionexoText;
-  const productInputValue = productLocked ? resolvedProduct?.cd_produto ?? '' : cdProdutoText;
-  const bionexoLockMessage =
-    lockedFieldHint === 'bionexo'
-      ? 'Campo bloqueado. Apague o nº do produto para liberar a edição do Cod. Bionexo.'
-      : 'Apague o nº do produto para editar o Cod. Bionexo.';
-  const productLockMessage =
-    lockedFieldHint === 'produto'
-      ? 'Campo bloqueado. Apague o Cod. Bionexo para liberar a edição do nº do produto.'
-      : 'Apague o Cod. Bionexo para editar o nº do produto.';
-  const hasLocalLookup = lookup != null;
-  const previewCategoria = resolvedProduct?.categoria_material ?? initialCategoria;
   const dataResgateIso = convertPtBrDateToIso(dataResgate);
   const baseDate = parsePtBrDate(dataResgate);
   const dataResgateValida = dataResgate.trim().length === 0 || dataResgateIso != null;
+
+  const allManual = produtos.length > 0 && produtos.every((produto) => produto.produto_manual);
+  const allFromBase = produtos.length > 0 && produtos.every((produto) => !produto.produto_manual);
+  const lockedPickerMode: 'manual' | 'base' | null = allManual ? 'manual' : allFromBase ? 'base' : null;
+
+  const previewCategoria: ProcessoCategoria =
+    produtos[0]?.categoria_material ?? initial?.categoria_material ?? initialCategoria;
+
   const canSave =
-    !!resolvedProduct &&
     numeroPedido.trim().length > 0 &&
     !saving &&
-    !remoteLookupLoading &&
-    dataResgateValida;
+    dataResgateValida &&
+    produtos.length > 0;
 
-  useEffect(() => {
-    const queryCode = searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo;
-
-    if (!searchMode || !queryCode) {
-      setRemoteLookup({ mode: '', code: '', loading: false, product: null, error: null });
-      return;
-    }
-
-    if (hasLocalLookup) {
-      setRemoteLookup({ mode: searchMode, code: queryCode, loading: false, product: null, error: null });
-      return;
-    }
-
-    let cancelled = false;
-    setRemoteLookup({ mode: searchMode, code: queryCode, loading: true, product: null, error: null });
-
-    const timer = setTimeout(() => {
-      const lookupPromise =
-        searchMode === 'produto'
-          ? lookupProductByCodeRemote(queryCode)
-          : lookupProductRemote(queryCode);
-
-      lookupPromise
-        .then((product) => {
-          if (!cancelled) {
-            setRemoteLookup({ mode: searchMode, code: queryCode, loading: false, product, error: null });
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setRemoteLookup({
-              mode: searchMode,
-              code: queryCode,
-              loading: false,
-              product: null,
-              error:
-                searchMode === 'produto'
-                  ? 'Não foi possível consultar o número do produto agora. Tente novamente em instantes.'
-                  : 'Não foi possível consultar a base agora. Tente novamente em instantes.',
-            });
-          }
-        });
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [hasLocalLookup, lookupProductByCodeRemote, lookupProductRemote, normalizedCdProduto, normalizedCodBionexo, searchMode]);
-
-  function handleCodChange(value: string) {
-    const nextValue = stripBionexoPrefix(value).toUpperCase();
-    setLockedFieldHint(null);
-    setCodBionexoText(nextValue);
-    if (!nextValue.trim() && lookupSource === 'bionexo') {
-      setCdProdutoText('');
-      setLookupSource(null);
-      return;
-    }
-
-    setLookupSource(nextValue.trim() ? 'bionexo' : normalizedCdProduto ? 'produto' : null);
+  function handleAddProduto(produto: ProcessoProduto) {
+    setProdutos((current) => {
+      if (current.some((existing) => existing.cd_produto === produto.cd_produto)) {
+        return current;
+      }
+      return [...current, { ...produto, ordem: current.length }];
+    });
+    setShowAddProduct(false);
   }
 
-  function handleProductCodeChange(value: string) {
-    const nextValue = normalizeProductCode(value);
-    setLockedFieldHint(null);
-    setCdProdutoText(nextValue);
-    if (!nextValue && lookupSource === 'produto') {
-      setCodBionexoText('');
-      setLookupSource(null);
-      return;
-    }
-
-    setLookupSource(nextValue ? 'produto' : normalizedCodBionexo ? 'bionexo' : null);
+  function handleRemoveProduto(index: number) {
+    setProdutos((current) =>
+      current.filter((_, i) => i !== index).map((produto, i) => ({ ...produto, ordem: i }))
+    );
   }
 
   async function handleSave() {
-    if (!resolvedProduct || !canSave) {
+    if (!canSave) {
       return;
     }
-
     setSaving(true);
     try {
       await onSave({
         id: initial?.id,
-        categoria_material: resolvedProduct.categoria_material,
-        cod_bionexo: resolvedProduct.cod_bionexo ?? '',
-        cd_produto: resolvedProduct.cd_produto,
-        ds_produto: resolvedProduct.ds_produto,
+        categoria_material: previewCategoria,
+        produtos,
         numero_processo: numeroPedido.trim(),
         edocs: edocs.trim(),
         marca: marca.trim(),
@@ -1830,126 +1849,70 @@ function ProcessFormModal({
           </View>
 
           <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-            <View style={styles.modalGrid}>
-              <DarkField label="Cod. Bionexo">
-                <View style={styles.lockableFieldWrap}>
-                  <View style={[styles.bionexoInputRow, bionexoLocked ? styles.lockedInputSurface : null]}>
-                    <View style={[styles.bionexoPrefix, bionexoLocked ? styles.lockedPrefix : null]}>
-                      <Text style={[styles.bionexoPrefixText, bionexoLocked ? styles.lockedPrefixText : null]}>I-</Text>
+            <View style={styles.produtosSection}>
+              <Text style={styles.darkFieldLabel}>Produtos do processo</Text>
+              {produtos.length === 0 ? (
+                <Text style={styles.produtosListEmpty}>
+                  Nenhum produto adicionado. Use o formulário abaixo para incluir o primeiro produto.
+                </Text>
+              ) : (
+                <View style={styles.produtosListWrap}>
+                  {produtos.map((produto, index) => (
+                    <View key={produto.id ?? `${produto.cd_produto}-${index}`} style={styles.produtoCard}>
+                      <View style={styles.produtoCardHeader}>
+                        <Text style={styles.produtoCardName} numberOfLines={2}>
+                          {normalizeInlineText(produto.ds_produto)}
+                        </Text>
+                        <View style={styles.produtoCardActions}>
+                          {produto.produto_manual ? (
+                            <View style={styles.manualBadge}>
+                              <Text style={styles.manualBadgeText}>Manual</Text>
+                            </View>
+                          ) : null}
+                          <Pressable
+                            onPress={() => handleRemoveProduto(index)}
+                            style={({ pressed }) => [
+                              styles.produtoRemoveButton,
+                              pressed ? styles.produtoRemoveButtonPressed : null,
+                            ]}>
+                            <Text style={styles.produtoRemoveButtonText}>Remover</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                      <Text style={styles.produtoCardMeta}>
+                        Produto {produto.cd_produto}
+                        {produto.cod_bionexo ? ` · Bionexo ${produto.cod_bionexo}` : ''}
+                        {' · '}
+                        {getProcessoCategoriaTabLabel(produto.categoria_material)}
+                      </Text>
                     </View>
-                    <DarkInput
-                      value={bionexoInputValue}
-                      onChangeText={handleCodChange}
-                      placeholder="Opcional"
-                      autoCapitalize="characters"
-                      editable={!bionexoLocked}
-                      selectTextOnFocus={!bionexoLocked}
-                      style={[styles.bionexoInput, bionexoLocked ? styles.lockedInput : null]}
-                    />
-                  </View>
-                  {bionexoLocked ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setLockedFieldHint('bionexo')}
-                      style={({ pressed }) => [
-                        styles.lockedFieldOverlay,
-                        pressed ? styles.lockedFieldOverlayPressed : null,
-                      ]}
-                    />
-                  ) : null}
+                  ))}
                 </View>
-                {bionexoLocked ? (
-                  <Text
-                    style={[
-                      styles.fieldHelperText,
-                      lockedFieldHint === 'bionexo' ? styles.fieldHelperTextActive : null,
-                    ]}>
-                    {bionexoLockMessage}
-                  </Text>
-                ) : null}
-              </DarkField>
-              <DarkField label="Nº do produto">
-                <View style={styles.lockableFieldWrap}>
-                  <DarkInput
-                    value={productInputValue}
-                    onChangeText={handleProductCodeChange}
-                    placeholder="Digite o código do produto"
-                    keyboardType="default"
-                    editable={!productLocked}
-                    selectTextOnFocus={!productLocked}
-                    style={productLocked ? styles.lockedInput : null}
-                  />
-                  {productLocked ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setLockedFieldHint('produto')}
-                      style={({ pressed }) => [
-                        styles.lockedFieldOverlay,
-                        pressed ? styles.lockedFieldOverlayPressed : null,
-                      ]}
-                    />
-                  ) : null}
-                </View>
-                {productLocked ? (
-                  <Text
-                    style={[
-                      styles.fieldHelperText,
-                      lockedFieldHint === 'produto' ? styles.fieldHelperTextActive : null,
-                    ]}>
-                    {productLockMessage}
-                  </Text>
-                ) : null}
-              </DarkField>
+              )}
             </View>
 
-            {resolvedProduct ? (
-              <View style={styles.lookupBox}>
-                <View style={styles.lookupHeader}>
-                  <AppIcon name="check" size={16} color={processTheme.green} />
-                  <Text style={styles.lookupTitle}>Produto localizado na base HMSA</Text>
-                </View>
-                <Text style={styles.lookupName}>{resolvedProduct.ds_produto}</Text>
-                <Text style={styles.lookupMeta}>
-                  Produto {resolvedProduct.cd_produto}
-                  {resolvedProduct.cod_bionexo ? ` · Bionexo ${resolvedProduct.cod_bionexo}` : ''}
-                  {' · '}
-                  {getCategoriaMaterialLabel(resolvedProduct.categoria_material)} · Estoque atual{' '}
-                  {formatLookupNumber(resolvedProduct.estoque_atual)} · Suficiência{' '}
-                  {formatLookupNumber(resolvedProduct.suficiencia_em_dias)} dias
-                </Text>
-              </View>
-            ) : remoteLookupLoading ? (
-              <DarkNotice
-                title="Buscando produto"
-                description={
-                  searchMode === 'produto'
-                    ? 'Consultando o número do produto na base do HMSA.'
-                    : 'Consultando o Cod. Bionexo na base do HMSA.'
-                }
-                tone="info"
-              />
-            ) : remoteLookupError ? (
-              <DarkNotice
-                title="Não foi possível consultar o produto"
-                description={remoteLookupError}
-                tone="warning"
-              />
-            ) : searchMode ? (
-              <DarkNotice
-                title={searchMode === 'produto' ? 'Produto não localizado' : 'Cod. Bionexo não localizado'}
-                description={
-                  searchMode === 'produto'
-                    ? 'Confira se o número do produto existe no HMSA na base importada do SISCORE. O cadastro fica bloqueado até localizar o item.'
-                    : 'Confira se o código existe para o HMSA na base importada do SISCORE. O cadastro fica bloqueado até localizar o produto.'
-                }
-                tone="warning"
+            {showAddProduct ? (
+              <ProdutoPickerForm
+                availableCategorias={availableCategorias}
+                lookupProductByCode={lookupProductByCode}
+                lookupProduct={lookupProduct}
+                lookupProductByCodeRemote={lookupProductByCodeRemote}
+                lookupProductRemote={lookupProductRemote}
+                lockedMode={lockedPickerMode}
+                hideCancel={produtos.length === 0}
+                onCancel={() => setShowAddProduct(false)}
+                onAdd={handleAddProduto}
               />
             ) : (
-              <DarkNotice
-                title="Informe o produto"
-                description="Use o Cod. Bionexo ou o número do produto para preencher automaticamente a descrição."
-                tone="info"
-              />
+              <Pressable
+                onPress={() => setShowAddProduct(true)}
+                style={({ pressed }) => [
+                  styles.manualPrimaryButton,
+                  pressed ? styles.manualPrimaryButtonPressed : null,
+                ]}>
+                <AppIcon name="plus" size={14} color={processTheme.accent} />
+                <Text style={styles.manualPrimaryButtonText}>+ Adicionar produto</Text>
+              </Pressable>
             )}
 
             <View style={styles.modalGrid}>
@@ -2072,6 +2035,466 @@ function ProcessFormModal({
   );
 }
 
+function ProdutoPickerForm({
+  availableCategorias,
+  lookupProductByCode,
+  lookupProduct,
+  lookupProductByCodeRemote,
+  lookupProductRemote,
+  lockedMode,
+  hideCancel,
+  onCancel,
+  onAdd,
+}: {
+  availableCategorias: ProcessoCategoria[];
+  lookupProductByCode: (cdProduto: string) => ProcessoProdutoLookup | null;
+  lookupProduct: (codBionexo: string) => ProcessoProdutoLookup | null;
+  lookupProductByCodeRemote: (cdProduto: string) => Promise<ProcessoProdutoLookup | null>;
+  lookupProductRemote: (codBionexo: string) => Promise<ProcessoProdutoLookup | null>;
+  lockedMode: 'manual' | 'base' | null;
+  hideCancel: boolean;
+  onCancel: () => void;
+  onAdd: (produto: ProcessoProduto) => void;
+}) {
+  const { processTheme, styles } = useProcessScreenSkin();
+  const NEW_CATEGORIA_SENTINEL = '__nova__';
+  const [codBionexoText, setCodBionexoText] = useState('');
+  const [cdProdutoText, setCdProdutoText] = useState('');
+  const [manualMode, setManualMode] = useState<boolean>(lockedMode === 'manual');
+  const [manualDescricao, setManualDescricao] = useState<string>('');
+  const [manualCategoriaSelecionada, setManualCategoriaSelecionada] = useState<string>(
+    availableCategorias[0] ?? NEW_CATEGORIA_SENTINEL
+  );
+  const [manualNovaCategoriaLabel, setManualNovaCategoriaLabel] = useState<string>('');
+  const [lookupSource, setLookupSource] = useState<'bionexo' | 'produto' | null>(null);
+  const [lockedFieldHint, setLockedFieldHint] = useState<'bionexo' | 'produto' | null>(null);
+  const [remoteLookup, setRemoteLookup] = useState<{
+    mode: 'bionexo' | 'produto' | '';
+    code: string;
+    loading: boolean;
+    product: ProcessoProdutoLookup | null;
+    error: string | null;
+  }>({ mode: '', code: '', loading: false, product: null, error: null });
+
+  const normalizedCodBionexo = normalizeBionexoCode(codBionexoText);
+  const normalizedCdProduto = normalizeProductCode(cdProdutoText);
+  const searchMode: 'bionexo' | 'produto' | null = manualMode
+    ? null
+    : lookupSource === 'produto'
+      ? normalizedCdProduto
+        ? 'produto'
+        : normalizedCodBionexo
+          ? 'bionexo'
+          : null
+      : lookupSource === 'bionexo'
+        ? normalizedCodBionexo
+          ? 'bionexo'
+          : normalizedCdProduto
+            ? 'produto'
+            : null
+        : normalizedCodBionexo
+          ? 'bionexo'
+          : normalizedCdProduto
+            ? 'produto'
+            : null;
+  const localProductByCode = normalizedCdProduto ? lookupProductByCode(normalizedCdProduto) : null;
+  const localProductByBionexo = normalizedCodBionexo ? lookupProduct(normalizedCodBionexo) : null;
+  const lookup = manualMode
+    ? null
+    : searchMode === 'produto'
+      ? localProductByCode
+      : localProductByBionexo;
+  const remoteProduct =
+    !manualMode &&
+    remoteLookup.mode === searchMode &&
+    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo) &&
+    !remoteLookup.loading
+      ? remoteLookup.product
+      : null;
+  const remoteLookupLoading =
+    !manualMode &&
+    remoteLookup.mode === searchMode &&
+    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo) &&
+    remoteLookup.loading;
+  const remoteLookupError =
+    !manualMode &&
+    remoteLookup.mode === searchMode &&
+    remoteLookup.code === (searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo)
+      ? remoteLookup.error
+      : null;
+  const resolvedProduct = lookup ?? remoteProduct;
+  const bionexoLocked = !manualMode && lookupSource === 'produto' && resolvedProduct != null;
+  const productLocked = !manualMode && lookupSource === 'bionexo' && resolvedProduct != null;
+  const bionexoInputValue = bionexoLocked ? stripBionexoPrefix(resolvedProduct?.cod_bionexo ?? '') : codBionexoText;
+  const productInputValue = productLocked ? resolvedProduct?.cd_produto ?? '' : cdProdutoText;
+  const bionexoLockMessage =
+    lockedFieldHint === 'bionexo'
+      ? 'Campo bloqueado. Apague o nº do produto para liberar a edição do Cod. Bionexo.'
+      : 'Apague o nº do produto para editar o Cod. Bionexo.';
+  const productLockMessage =
+    lockedFieldHint === 'produto'
+      ? 'Campo bloqueado. Apague o Cod. Bionexo para liberar a edição do nº do produto.'
+      : 'Apague o Cod. Bionexo para editar o nº do produto.';
+  const hasLocalLookup = lookup != null;
+
+  const manualNovaCategoriaSlug = slugifyProcessoCategoria(manualNovaCategoriaLabel);
+  const isUsingNovaCategoria = manualCategoriaSelecionada === NEW_CATEGORIA_SENTINEL;
+  const manualResolvedCategoria: string = isUsingNovaCategoria
+    ? manualNovaCategoriaSlug
+    : manualCategoriaSelecionada;
+  const manualHasIdentifier = normalizedCodBionexo.length > 0 || normalizedCdProduto.length > 0;
+  const manualValido =
+    manualMode &&
+    manualDescricao.trim().length > 0 &&
+    manualResolvedCategoria.length > 0 &&
+    manualHasIdentifier &&
+    normalizedCdProduto.length > 0;
+  const canAdd = manualMode ? manualValido : !!resolvedProduct && !remoteLookupLoading;
+
+  useEffect(() => {
+    if (manualMode) {
+      setRemoteLookup({ mode: '', code: '', loading: false, product: null, error: null });
+      return;
+    }
+    const queryCode = searchMode === 'produto' ? normalizedCdProduto : normalizedCodBionexo;
+    if (!searchMode || !queryCode) {
+      setRemoteLookup({ mode: '', code: '', loading: false, product: null, error: null });
+      return;
+    }
+    if (hasLocalLookup) {
+      setRemoteLookup({ mode: searchMode, code: queryCode, loading: false, product: null, error: null });
+      return;
+    }
+    let cancelled = false;
+    setRemoteLookup({ mode: searchMode, code: queryCode, loading: true, product: null, error: null });
+    const timer = setTimeout(() => {
+      const lookupPromise =
+        searchMode === 'produto'
+          ? lookupProductByCodeRemote(queryCode)
+          : lookupProductRemote(queryCode);
+      lookupPromise
+        .then((product) => {
+          if (!cancelled) {
+            setRemoteLookup({ mode: searchMode, code: queryCode, loading: false, product, error: null });
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setRemoteLookup({
+              mode: searchMode,
+              code: queryCode,
+              loading: false,
+              product: null,
+              error:
+                searchMode === 'produto'
+                  ? 'Não foi possível consultar o número do produto agora. Tente novamente em instantes.'
+                  : 'Não foi possível consultar a base agora. Tente novamente em instantes.',
+            });
+          }
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [hasLocalLookup, lookupProductByCodeRemote, lookupProductRemote, manualMode, normalizedCdProduto, normalizedCodBionexo, searchMode]);
+
+  function handleCodChange(value: string) {
+    const nextValue = stripBionexoPrefix(value).toUpperCase();
+    setLockedFieldHint(null);
+    setCodBionexoText(nextValue);
+    if (manualMode && lockedMode !== 'manual') {
+      setManualMode(false);
+    }
+    if (!nextValue.trim() && lookupSource === 'bionexo') {
+      setCdProdutoText('');
+      setLookupSource(null);
+      return;
+    }
+    setLookupSource(nextValue.trim() ? 'bionexo' : normalizedCdProduto ? 'produto' : null);
+  }
+
+  function handleProductCodeChange(value: string) {
+    const nextValue = normalizeProductCode(value);
+    setLockedFieldHint(null);
+    setCdProdutoText(nextValue);
+    if (manualMode && lockedMode !== 'manual') {
+      setManualMode(false);
+    }
+    if (!nextValue && lookupSource === 'produto') {
+      setCodBionexoText('');
+      setLookupSource(null);
+      return;
+    }
+    setLookupSource(nextValue ? 'produto' : normalizedCodBionexo ? 'bionexo' : null);
+  }
+
+  function handleAdd() {
+    if (!canAdd) return;
+    if (manualMode) {
+      onAdd({
+        ordem: 0,
+        cod_bionexo: normalizedCodBionexo,
+        cd_produto: normalizedCdProduto,
+        ds_produto: manualDescricao.trim(),
+        categoria_material: manualResolvedCategoria,
+        produto_manual: true,
+      });
+      return;
+    }
+    if (!resolvedProduct) return;
+    onAdd({
+      ordem: 0,
+      cod_bionexo: resolvedProduct.cod_bionexo ?? '',
+      cd_produto: resolvedProduct.cd_produto,
+      ds_produto: resolvedProduct.ds_produto,
+      categoria_material: resolvedProduct.categoria_material,
+      produto_manual: false,
+    });
+  }
+
+  return (
+    <View style={styles.produtoPickerWrap}>
+      <View style={styles.produtoPickerHeader}>
+        <Text style={styles.produtoPickerTitle}>Adicionar produto</Text>
+        {hideCancel ? null : (
+          <Pressable
+            onPress={onCancel}
+            style={({ pressed }) => [
+              styles.manualToggleButton,
+              pressed ? styles.manualToggleButtonPressed : null,
+            ]}>
+            <Text style={styles.manualToggleButtonText}>Cancelar</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={styles.modalGrid}>
+        <DarkField label="Cod. Bionexo">
+          <View style={styles.lockableFieldWrap}>
+            <View style={[styles.bionexoInputRow, bionexoLocked ? styles.lockedInputSurface : null]}>
+              <View style={[styles.bionexoPrefix, bionexoLocked ? styles.lockedPrefix : null]}>
+                <Text style={[styles.bionexoPrefixText, bionexoLocked ? styles.lockedPrefixText : null]}>I-</Text>
+              </View>
+              <DarkInput
+                value={bionexoInputValue}
+                onChangeText={handleCodChange}
+                placeholder="Opcional"
+                autoCapitalize="characters"
+                editable={!bionexoLocked}
+                selectTextOnFocus={!bionexoLocked}
+                style={[styles.bionexoInput, bionexoLocked ? styles.lockedInput : null]}
+              />
+            </View>
+            {bionexoLocked ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setLockedFieldHint('bionexo')}
+                style={({ pressed }) => [
+                  styles.lockedFieldOverlay,
+                  pressed ? styles.lockedFieldOverlayPressed : null,
+                ]}
+              />
+            ) : null}
+          </View>
+          {bionexoLocked ? (
+            <Text
+              style={[
+                styles.fieldHelperText,
+                lockedFieldHint === 'bionexo' ? styles.fieldHelperTextActive : null,
+              ]}>
+              {bionexoLockMessage}
+            </Text>
+          ) : null}
+        </DarkField>
+        <DarkField label="Nº do produto">
+          <View style={styles.lockableFieldWrap}>
+            <DarkInput
+              value={productInputValue}
+              onChangeText={handleProductCodeChange}
+              placeholder="Digite o código do produto"
+              keyboardType="default"
+              editable={!productLocked}
+              selectTextOnFocus={!productLocked}
+              style={productLocked ? styles.lockedInput : null}
+            />
+            {productLocked ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setLockedFieldHint('produto')}
+                style={({ pressed }) => [
+                  styles.lockedFieldOverlay,
+                  pressed ? styles.lockedFieldOverlayPressed : null,
+                ]}
+              />
+            ) : null}
+          </View>
+          {productLocked ? (
+            <Text
+              style={[
+                styles.fieldHelperText,
+                lockedFieldHint === 'produto' ? styles.fieldHelperTextActive : null,
+              ]}>
+              {productLockMessage}
+            </Text>
+          ) : null}
+        </DarkField>
+      </View>
+
+      {manualMode ? (
+        <View style={styles.manualBox}>
+          <View style={styles.manualHeader}>
+            <Text style={styles.manualTitle}>Cadastro manual de produto</Text>
+            {lockedMode === 'manual' ? null : (
+              <Pressable
+                onPress={() => {
+                  setManualMode(false);
+                  setManualDescricao('');
+                }}
+                style={({ pressed }) => [
+                  styles.manualToggleButton,
+                  pressed ? styles.manualToggleButtonPressed : null,
+                ]}>
+                <Text style={styles.manualToggleButtonText}>Voltar para busca na base</Text>
+              </Pressable>
+            )}
+          </View>
+          <Text style={styles.manualHint}>
+            Produto fora da base do SISCORE. Preencha pelo menos o nº do produto acima e a descrição.
+          </Text>
+          <DarkField label="Descrição do produto">
+            <DarkInput
+              value={manualDescricao}
+              onChangeText={setManualDescricao}
+              placeholder="Ex: Caneta esferográfica azul"
+            />
+          </DarkField>
+          <DarkField label="Classificação">
+            <DarkTabGroup
+              compact
+              options={[
+                ...availableCategorias.map((value) => ({
+                  label: getProcessoCategoriaTabLabel(value),
+                  value: String(value),
+                  color:
+                    value === 'material_hospitalar'
+                      ? processTheme.blue
+                      : value === 'material_farmacologico'
+                        ? processTheme.purple
+                        : getProcessoCategoriaCustomColor(value),
+                })),
+                {
+                  label: '+ Nova classificação',
+                  value: NEW_CATEGORIA_SENTINEL,
+                  color: processTheme.accent,
+                },
+              ]}
+              value={manualCategoriaSelecionada}
+              onChange={setManualCategoriaSelecionada}
+            />
+          </DarkField>
+          {isUsingNovaCategoria ? (
+            <DarkField label="Nome da nova classificação">
+              <DarkInput
+                value={manualNovaCategoriaLabel}
+                onChangeText={setManualNovaCategoriaLabel}
+                placeholder="Ex: Material de Expediente"
+              />
+              {manualNovaCategoriaSlug ? (
+                <Text style={styles.fieldHelperText}>
+                  Identificador: {manualNovaCategoriaSlug}
+                </Text>
+              ) : null}
+            </DarkField>
+          ) : null}
+          {!normalizedCdProduto ? (
+            <DarkNotice
+              title="Nº do produto obrigatório"
+              description="Mesmo no cadastro manual o nº do produto deve ser preenchido."
+              tone="warning"
+            />
+          ) : null}
+        </View>
+      ) : resolvedProduct ? (
+        <View style={styles.lookupBox}>
+          <View style={styles.lookupHeader}>
+            <AppIcon name="check" size={16} color={processTheme.green} />
+            <Text style={styles.lookupTitle}>Produto localizado na base HMSA</Text>
+          </View>
+          <Text style={styles.lookupName}>{resolvedProduct.ds_produto}</Text>
+          <Text style={styles.lookupMeta}>
+            Produto {resolvedProduct.cd_produto}
+            {resolvedProduct.cod_bionexo ? ` · Bionexo ${resolvedProduct.cod_bionexo}` : ''}
+            {' · '}
+            {getCategoriaMaterialLabel(resolvedProduct.categoria_material)} · Estoque atual{' '}
+            {formatLookupNumber(resolvedProduct.estoque_atual)} · Suficiência{' '}
+            {formatLookupNumber(resolvedProduct.suficiencia_em_dias)} dias
+          </Text>
+        </View>
+      ) : remoteLookupLoading ? (
+        <DarkNotice
+          title="Buscando produto"
+          description={
+            searchMode === 'produto'
+              ? 'Consultando o número do produto na base do HMSA.'
+              : 'Consultando o Cod. Bionexo na base do HMSA.'
+          }
+          tone="info"
+        />
+      ) : remoteLookupError ? (
+        <DarkNotice
+          title="Não foi possível consultar o produto"
+          description={remoteLookupError}
+          tone="warning"
+        />
+      ) : searchMode ? (
+        <View style={styles.manualHintWrap}>
+          <DarkNotice
+            title={searchMode === 'produto' ? 'Produto não localizado' : 'Cod. Bionexo não localizado'}
+            description={
+              lockedMode === 'base'
+                ? 'Confira o código informado na base SISCORE. Este processo já tem produtos da base e não pode misturar manuais.'
+                : searchMode === 'produto'
+                  ? 'Confira se o número do produto existe no HMSA. Se for um produto fora da base SISCORE, cadastre manualmente.'
+                  : 'Confira se o código existe para o HMSA. Se for um produto fora da base SISCORE, cadastre manualmente.'
+            }
+            tone="warning"
+          />
+          {lockedMode === 'base' ? null : (
+            <Pressable
+              onPress={() => setManualMode(true)}
+              style={({ pressed }) => [
+                styles.manualPrimaryButton,
+                pressed ? styles.manualPrimaryButtonPressed : null,
+              ]}>
+              <AppIcon name="plus" size={14} color={processTheme.accent} />
+              <Text style={styles.manualPrimaryButtonText}>Cadastrar produto manualmente</Text>
+            </Pressable>
+          )}
+        </View>
+      ) : (
+        <DarkNotice
+          title="Informe o produto"
+          description={
+            lockedMode === 'manual'
+              ? 'Os produtos deste processo são manuais. Continue cadastrando manualmente.'
+              : 'Use o Cod. Bionexo ou o número do produto para preencher automaticamente a descrição.'
+          }
+          tone="info"
+        />
+      )}
+
+      <DarkButton
+        label="Adicionar produto"
+        icon="plus"
+        tone="accent"
+        disabled={!canAdd}
+        onPress={handleAdd}
+      />
+    </View>
+  );
+}
+
 function ParcelasModal({
   item,
   mode,
@@ -2182,7 +2605,11 @@ function ParcelasModal({
           <View style={[styles.modalHeader, compactModal ? styles.modalHeaderCompact : null]}>
             <View>
               <Text style={styles.modalTitle}>{mode === 'single' ? 'Parcela do processo' : 'Parcelas do processo'}</Text>
-              <Text style={styles.modalSubtitle}>{item.numero_processo} · {item.ds_produto}</Text>
+              <Text style={styles.modalSubtitle}>
+                {item.numero_processo}
+                {item.produtos[0]?.ds_produto ? ` · ${item.produtos[0].ds_produto}` : ''}
+                {item.produtos.length > 1 ? ` (+${item.produtos.length - 1} ${item.produtos.length - 1 === 1 ? 'item' : 'itens'})` : ''}
+              </Text>
             </View>
             <Pressable style={styles.modalCloseButton} onPress={onClose}>
               <AppIcon name="chevronDown" size={18} color={processTheme.muted} />
@@ -4080,6 +4507,186 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     parcelaSubtitle: {
       color: processTheme.muted,
       fontSize: 12,
+    },
+    manualBox: {
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: withAlpha(processTheme.accent, '57'),
+      backgroundColor: withAlpha(processTheme.accent, '14'),
+      padding: 14,
+      gap: 12,
+    },
+    manualHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    manualTitle: {
+      color: processTheme.accent,
+      fontSize: 13,
+      fontWeight: '900',
+    },
+    manualHint: {
+      color: processTheme.muted,
+      fontSize: 12,
+      lineHeight: 16,
+    },
+    manualToggleButton: {
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surface,
+    },
+    manualToggleButtonPressed: {
+      backgroundColor: processTheme.surfaceHi,
+    },
+    manualToggleButtonText: {
+      color: processTheme.muted,
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    manualHintWrap: {
+      gap: 10,
+    },
+    manualPrimaryButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: withAlpha(processTheme.accent, '6e'),
+      backgroundColor: withAlpha(processTheme.accent, '14'),
+      paddingVertical: 12,
+    },
+    manualPrimaryButtonPressed: {
+      backgroundColor: withAlpha(processTheme.accent, '24'),
+    },
+    manualPrimaryButtonText: {
+      color: processTheme.accent,
+      fontSize: 12,
+      fontWeight: '900',
+    },
+    manualBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: withAlpha(processTheme.accent, '6e'),
+      backgroundColor: withAlpha(processTheme.accent, '1f'),
+    },
+    manualBadgeText: {
+      color: processTheme.accent,
+      fontSize: 10,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    productBadgeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      gap: 6,
+    },
+    extraProdutosChip: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: withAlpha(processTheme.blue, '6e'),
+      backgroundColor: withAlpha(processTheme.blue, '1f'),
+    },
+    extraProdutosChipPressed: {
+      backgroundColor: withAlpha(processTheme.blue, '33'),
+    },
+    extraProdutosChipText: {
+      color: processTheme.blue,
+      fontSize: 10,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    produtosListEmpty: {
+      color: processTheme.muted,
+      fontSize: 12,
+      paddingVertical: 6,
+    },
+    produtosSection: {
+      width: '100%',
+      gap: 5,
+    },
+    produtosListWrap: {
+      width: '100%',
+      gap: 8,
+    },
+    produtoCardActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    produtoPickerWrap: {
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surface,
+      padding: 14,
+      gap: 12,
+    },
+    produtoPickerHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    produtoPickerTitle: {
+      color: processTheme.text,
+      fontSize: 13,
+      fontWeight: '900',
+    },
+    produtoCard: {
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: processTheme.border,
+      backgroundColor: processTheme.surface,
+      padding: 12,
+      gap: 4,
+    },
+    produtoCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    produtoCardName: {
+      color: processTheme.text,
+      fontSize: 13,
+      fontWeight: '800',
+      flex: 1,
+    },
+    produtoCardMeta: {
+      color: processTheme.muted,
+      fontSize: 12,
+    },
+    produtoRemoveButton: {
+      paddingVertical: 4,
+      paddingHorizontal: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: withAlpha(processTheme.red, '5c'),
+      backgroundColor: withAlpha(processTheme.red, '14'),
+    },
+    produtoRemoveButtonPressed: {
+      backgroundColor: withAlpha(processTheme.red, '24'),
+    },
+    produtoRemoveButtonText: {
+      color: processTheme.red,
+      fontSize: 11,
+      fontWeight: '800',
     },
   }),
 });

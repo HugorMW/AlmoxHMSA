@@ -1,6 +1,7 @@
 export type Hospital = 'HMSA' | 'HEC' | 'HDDS' | 'HABF';
 export type CategoriaMaterial = 'material_hospitalar' | 'material_farmacologico';
 export type FiltroCategoriaMaterial = 'todos' | CategoriaMaterial;
+export type ProcessoCategoria = CategoriaMaterial | (string & {});
 export type Level = 'URGENTE' | 'CRÍTICO' | 'ALTO' | 'MÉDIO' | 'BAIXO' | 'ESTÁVEL';
 export type Action =
   | 'COMPRAR'
@@ -178,12 +179,20 @@ export interface ProcessoParcelaDetalhe {
   atualizado_em: string | null;
 }
 
-export interface ProcessoAcompanhamento {
+export interface ProcessoProduto {
   id?: string;
-  categoria_material: CategoriaMaterial;
+  ordem: number;
   cod_bionexo: string;
   cd_produto: string;
   ds_produto: string;
+  categoria_material: ProcessoCategoria;
+  produto_manual: boolean;
+}
+
+export interface ProcessoAcompanhamento {
+  id?: string;
+  categoria_material: ProcessoCategoria;
+  produtos: ProcessoProduto[];
   numero_processo: string;
   edocs: string;
   marca: string;

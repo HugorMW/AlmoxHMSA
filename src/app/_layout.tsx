@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from '@/features/auth/auth-provider';
+import { ConfirmActionProvider } from '@/features/almox/confirm-action';
 import { ThemeProvider, useAppTheme } from '@/features/almox/theme-provider';
 
 export default function RootLayout() {
@@ -14,9 +15,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <AuthProvider>
-            <ThemedRootStack />
-          </AuthProvider>
+          <ConfirmActionProvider>
+            <AuthProvider>
+              <ThemedRootStack />
+            </AuthProvider>
+          </ConfirmActionProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

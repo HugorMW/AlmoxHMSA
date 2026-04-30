@@ -37,6 +37,14 @@ export function ThemeProvider({
     writeCachedValue(THEME_MODE_CACHE_KEY, mode);
   }, [mode]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    document.documentElement.dataset.theme = mode;
+  }, [mode]);
+
   const value = useMemo<ThemeContextValue>(
     () => ({
       mode,

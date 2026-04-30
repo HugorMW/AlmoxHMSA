@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useAlmoxData } from "@/features/almox/almox-provider";
 import {
@@ -13,7 +13,11 @@ import {
   PaginationFooter,
   ScreenScrollView,
 } from "@/features/almox/components/common";
-import { ProductTable } from "@/features/almox/components/product-table";
+import {
+  ProductTable,
+  ProductTableSortState,
+  sortProductsForTable,
+} from "@/features/almox/components/product-table";
 import {
   getActionTooltips,
   getLevelRangeLabels,
@@ -22,9 +26,14 @@ import {
 import { useAppTheme } from "@/features/almox/theme-provider";
 import { AlmoxTheme, levelColors } from "@/features/almox/tokens";
 import { Hospital, Level } from "@/features/almox/types";
-import { paginate } from "@/features/almox/utils";
+import { matchesQuery, paginate } from "@/features/almox/utils";
 
 type SelectedView = "all" | Level;
+
+const DASHBOARD_PRODUCT_COLUMNS_CACHE_KEY_PREFIX =
+  "almox:dashboard:products:columns:v1";
+const DASHBOARD_PRODUCT_COLUMNS_PREFERENCE_SCOPE =
+  "dashboard.products.columns";
 
 const LEVEL_LABEL: Record<Level, string> = {
   URGENTE: "Urgente",
@@ -36,12 +45,20 @@ const LEVEL_LABEL: Record<Level, string> = {
 };
 
 export default function DashboardScreen() {
-  const { tokens } = useAppTheme();
+  const { mode, tokens } = useAppTheme();
   const styles = useDashboardStyles();
+  const searchInputRef = useRef<TextInput>(null);
   const [selectedView, setSelectedView] = useState<SelectedView>("all");
   const [listCollapsed, setListCollapsed] = useState(true);
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState<PageSize>(10);
+  const [search, setSearch] = useState("");
+  const [isTableSearchOpen, setTableSearchOpen] = useState(false);
+  const [isColumnsEditorOpen, setColumnsEditorOpen] = useState(false);
+  const [tableSort, setTableSort] = useState<ProductTableSortState>({
+    column: "days",
+    direction: "asc",
+  });
   const {
     dataset,
     categoryFilter,
@@ -67,11 +84,24 @@ export default function DashboardScreen() {
     () => getActionTooltips(systemConfig),
     [systemConfig],
   );
+  const deferredSearch = useDeferredValue(search);
   const activeHospital = dataset.hospitals.includes(dashboardHospital)
     ? dashboardHospital
     : "HMSA";
 
   const dashboard = dataset.dashboardByHospital[activeHospital];
+
+  useEffect(() => {
+    if (!isTableSearchOpen) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isTableSearchOpen]);
 
   const filteredProducts = useMemo(() => {
     const allHospitalProducts =
@@ -80,12 +110,23 @@ export default function DashboardScreen() {
       selectedView === "all"
         ? allHospitalProducts
         : allHospitalProducts.filter((item) => item.level === selectedView);
-    return [...base].sort(
-      (left, right) =>
-        left.sufficiency_days - right.sufficiency_days ||
-        left.product_name.localeCompare(right.product_name, "pt-BR"),
+    const matched = base.filter((item) =>
+      matchesQuery([item.product_name, item.product_code], deferredSearch),
     );
-  }, [dataset.productsByHospital, activeHospital, selectedView]);
+    return sortProductsForTable(
+      matched,
+      tableSort,
+      openProcessSummaryByProductCode,
+    );
+  }, [
+    dataset.productsByHospital,
+    activeHospital,
+    selectedView,
+    deferredSearch,
+    tableSort,
+    openProcessSummaryByProductCode,
+  ]);
+  const isSearchExpanded = isTableSearchOpen || search.length > 0;
 
   const listTotalPages = Math.max(
     1,
@@ -339,20 +380,84 @@ export default function DashboardScreen() {
             ? tokens.colors.brand
             : levelColors[selectedView].background
         }
+        iconBackground={
+          selectedView === "all"
+            ? tokens.colors.brand
+            : levelColors[selectedView].background
+        }
+        iconColor={
+          selectedView === "all"
+            ? mode === "dark"
+              ? tokens.colors.black
+              : tokens.colors.white
+            : levelColors[selectedView].foreground
+        }
         collapsed={listCollapsed}
         onPress={() => setListCollapsed((prev) => !prev)}
       />
 
       {!listCollapsed ? (
         <View style={styles.listPanelBody}>
-          <Text style={styles.listPanelTitle}>
-            {selectedView === "all"
-              ? "Todos os produtos"
-              : `Produtos — ${LEVEL_LABEL[selectedView]}`}
-            <Text
-              style={styles.listPanelMeta}
-            >{`  •  ${filteredProducts.length} produto(s) em ${activeHospital}`}</Text>
-          </Text>
+          <View style={styles.listPanelHeader}>
+            <View style={styles.listPanelTitleWrap}>
+              <Text style={styles.listPanelTitle}>
+                {selectedView === "all"
+                  ? "Todos os produtos"
+                  : `Produtos — ${LEVEL_LABEL[selectedView]}`}
+              </Text>
+              <Text
+                style={styles.listPanelMeta}
+              >{`${filteredProducts.length} produto(s) em ${activeHospital}`}</Text>
+            </View>
+            <View style={styles.listPanelActions}>
+              <View style={styles.tableTitleSearchWrap}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    isSearchExpanded ? "Campo de busca aberto" : "Abrir busca"
+                  }
+                  onPress={() => setTableSearchOpen(true)}
+                  style={({ pressed }) => [
+                    styles.tableTitleSearch,
+                    isSearchExpanded ? styles.tableTitleSearchExpanded : null,
+                    pressed ? styles.tableTitleSearchPressed : null,
+                  ]}
+                >
+                  <AppIcon
+                    name="search"
+                    size={16}
+                    color={styles.tableTitleSearchIcon.color as string}
+                  />
+                  {isSearchExpanded ? (
+                    <TextInput
+                      ref={searchInputRef}
+                      value={search}
+                      onChangeText={(value) => {
+                        setSearch(value);
+                        setListPage(1);
+                      }}
+                      placeholder="Buscar produto ou código..."
+                      placeholderTextColor={
+                        styles.tableTitleSearchPlaceholder.color as string
+                      }
+                      style={styles.tableTitleSearchInput}
+                      onBlur={() => {
+                        if (!search.trim()) {
+                          setTableSearchOpen(false);
+                        }
+                      }}
+                    />
+                  ) : null}
+                </Pressable>
+              </View>
+              <ActionButton
+                label={isColumnsEditorOpen ? "Fechar edição" : "Editar colunas"}
+                icon="edit"
+                tone="neutral"
+                onPress={() => setColumnsEditorOpen((current) => !current)}
+              />
+            </View>
+          </View>
           {filteredProducts.length === 0 ? (
             <EmptyState
               title="Nenhum produto nesta classificação"
@@ -373,6 +478,22 @@ export default function DashboardScreen() {
                 pisoDoadorAposEmprestimoDias={
                   systemConfig.pisoDoadorAposEmprestimoDias
                 }
+                sorting={tableSort}
+                onSortChange={(nextSorting) => {
+                  setTableSort(nextSorting);
+                  setListPage(1);
+                }}
+                editableColumns={{
+                  scope: DASHBOARD_PRODUCT_COLUMNS_PREFERENCE_SCOPE,
+                  cacheKeyPrefix:
+                    DASHBOARD_PRODUCT_COLUMNS_CACHE_KEY_PREFIX,
+                  bottomScrollbarId: "dashboard-products-bottom-scrollbar",
+                }}
+                columnsEditor={{
+                  isOpen: isColumnsEditorOpen,
+                  onOpenChange: setColumnsEditorOpen,
+                  hideButton: true,
+                }}
               />
               <PaginationFooter
                 totalItems={filteredProducts.length}
@@ -604,10 +725,14 @@ function TotalHero({
 
 function ExpandHandle({
   accent,
+  iconBackground,
+  iconColor,
   collapsed,
   onPress,
 }: {
   accent: string;
+  iconBackground: string;
+  iconColor: string;
   collapsed: boolean;
   onPress: () => void;
 }) {
@@ -621,11 +746,19 @@ function ExpandHandle({
       ]}
     >
       <View style={[styles.expandHandleLine, { backgroundColor: accent }]} />
-      <View style={[styles.expandHandleIcon, { borderColor: accent }]}>
+      <View
+        style={[
+          styles.expandHandleIcon,
+          {
+            borderColor: accent,
+            backgroundColor: iconBackground,
+          },
+        ]}
+      >
         <AppIcon
           name={collapsed ? "chevronDown" : "chevronUp"}
           size={16}
-          color={accent}
+          color={iconColor}
         />
       </View>
       <View style={[styles.expandHandleLine, { backgroundColor: accent }]} />
@@ -822,6 +955,7 @@ function HospitalLevelHeatmap({
 }) {
   const styles = useDashboardStyles();
   const { tokens } = useAppTheme();
+  const [collapsed, setCollapsed] = useState(true);
 
   const rows = hospitals.map((hospital) => {
     const kpi = dashboardByHospital[hospital]?.kpi;
@@ -848,82 +982,102 @@ function HospitalLevelHeatmap({
   return (
     <View style={styles.heatmapWrap}>
       <View style={styles.heatmapHeader}>
-        <Text style={styles.heatmapTitle}>Distribuição por hospital</Text>
-        <Text style={styles.heatmapHint}>
-          Intensidade representa a fatia do nível na carteira
-        </Text>
+        <View style={styles.heatmapHeaderText}>
+          <Text style={styles.heatmapTitle}>Distribuição por hospital</Text>
+          <Text style={styles.heatmapHint}>
+            Intensidade representa a fatia do nível na carteira
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => setCollapsed((prev) => !prev)}
+          style={({ pressed }) => [
+            styles.heatmapToggle,
+            pressed ? styles.metricCardPressed : null,
+          ]}
+        >
+          <Text style={styles.heatmapToggleText}>
+            {collapsed ? "Mostrar" : "Ocultar"}
+          </Text>
+          <AppIcon
+            name={collapsed ? "chevronDown" : "chevronUp"}
+            size={14}
+            color={tokens.colors.textMuted}
+          />
+        </Pressable>
       </View>
-      <View>
-        <View style={styles.heatmapHeadRow}>
-          <View style={styles.heatmapRowLabel} />
-          {HEATMAP_LEVELS.map((level) => (
-            <View key={level} style={styles.heatmapHeadCell}>
+      {!collapsed ? (
+        <View>
+          <View style={styles.heatmapHeadRow}>
+            <View style={styles.heatmapRowLabel} />
+            {HEATMAP_LEVELS.map((level) => (
+              <View key={level} style={styles.heatmapHeadCell}>
+                <View
+                  style={[
+                    styles.heatmapHeadDot,
+                    { backgroundColor: levelColors[level].background },
+                  ]}
+                />
+                <Text style={styles.heatmapHeadText}>{level}</Text>
+              </View>
+            ))}
+          </View>
+          {rows.map((row) => (
+            <View key={row.hospital} style={styles.heatmapRow}>
               <View
                 style={[
-                  styles.heatmapHeadDot,
-                  { backgroundColor: levelColors[level].background },
-                ]}
-              />
-              <Text style={styles.heatmapHeadText}>{level}</Text>
-            </View>
-          ))}
-        </View>
-        {rows.map((row) => (
-          <View key={row.hospital} style={styles.heatmapRow}>
-            <View
-              style={[
-                styles.heatmapRowLabel,
-                row.hospital === activeHospital
-                  ? styles.heatmapRowLabelActive
-                  : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.heatmapRowLabelText,
+                  styles.heatmapRowLabel,
                   row.hospital === activeHospital
-                    ? styles.heatmapRowLabelTextActive
+                    ? styles.heatmapRowLabelActive
                     : null,
                 ]}
               >
-                {row.hospital}
-              </Text>
-              <Text style={styles.heatmapRowLabelMeta}>{row.total}</Text>
-            </View>
-            {row.cells.map((cell) => {
-              const palette = levelColors[cell.level];
-              const minOpacity = cell.value > 0 ? 0.18 : 0.04;
-              const opacity = Math.max(minOpacity, Math.min(0.95, cell.ratio));
-              return (
-                <View
-                  key={cell.level}
+                <Text
                   style={[
-                    styles.heatmapCell,
-                    {
-                      backgroundColor:
-                        cell.value > 0
-                          ? `${palette.background}`
-                          : tokens.colors.surfaceMuted,
-                      opacity,
-                    },
+                    styles.heatmapRowLabelText,
+                    row.hospital === activeHospital
+                      ? styles.heatmapRowLabelTextActive
+                      : null,
                   ]}
                 >
-                  <Text
+                  {row.hospital}
+                </Text>
+                <Text style={styles.heatmapRowLabelMeta}>{row.total}</Text>
+              </View>
+              {row.cells.map((cell) => {
+                const palette = levelColors[cell.level];
+                const minOpacity = cell.value > 0 ? 0.18 : 0.04;
+                const opacity = Math.max(minOpacity, Math.min(0.95, cell.ratio));
+                return (
+                  <View
+                    key={cell.level}
                     style={[
-                      styles.heatmapCellText,
-                      cell.value > 0
-                        ? { color: palette.foreground }
-                        : { color: tokens.colors.textMuted },
+                      styles.heatmapCell,
+                      {
+                        backgroundColor:
+                          cell.value > 0
+                            ? `${palette.background}`
+                            : tokens.colors.surfaceMuted,
+                        opacity,
+                      },
                     ]}
                   >
-                    {cell.value}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        ))}
-      </View>
+                    <Text
+                      style={[
+                        styles.heatmapCellText,
+                        cell.value > 0
+                          ? { color: palette.foreground }
+                          : { color: tokens.colors.textMuted },
+                      ]}
+                    >
+                      {cell.value}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1294,10 +1448,67 @@ function createDashboardStyles(tokens: AlmoxTheme) {
       fontWeight: "800",
       letterSpacing: -0.2,
     },
+    listPanelHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      flexWrap: "wrap",
+    },
+    listPanelTitleWrap: {
+      flex: 1,
+      gap: 4,
+      minWidth: 220,
+    },
+    listPanelActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      flexWrap: "wrap",
+      justifyContent: "flex-end",
+    },
     listPanelMeta: {
       color: tokens.colors.textMuted,
       fontSize: 12,
       fontWeight: "600",
+    },
+    tableTitleSearchWrap: {
+      minWidth: 44,
+      alignItems: "flex-end",
+    },
+    tableTitleSearch: {
+      minHeight: 40,
+      width: 40,
+      borderRadius: tokens.radii.pill,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surface,
+      paddingHorizontal: tokens.spacing.sm,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: tokens.spacing.xs,
+      overflow: "hidden",
+    },
+    tableTitleSearchExpanded: {
+      width: 280,
+      justifyContent: "flex-start",
+      backgroundColor: tokens.colors.surfaceRaised,
+    },
+    tableTitleSearchPressed: {
+      opacity: 0.88,
+    },
+    tableTitleSearchIcon: {
+      color: tokens.colors.textMuted,
+    },
+    tableTitleSearchPlaceholder: {
+      color: tokens.colors.textMuted,
+    },
+    tableTitleSearchInput: {
+      flex: 1,
+      color: tokens.colors.text,
+      fontSize: 13,
+      paddingVertical: 0,
     },
     listPanelBody: {
       padding: tokens.spacing.lg,
@@ -1455,6 +1666,11 @@ function createDashboardStyles(tokens: AlmoxTheme) {
       flexWrap: "wrap",
       gap: tokens.spacing.xs,
     },
+    heatmapHeaderText: {
+      flex: 1,
+      minWidth: 220,
+      gap: 2,
+    },
     heatmapTitle: {
       color: tokens.colors.text,
       fontSize: 13,
@@ -1463,6 +1679,23 @@ function createDashboardStyles(tokens: AlmoxTheme) {
     heatmapHint: {
       color: tokens.colors.textMuted,
       fontSize: 11,
+    },
+    heatmapToggle: {
+      minHeight: 30,
+      paddingHorizontal: tokens.spacing.sm,
+      borderRadius: tokens.radii.pill,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surfaceRaised,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+    },
+    heatmapToggleText: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+      fontWeight: "700",
     },
     heatmapHeadRow: {
       flexDirection: "row",

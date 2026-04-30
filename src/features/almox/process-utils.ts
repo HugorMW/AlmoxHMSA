@@ -313,40 +313,40 @@ export function buildOpenProcessSummaryByProductCode(
       continue;
     }
 
-    const productCode = normalizeProductCode(item.cd_produto);
-    if (!productCode) {
-      continue;
-    }
-
     const status = computeProcessStatus(item, config);
     if (status === 'cancelado' || status === 'concluido') {
       continue;
     }
 
     const andamentoComAlerta = hasAndamentoComAlerta(item, config);
-    const currentSummary = summaryByProductCode[productCode] ?? {
-      total_open: 0,
-      overdue_count: 0,
-      critical_count: 0,
-      alert_count: 0,
-      entries: [],
-    };
+    const entry = createSummaryEntry(item, status, andamentoComAlerta, config);
+    const productCodes = (item.produtos ?? [])
+      .map((produto) => normalizeProductCode(produto.cd_produto))
+      .filter((value) => value.length > 0);
 
-    currentSummary.total_open += 1;
-    if (status === 'atrasado') {
-      currentSummary.overdue_count += 1;
-    }
-    if (item.critico) {
-      currentSummary.critical_count += 1;
-    }
-    if (andamentoComAlerta) {
-      currentSummary.alert_count += 1;
-    }
+    for (const productCode of productCodes) {
+      const currentSummary = summaryByProductCode[productCode] ?? {
+        total_open: 0,
+        overdue_count: 0,
+        critical_count: 0,
+        alert_count: 0,
+        entries: [],
+      };
 
-    currentSummary.entries.push(
-      createSummaryEntry(item, status, andamentoComAlerta, config)
-    );
-    summaryByProductCode[productCode] = currentSummary;
+      currentSummary.total_open += 1;
+      if (status === 'atrasado') {
+        currentSummary.overdue_count += 1;
+      }
+      if (item.critico) {
+        currentSummary.critical_count += 1;
+      }
+      if (andamentoComAlerta) {
+        currentSummary.alert_count += 1;
+      }
+
+      currentSummary.entries.push(entry);
+      summaryByProductCode[productCode] = currentSummary;
+    }
   }
 
   for (const summary of Object.values(summaryByProductCode)) {

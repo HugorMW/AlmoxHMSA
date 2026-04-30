@@ -1,5 +1,5 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   ActionButton,
@@ -15,6 +15,7 @@ import {
   SectionTitle,
 } from '@/features/almox/components/common';
 import { useAlmoxData } from '@/features/almox/almox-provider';
+import { useConfirmAction } from '@/features/almox/confirm-action';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
 import { AlmoxTheme } from '@/features/almox/tokens';
 import { useAppTheme, useThemedStyles } from '@/features/almox/theme-provider';
@@ -36,8 +37,21 @@ type ExceptionRow = {
   source: 'candidate' | 'saved';
 };
 
+function buildLowConsumptionToggleConfirmation(nextValue: boolean) {
+  const actionLabel = nextValue ? 'ativar' : 'desativar';
+  const resultLabel = nextValue
+    ? 'ocultar itens com CMM menor que 1 dos cálculos, mantendo apenas as exceções marcadas no HMSA'
+    : 'voltar a incluir itens com CMM menor que 1 nos cálculos';
+  return {
+    title: 'Confirmar alteração',
+    message: `Confirma ${actionLabel} esta regra? Isso vai ${resultLabel}.`,
+    confirmLabel: nextValue ? 'Ativar' : 'Desativar',
+  };
+}
+
 export default function BlacklistScreen() {
   const styles = useThemedStyles(createStyles);
+  const confirmAction = useConfirmAction();
   const [search, setSearch] = useState('');
   const [newCode, setNewCode] = useState('');
   const [resolvedName, setResolvedName] = useState('');
@@ -203,6 +217,13 @@ export default function BlacklistScreen() {
 
   async function handleToggleLowConsumption(nextValue: boolean) {
     setFeedback(null);
+    const confirmed = await confirmAction(
+      buildLowConsumptionToggleConfirmation(nextValue),
+    );
+
+    if (!confirmed) {
+      return;
+    }
 
     try {
       await saveSystemConfig({
@@ -291,12 +312,20 @@ export default function BlacklistScreen() {
       <SectionCard>
         <SectionTitle
           title="Exclusões automáticas"
-          subtitle="Filtros que tiram itens dos cálculos do app sem apagar os dados do banco."
+          subtitle="Regra global de ocultação, com exceções locais para itens do HMSA."
           icon="blocked"
         />
         <ToggleField
           label="Ocultar itens com consumo mensal menor que 1"
-          description="Quando ligado, itens que consomem menos de 1 unidade por mês deixam de entrar nos KPIs, listas e recomendações. O dado original continua salvo."
+          description="Quando ligado, itens com CMM menor que 1 deixam de entrar nos KPIs, listas e recomendações. O dado original continua salvo."
+          enabledLabel="Regra ativa"
+          disabledLabel="Regra inativa"
+          scopeItems={[
+            'Escopo: todas as unidades',
+            'Classificação: hospitalar e farmacológico',
+            'Exceções: itens marcados no HMSA',
+          ]}
+          note="As exceções abaixo servem para manter visíveis itens novos ou em implantação no HMSA, mesmo com CMM menor que 1."
           value={systemConfig.excluirCmmMenorQueUm}
           disabled={systemConfigLoading || systemConfigSaving}
           onChange={(nextValue) => void handleToggleLowConsumption(nextValue)}
@@ -451,6 +480,10 @@ function CmmExceptionsModal({
   const { tokens } = useAppTheme();
   const styles = useThemedStyles(createStyles);
   const [showActiveExceptions, setShowActiveExceptions] = useState(false);
+  const webBackdropBlurStyle =
+    Platform.OS === 'web'
+      ? ({ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } as const)
+      : null;
 
   useEffect(() => {
     if (visible) {
@@ -460,95 +493,98 @@ function CmmExceptionsModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
+      <View style={[styles.modalBackdrop, webBackdropBlurStyle]}>
+        <Pressable style={styles.modalBackdropDismissArea} onPress={onClose} />
         <View style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <View style={styles.modalHeaderText}>
-              <Text style={styles.modalTitle}>Exceções para consumo menor que 1</Text>
-              <Text style={styles.modalSubtitle}>
-                Marque os itens novos ou em implantação que devem continuar aparecendo no app.
-              </Text>
-            </View>
-            <ActionButton label="Fechar" tone="neutral" onPress={onClose} />
-          </View>
-
-          <View style={styles.modalFilters}>
-            <SearchField value={search} onChangeText={onSearchChange} placeholder="Buscar por código ou descrição..." />
-            <View style={styles.filterRow}>
-              {categoryOptions.map((option) => {
-                const isActive = option.value === categoryFilter;
-                return (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => onCategoryFilterChange(option.value)}
-                    style={({ pressed }) => [
-                      styles.filterChip,
-                      isActive ? styles.filterChipActive : null,
-                      pressed ? styles.filterChipPressed : null,
-                    ]}>
-                    <Text style={[styles.filterChipText, isActive ? styles.filterChipTextActive : null]}>
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={styles.activeExceptionsPanel}>
-            <Pressable
-              onPress={() => setShowActiveExceptions((current) => !current)}
-              style={({ pressed }) => [
-                styles.activeExceptionsHeader,
-                pressed ? styles.activeExceptionsHeaderPressed : null,
-              ]}>
-              <View style={styles.activeExceptionsTitleWrap}>
-                <Text style={styles.activeExceptionsTitle}>Itens marcados como exceção</Text>
-                <Text style={styles.activeExceptionsSubtitle}>
-                  {activeRows.length} item(ns) neste filtro continuam visíveis mesmo com CMM menor que 1.
+          <View style={styles.modalTopSection}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderText}>
+                <Text style={styles.modalTitle}>Exceções para consumo menor que 1</Text>
+                <Text style={styles.modalSubtitle}>
+                  Marque os itens novos ou em implantação que devem continuar aparecendo no app.
                 </Text>
               </View>
-              <AppIcon
-                name={showActiveExceptions ? 'chevronUp' : 'chevronDown'}
-                size={18}
-                color={tokens.colors.textMuted}
-              />
-            </Pressable>
+              <ActionButton label="Fechar" tone="neutral" onPress={onClose} />
+            </View>
 
-            {showActiveExceptions ? (
-              activeRows.length === 0 ? (
-                <Text style={styles.activeExceptionsEmpty}>Nenhuma exceção ativa para este filtro.</Text>
-              ) : (
-                <View style={styles.activeExceptionsList}>
-                  {activeRows.map((row) => {
-                    const isUpdating = updatingCode === row.cd_produto;
+            <View style={styles.modalFilters}>
+              <SearchField value={search} onChangeText={onSearchChange} placeholder="Buscar por código ou descrição..." />
+              <View style={styles.filterRow}>
+                {categoryOptions.map((option) => {
+                  const isActive = option.value === categoryFilter;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => onCategoryFilterChange(option.value)}
+                      style={({ pressed }) => [
+                        styles.filterChip,
+                        isActive ? styles.filterChipActive : null,
+                        pressed ? styles.filterChipPressed : null,
+                      ]}>
+                      <Text style={[styles.filterChipText, isActive ? styles.filterChipTextActive : null]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
 
-                    return (
-                      <View key={`active-${row.cd_produto}`} style={styles.activeExceptionRow}>
-                        <View style={styles.activeExceptionMain}>
-                          <Text style={styles.name}>{row.ds_produto || 'Produto sem descrição cadastrada'}</Text>
-                          <Text style={styles.meta}>
-                            Código: {row.cd_produto} • {getCategoriaMaterialLabel(row.categoria_material)}
-                          </Text>
-                          <Text style={styles.meta}>
-                            CMM: {row.cmm == null ? 'sem dado atual' : formatDecimal(row.cmm, 2)}
-                            {' • '}
-                            Estoque atual: {row.estoque_atual == null ? 'sem dado atual' : formatDecimal(row.estoque_atual, 0)}
-                          </Text>
-                        </View>
-                        <ActionButton
-                          label={isUpdating ? 'Removendo...' : 'Remover exceção'}
-                          icon="trash"
-                          tone="danger"
-                          disabled={isUpdating}
-                          onPress={() => onToggleException(row)}
-                        />
-                      </View>
-                    );
-                  })}
+            <View style={styles.activeExceptionsPanel}>
+              <Pressable
+                onPress={() => setShowActiveExceptions((current) => !current)}
+                style={({ pressed }) => [
+                  styles.activeExceptionsHeader,
+                  pressed ? styles.activeExceptionsHeaderPressed : null,
+                ]}>
+                <View style={styles.activeExceptionsTitleWrap}>
+                  <Text style={styles.activeExceptionsTitle}>Itens marcados como exceção</Text>
+                  <Text style={styles.activeExceptionsSubtitle}>
+                    {activeRows.length} item(ns) neste filtro continuam visíveis mesmo com CMM menor que 1.
+                  </Text>
                 </View>
-              )
-            ) : null}
+                <AppIcon
+                  name={showActiveExceptions ? 'chevronUp' : 'chevronDown'}
+                  size={18}
+                  color={tokens.colors.textMuted}
+                />
+              </Pressable>
+
+              {showActiveExceptions ? (
+                activeRows.length === 0 ? (
+                  <Text style={styles.activeExceptionsEmpty}>Nenhuma exceção ativa para este filtro.</Text>
+                ) : (
+                  <View style={styles.activeExceptionsList}>
+                    {activeRows.map((row) => {
+                      const isUpdating = updatingCode === row.cd_produto;
+
+                      return (
+                        <View key={`active-${row.cd_produto}`} style={styles.activeExceptionRow}>
+                          <View style={styles.activeExceptionMain}>
+                            <Text style={styles.name}>{row.ds_produto || 'Produto sem descrição cadastrada'}</Text>
+                            <Text style={styles.meta}>
+                              Código: {row.cd_produto} • {getCategoriaMaterialLabel(row.categoria_material)}
+                            </Text>
+                            <Text style={styles.meta}>
+                              CMM: {row.cmm == null ? 'sem dado atual' : formatDecimal(row.cmm, 2)}
+                              {' • '}
+                              Estoque atual: {row.estoque_atual == null ? 'sem dado atual' : formatDecimal(row.estoque_atual, 0)}
+                            </Text>
+                          </View>
+                          <ActionButton
+                            label={isUpdating ? 'Removendo...' : 'Remover exceção'}
+                            icon="trash"
+                            tone="danger"
+                            disabled={isUpdating}
+                            onPress={() => onToggleException(row)}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                )
+              ) : null}
+            </View>
           </View>
 
           {rows.length === 0 ? (
@@ -564,7 +600,12 @@ function CmmExceptionsModal({
                 const isUpdating = updatingCode === row.cd_produto;
 
                 return (
-                  <View key={`${row.source}-${row.cd_produto}`} style={styles.exceptionRow}>
+                  <View
+                    key={`${row.source}-${row.cd_produto}`}
+                    style={[
+                      styles.exceptionRow,
+                      isActive ? styles.exceptionRowActive : null,
+                    ]}>
                     <View style={styles.exceptionRowMain}>
                       <Text style={styles.name}>{row.ds_produto || 'Produto sem descrição cadastrada'}</Text>
                       <Text style={styles.meta}>
@@ -600,17 +641,30 @@ function CmmExceptionsModal({
 function ToggleField({
   label,
   description,
+  enabledLabel,
+  disabledLabel,
+  scopeItems = [],
+  note,
   value,
   disabled,
   onChange,
 }: {
   label: string;
   description: string;
+  enabledLabel?: string;
+  disabledLabel?: string;
+  scopeItems?: string[];
+  note?: string;
   value: boolean;
   disabled?: boolean;
   onChange: (nextValue: boolean) => void;
 }) {
+  const { tokens } = useAppTheme();
   const styles = useThemedStyles(createStyles);
+  const stateLabel = value
+    ? enabledLabel ?? 'Ligado'
+    : disabledLabel ?? 'Desligado';
+
   return (
     <Pressable
       accessibilityRole="switch"
@@ -624,11 +678,42 @@ function ToggleField({
         disabled ? styles.toggleDisabled : null,
       ]}>
       <View style={styles.toggleTextWrap}>
-        <Text style={styles.toggleTitle}>{label}</Text>
+        <View style={styles.toggleTitleRow}>
+          <Text style={styles.toggleTitle}>{label}</Text>
+          <View
+            style={[
+              styles.toggleStateBadge,
+              value ? styles.toggleStateBadgeActive : null,
+            ]}>
+            <Text
+              style={[
+                styles.toggleStateBadgeText,
+                value ? styles.toggleStateBadgeTextActive : null,
+              ]}>
+              {stateLabel}
+            </Text>
+          </View>
+        </View>
         <Text style={styles.toggleDescription}>{description}</Text>
+        {scopeItems.length > 0 ? (
+          <View style={styles.toggleScopeRow}>
+            {scopeItems.map((item) => (
+              <View key={item} style={styles.toggleScopeChip}>
+                <Text style={styles.toggleScopeChipText}>{item}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {note ? <Text style={styles.toggleNote}>{note}</Text> : null}
       </View>
       <View style={[styles.toggleTrack, value ? styles.toggleTrackActive : null]}>
-        <View style={[styles.toggleThumb, value ? styles.toggleThumbActive : null]} />
+        <View
+          style={[
+            styles.toggleThumb,
+            value ? styles.toggleThumbActive : null,
+            value ? { backgroundColor: tokens.colors.black } : null,
+          ]}
+        />
       </View>
     </Pressable>
   );
@@ -709,6 +794,9 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     padding: tokens.spacing.lg,
     justifyContent: 'center',
   },
+  modalBackdropDismissArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
   modalCard: {
     width: '100%',
     maxWidth: 980,
@@ -725,6 +813,13 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 12 },
     elevation: 18,
+  },
+  modalTopSection: {
+    gap: tokens.spacing.md,
+    paddingBottom: tokens.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surface,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -835,6 +930,10 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     gap: tokens.spacing.md,
     flexWrap: 'wrap',
   },
+  exceptionRowActive: {
+    borderColor: 'rgba(52, 211, 153, 0.38)',
+    backgroundColor: 'rgba(52, 211, 153, 0.10)',
+  },
   exceptionRowMain: {
     flex: 1,
     minWidth: 260,
@@ -880,7 +979,7 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     color: '#ffffff',
   },
   toggle: {
-    minHeight: 72,
+    minHeight: 110,
     borderRadius: tokens.radii.md,
     borderWidth: 1,
     borderColor: tokens.colors.lineStrong,
@@ -892,8 +991,8 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     gap: tokens.spacing.md,
   },
   toggleActive: {
-    borderColor: '#93c5fd',
-    backgroundColor: '#eff6ff',
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.surfaceActiveSoft,
   },
   togglePressed: {
     opacity: 0.88,
@@ -903,7 +1002,14 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
   },
   toggleTextWrap: {
     flex: 1,
-    gap: 4,
+    gap: 8,
+    minWidth: 260,
+  },
+  toggleTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.sm,
+    flexWrap: 'wrap',
   },
   toggleTitle: {
     color: tokens.colors.text,
@@ -914,6 +1020,51 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     color: tokens.colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
+  },
+  toggleStateBadge: {
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: 6,
+    borderRadius: tokens.radii.pill,
+    borderWidth: 1,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceStrong,
+  },
+  toggleStateBadgeActive: {
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.brand,
+  },
+  toggleStateBadgeText: {
+    color: tokens.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  toggleStateBadgeTextActive: {
+    color: tokens.colors.black,
+  },
+  toggleScopeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: tokens.spacing.xs,
+  },
+  toggleScopeChip: {
+    paddingHorizontal: tokens.spacing.sm,
+    paddingVertical: 6,
+    borderRadius: tokens.radii.pill,
+    borderWidth: 1,
+    borderColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surfaceRaised,
+  },
+  toggleScopeChipText: {
+    color: tokens.colors.textSoft,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  toggleNote: {
+    color: tokens.colors.textMuted,
+    fontSize: 11,
+    lineHeight: 17,
   },
   toggleTrack: {
     width: 50,

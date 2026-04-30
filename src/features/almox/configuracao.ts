@@ -1,4 +1,4 @@
-import { Action, CategoriaMaterial, Level, ProcessoTipo } from './types';
+import { Action, CategoriaMaterial, Level, ProcessoCategoria, ProcessoTipo } from './types';
 
 type ConfiguracaoSistemaBase = {
   criticoDias: number;
@@ -62,12 +62,19 @@ const tipoSlugByValue: Record<ProcessoTipo, ProcessoPrazoTipoSlug> = {
   'Processo Excepcional': 'Excepcional',
 };
 
+function resolveCategoriaSlug(categoria: ProcessoCategoria): ProcessoPrazoCategoriaSlug {
+  return (
+    categoriaSlugByValue[categoria as CategoriaMaterial] ??
+    categoriaSlugByValue.material_hospitalar
+  );
+}
+
 export function getProcessoPrazoParcelaKey(
-  categoria: CategoriaMaterial,
+  categoria: ProcessoCategoria,
   tipo: ProcessoTipo,
   parcela: ProcessoPrazoParcelaNumero
 ): ProcessoPrazoParcelaKey {
-  return `processo${categoriaSlugByValue[categoria]}${tipoSlugByValue[tipo]}Parcela${parcela}DiasUteis`;
+  return `processo${resolveCategoriaSlug(categoria)}${tipoSlugByValue[tipo]}Parcela${parcela}DiasUteis`;
 }
 
 export const processoPrazoParcelaDefinitions = processoPrazoCategorias.flatMap((categoria) =>
@@ -359,7 +366,7 @@ export function getLimiteCompraDias(config: ConfiguracaoSistema) {
 
 export function getProcessoParcelasDiasUteis(
   config: ConfiguracaoSistema,
-  categoria: CategoriaMaterial,
+  categoria: ProcessoCategoria,
   tipo: ProcessoTipo
 ) {
   return processoPrazoParcelaNumeros.map((parcela) => config[getProcessoPrazoParcelaKey(categoria, tipo, parcela)]);
@@ -367,7 +374,7 @@ export function getProcessoParcelasDiasUteis(
 
 export function getProcessoParcelaDiasUteis(
   config: ConfiguracaoSistema,
-  categoria: CategoriaMaterial,
+  categoria: ProcessoCategoria,
   tipo: ProcessoTipo,
   index: number
 ) {

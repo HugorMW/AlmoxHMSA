@@ -28,6 +28,7 @@ import {
   MonthlyConsumptionRow,
   ProcessoAcompanhamento,
   ProcessoParcelaDetalhe,
+  ProcessoProduto,
   ProcessoProdutoLookup,
   ProcessoSaveInput,
   ProductProcessSummary,
@@ -40,7 +41,7 @@ const ALMOX_SESSION_KEY = 'almox:base:session:v3';
 const ALMOX_CACHE_TTL_MS = 5 * 60 * 1000;
 const ALMOX_CONFIG_CACHE_KEY = 'almox:config:v1';
 const ALMOX_CONFIG_CACHE_TTL_MS = 30 * 60 * 1000;
-const ALMOX_PROCESS_CACHE_KEY = 'almox:processes:v2';
+const ALMOX_PROCESS_CACHE_KEY = 'almox:processes:v3';
 const ALMOX_PROCESS_CACHE_TTL_MS = 5 * 60 * 1000;
 const SYNC_STATUS_MAX_WAIT_MS = 10 * 60 * 1000;
 const ESTOQUE_ATUAL_SELECT_COLUMNS = [
@@ -249,17 +250,32 @@ async function loadMonthlyConsumptionRows() {
   return (data ?? []) as unknown as MonthlyConsumptionRow[];
 }
 
+function normalizarProcessoProduto(produto: ProcessoProduto, fallbackOrdem: number): ProcessoProduto {
+  return {
+    id: produto.id,
+    ordem: Number.isFinite(Number(produto.ordem)) ? Number(produto.ordem) : fallbackOrdem,
+    cod_bionexo: normalizarCodBionexo(produto.cod_bionexo ?? ''),
+    cd_produto: normalizarCodigoProduto(produto.cd_produto ?? ''),
+    ds_produto: normalizarTextoProcesso(produto.ds_produto ?? ''),
+    categoria_material: String(produto.categoria_material ?? '').trim() || 'material_hospitalar',
+    produto_manual: produto.produto_manual === true,
+  };
+}
+
 function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanhamento {
   const parcelasRaw = Array.isArray(item.parcelas_entregues) ? item.parcelas_entregues : [];
   const totalParcelas = Math.min(Math.max(Number(item.total_parcelas) || 3, 1), PROCESSO_TOTAL_PARCELAS_MAX);
   const parcelasEntregues = normalizarParcelasEntregues(parcelasRaw as boolean[], totalParcelas);
   const parcelasDetalhes = normalizarParcelasDetalhes(item.parcelas_detalhes, parcelasEntregues, totalParcelas);
+  const produtosRaw = Array.isArray(item.produtos) ? item.produtos : [];
+  const produtos = produtosRaw
+    .map((produto, index) => normalizarProcessoProduto(produto, index))
+    .sort((left, right) => left.ordem - right.ordem || left.cd_produto.localeCompare(right.cd_produto, 'pt-BR'));
 
   return {
     ...item,
     total_parcelas: totalParcelas,
-    ds_produto: normalizarTextoProcesso(item.ds_produto),
-    cod_bionexo: item.cod_bionexo ?? '',
+    produtos,
     edocs: item.edocs ?? '',
     marca: item.marca ?? '',
     fornecedor: item.fornecedor ?? '',
@@ -277,7 +293,7 @@ async function loadProcessItems() {
   const { data, error } = await supabase
     .from('almox_processos_acompanhamento')
     .select(
-      'id, categoria_material, cod_bionexo, cd_produto, ds_produto, numero_processo, edocs, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em'
+      'id, categoria_material, numero_processo, edocs, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
     )
     .eq('ativo', true)
     .order('critico', { ascending: false })
@@ -1433,27 +1449,41 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
   async function saveProcessItem(input: ProcessoSaveInput) {
     const supabase = getSupabaseClient();
-    const codBionexo = normalizarCodBionexo(input.cod_bionexo);
-    const cdProduto = normalizarCodigoProduto(input.cd_produto);
-    const dsProduto = normalizarTextoProcesso(input.ds_produto);
     const numeroProcesso = String(input.numero_processo ?? '').trim();
     const totalParcelas = Math.min(Math.max(Number(input.total_parcelas) || 3, 1), PROCESSO_TOTAL_PARCELAS_MAX);
     const parcelasEntregues = normalizarParcelasEntregues(input.parcelas_entregues ?? [], totalParcelas);
     const parcelasDetalhes = normalizarParcelasDetalhes(input.parcelas_detalhes, parcelasEntregues, totalParcelas);
-
-    if (!cdProduto || !dsProduto) {
-      throw new Error('Localize um produto da base HMSA antes de salvar o processo.');
-    }
+    const produtosNormalizados = (Array.isArray(input.produtos) ? input.produtos : [])
+      .map((produto, index) => normalizarProcessoProduto(produto, index))
+      .filter((produto) => produto.cd_produto && produto.ds_produto);
 
     if (!numeroProcesso) {
       throw new Error('Informe o número do pedido.');
     }
+    if (produtosNormalizados.length === 0) {
+      throw new Error('Adicione pelo menos um produto ao processo.');
+    }
+
+    const algumManual = produtosNormalizados.some((produto) => produto.produto_manual);
+    const algumDaBase = produtosNormalizados.some((produto) => !produto.produto_manual);
+    if (algumManual && algumDaBase) {
+      throw new Error('Não é permitido misturar produtos manuais e da base SISCORE no mesmo processo.');
+    }
+
+    const cdProdutosVistos = new Set<string>();
+    for (const produto of produtosNormalizados) {
+      if (cdProdutosVistos.has(produto.cd_produto)) {
+        throw new Error(`Produto ${produto.cd_produto} aparece mais de uma vez no processo.`);
+      }
+      cdProdutosVistos.add(produto.cd_produto);
+    }
+
+    const categoriaProcesso = String(
+      input.categoria_material ?? produtosNormalizados[0]?.categoria_material ?? 'material_hospitalar'
+    ).trim();
 
     const payload = {
-      categoria_material: input.categoria_material,
-      cod_bionexo: codBionexo,
-      cd_produto: cdProduto,
-      ds_produto: dsProduto,
+      categoria_material: categoriaProcesso,
       numero_processo: numeroProcesso,
       edocs: String(input.edocs ?? '').trim(),
       marca: String(input.marca ?? '').trim(),
@@ -1476,17 +1506,56 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
           .eq('id', input.id)
       : supabase.from('almox_processos_acompanhamento').insert(payload);
 
-    const { data, error: saveError } = await query
-      .select(
-        'id, categoria_material, cod_bionexo, cd_produto, ds_produto, numero_processo, edocs, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em'
-      )
+    const { data: processoSalvo, error: saveError } = await query
+      .select('id')
       .single();
 
     if (saveError) {
       throw saveError;
     }
 
-    const nextItem = normalizarProcessoItem(data as ProcessoAcompanhamento);
+    const processoId = (processoSalvo as { id: string }).id;
+
+    const { error: deleteError } = await supabase
+      .from('almox_processos_acompanhamento_produtos')
+      .delete()
+      .eq('processo_id', processoId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    const produtosPayload = produtosNormalizados.map((produto, index) => ({
+      processo_id: processoId,
+      ordem: index,
+      cod_bionexo: produto.cod_bionexo,
+      cd_produto: produto.cd_produto,
+      ds_produto: produto.ds_produto,
+      categoria_material: produto.categoria_material,
+      produto_manual: produto.produto_manual,
+    }));
+
+    const { error: insertProdutosError } = await supabase
+      .from('almox_processos_acompanhamento_produtos')
+      .insert(produtosPayload);
+
+    if (insertProdutosError) {
+      throw insertProdutosError;
+    }
+
+    const { data: processoCompleto, error: fetchError } = await supabase
+      .from('almox_processos_acompanhamento')
+      .select(
+        'id, categoria_material, numero_processo, edocs, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
+      )
+      .eq('id', processoId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    const nextItem = normalizarProcessoItem(processoCompleto as ProcessoAcompanhamento);
     const nextProcessItems = ordenarProcessos([...processItems.filter((item) => item.id !== nextItem.id), nextItem]);
 
     startTransition(() => {
