@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -33,7 +34,10 @@ import {
   ProcessoStatus,
   ProcessoTipo,
 } from '@/features/almox/types';
-import { computeProcessStatus } from '@/features/almox/process-utils';
+import {
+  computeProcessStatus,
+  hasAndamentoComAlerta as hasSharedAndamentoComAlerta,
+} from '@/features/almox/process-utils';
 import {
   getProcessoCategoriaCustomColor,
   getProcessoCategoriaTabLabel,
@@ -49,6 +53,10 @@ const PROCESS_TYPES: ProcessoTipo[] = [
   'Processo de Dispensa',
 ];
 const PROCESS_TABLE_MIN_WIDTH = 1160;
+const ALL_PROCESS_CATEGORIES = '__all__';
+
+type ProcessoAttentionPreset = 'overdue' | 'near_due' | 'collecting';
+type ProcessCategoryFilter = ProcessoCategoria | typeof ALL_PROCESS_CATEGORIES;
 
 type ProcessTheme = {
   bg: string;
@@ -582,6 +590,16 @@ function normalizeProductCode(value: string) {
   return String(value ?? '').trim();
 }
 
+function normalizeAttentionPreset(value: string | string[] | undefined): ProcessoAttentionPreset | null {
+  const normalized = Array.isArray(value) ? value[0] : value;
+
+  if (normalized === 'overdue' || normalized === 'near_due' || normalized === 'collecting') {
+    return normalized;
+  }
+
+  return null;
+}
+
 function useProcessScreenSkin() {
   const { mode, tokens } = useAppTheme();
   return useMemo(() => {
@@ -631,6 +649,11 @@ function getProcessListRank(item: Pick<ProcessoEnriquecido, 'status' | 'critico'
 
 export default function ProcessesScreen() {
   const { processTheme, styles } = useProcessScreenSkin();
+  const params = useLocalSearchParams<{ attention?: string | string[] }>();
+  const attentionPreset = useMemo(
+    () => normalizeAttentionPreset(params.attention),
+    [params.attention]
+  );
   const {
     processItems,
     processItemsLoading,
@@ -647,7 +670,9 @@ export default function ProcessesScreen() {
     setProcessCanceled,
     deleteProcessItem,
   } = useAlmoxData();
-  const [categoria, setCategoria] = useState<ProcessoCategoria>('material_hospitalar');
+  const [categoria, setCategoria] = useState<ProcessCategoryFilter>(
+    attentionPreset ? ALL_PROCESS_CATEGORIES : 'material_hospitalar'
+  );
   const [search, setSearch] = useState('');
   const [tipoFilter, setTipoFilter] = useState<ProcessoTipo | 'todos'>('todos');
   const [statusFilter, setStatusFilter] = useState<ProcessoStatus | 'todos' | 'critico'>('todos');
@@ -657,6 +682,7 @@ export default function ProcessesScreen() {
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger' | 'info'; message: string } | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [parcelasVisualState, setParcelasVisualState] = useState<Record<string, ProcessoParcelasVisualMap>>({});
+  const appliedAttentionPresetRef = useRef<ProcessoAttentionPreset | null | '__none__'>('__none__');
 
   useEffect(() => {
     let active = true;
@@ -673,6 +699,23 @@ export default function ProcessesScreen() {
       active = false;
     };
   }, [refreshProcessItems]);
+
+  useEffect(() => {
+    if (appliedAttentionPresetRef.current === attentionPreset) {
+      return;
+    }
+
+    appliedAttentionPresetRef.current = attentionPreset;
+
+    if (attentionPreset) {
+      setCategoria(ALL_PROCESS_CATEGORIES);
+      setSearch('');
+      setTipoFilter('todos');
+      setStatusFilter(attentionPreset === 'overdue' ? 'atrasado' : 'todos');
+      setSortOption('prioridade');
+      setShowFilters(true);
+    }
+  }, [attentionPreset]);
 
   const enrichedItems = useMemo<ProcessoEnriquecido[]>(
     () =>
@@ -702,11 +745,13 @@ export default function ProcessesScreen() {
 
   const categoryItems = useMemo(
     () =>
-      enrichedItems.filter(
-        (item) =>
-          item.categoria_material === categoria ||
-          (item.produtos ?? []).some((produto) => produto.categoria_material === categoria)
-      ),
+      categoria === ALL_PROCESS_CATEGORIES
+        ? enrichedItems
+        : enrichedItems.filter(
+            (item) =>
+              item.categoria_material === categoria ||
+              (item.produtos ?? []).some((produto) => produto.categoria_material === categoria)
+          ),
     [categoria, enrichedItems]
   );
 
@@ -723,6 +768,23 @@ export default function ProcessesScreen() {
             return false;
           }
         } else if (statusFilter !== 'todos' && item.status !== statusFilter) {
+          return false;
+        }
+
+        if (attentionPreset === 'overdue' && item.status !== 'atrasado') {
+          return false;
+        }
+
+        if (
+          attentionPreset === 'near_due' &&
+          (item.cancelado ||
+            item.status === 'atrasado' ||
+            !hasSharedAndamentoComAlerta(item, systemConfig, item.visualParcelas))
+        ) {
+          return false;
+        }
+
+        if (attentionPreset === 'collecting' && !(item.critico && item.status === 'atrasado')) {
           return false;
         }
 
@@ -761,7 +823,7 @@ export default function ProcessesScreen() {
           left.numero_pedido.localeCompare(right.numero_pedido, 'pt-BR')
         );
       });
-  }, [categoryItems, search, sortOption, statusFilter, tipoFilter]);
+  }, [attentionPreset, categoryItems, search, sortOption, statusFilter, systemConfig, tipoFilter]);
 
   const allCategorias = useMemo(
     () =>
@@ -775,7 +837,7 @@ export default function ProcessesScreen() {
   );
 
   useEffect(() => {
-    if (!allCategorias.includes(categoria)) {
+    if (categoria !== ALL_PROCESS_CATEGORIES && !allCategorias.includes(categoria)) {
       setCategoria(allCategorias[0] ?? 'material_hospitalar');
     }
   }, [allCategorias, categoria]);
@@ -805,7 +867,7 @@ export default function ProcessesScreen() {
     }
   }
 
-  function resetFiltersForCategory(nextCategoria: ProcessoCategoria) {
+  function resetFiltersForCategory(nextCategoria: ProcessCategoryFilter) {
     setCategoria(nextCategoria);
     setSearch('');
     setTipoFilter('todos');
@@ -832,22 +894,33 @@ export default function ProcessesScreen() {
         <View pointerEvents="none" style={styles.stageGlowBottom} />
         <View style={styles.topBar}>
           <DarkTabGroup
-            options={allCategorias.map((value) => {
-              const baseColor =
-                value === 'material_hospitalar'
-                  ? processTheme.blue
-                  : value === 'material_farmacologico'
-                    ? processTheme.purple
-                    : getProcessoCategoriaCustomColor(value);
-              return {
-                label: getProcessoCategoriaTabLabel(value),
-                count: enrichedItems.filter(
-                  (item) => item.categoria_material === value && !item.ignorado
-                ).length,
-                value: String(value),
-                color: baseColor,
-              };
-            })}
+            options={[
+              {
+                label: 'Todas',
+                count: enrichedItems.filter((item) => !item.ignorado).length,
+                value: ALL_PROCESS_CATEGORIES,
+                color: processTheme.accent,
+              },
+              ...allCategorias.map((value) => {
+                const baseColor =
+                  value === 'material_hospitalar'
+                    ? processTheme.blue
+                    : value === 'material_farmacologico'
+                      ? processTheme.purple
+                      : getProcessoCategoriaCustomColor(value);
+                return {
+                  label: getProcessoCategoriaTabLabel(value),
+                  count: enrichedItems.filter(
+                    (item) =>
+                      !item.ignorado &&
+                      (item.categoria_material === value ||
+                        (item.produtos ?? []).some((produto) => produto.categoria_material === value))
+                  ).length,
+                  value: String(value),
+                  color: baseColor,
+                };
+              }),
+            ]}
             value={String(categoria)}
             onChange={resetFiltersForCategory}
           />
@@ -857,7 +930,15 @@ export default function ProcessesScreen() {
               label="Novo processo"
               icon="plus"
               tone="accent"
-              onPress={() => setModal({ type: 'new', categoria })}
+              onPress={() =>
+                setModal({
+                  type: 'new',
+                  categoria:
+                    categoria === ALL_PROCESS_CATEGORIES
+                      ? (allCategorias[0] ?? 'material_hospitalar')
+                      : categoria,
+                })
+              }
             />
           </View>
         </View>
@@ -883,6 +964,20 @@ export default function ProcessesScreen() {
             title={feedback.tone === 'success' ? 'Processo atualizado' : 'Atenção'}
             description={feedback.message}
             tone={feedback.tone}
+          />
+        ) : null}
+
+        {attentionPreset ? (
+          <DarkNotice
+            title="Filtro rápido da dashboard"
+            description={
+              attentionPreset === 'overdue'
+                ? 'Exibindo processos com parcelas atrasadas.'
+                : attentionPreset === 'near_due'
+                  ? 'Exibindo processos com parcelas vencendo em breve.'
+                  : 'Exibindo processos críticos com atraso e necessidade de cobrança.'
+            }
+            tone="info"
           />
         ) : null}
 

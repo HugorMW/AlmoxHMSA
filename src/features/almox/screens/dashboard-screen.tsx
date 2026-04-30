@@ -23,6 +23,10 @@ import {
   getLevelRangeLabels,
   getLevelTooltips,
 } from "@/features/almox/configuracao";
+import {
+  computeProcessStatus,
+  hasAndamentoComAlerta,
+} from "@/features/almox/process-utils";
 import { useAppTheme } from "@/features/almox/theme-provider";
 import { AlmoxTheme, levelColors } from "@/features/almox/tokens";
 import { Hospital, Level } from "@/features/almox/types";
@@ -72,6 +76,7 @@ export default function DashboardScreen() {
     syncingBase,
     syncBase,
     usingCachedData,
+    processItems,
     systemConfig,
     dashboardHospital,
     openProcessSummaryByProductCode,
@@ -142,34 +147,30 @@ export default function DashboardScreen() {
     const hmsaProducts = dataset.productsByHospital.HMSA ?? [];
     const summaries = openProcessSummaryByProductCode;
     let buyUrgent = 0;
-    let processOverdue = 0;
-    let processNearDue = 0;
-    let collecting = 0;
+
     for (const product of hmsaProducts) {
       const summary = summaries[product.product_code];
       const hasOpen = !!summary && summary.total_open > 0;
       if (product.action === "COMPRAR" && !hasOpen) {
         buyUrgent += 1;
       }
-      if (summary) {
-        processOverdue += summary.overdue_count;
-        for (const entry of summary.entries) {
-          for (const parcel of entry.parcelas) {
-            if (parcel.near_due && !parcel.overdue) {
-              processNearDue += 1;
-            }
-          }
-        }
-        if (
-          (product.level === "URGENTE" || product.level === "CRÍTICO") &&
-          summary.overdue_count > 0
-        ) {
-          collecting += 1;
-        }
-      }
     }
+
+    const activeProcesses = processItems.filter((item) => !item.ignorado);
+    const processOverdue = activeProcesses.filter(
+      (item) => computeProcessStatus(item, systemConfig) === "atrasado",
+    ).length;
+    const processNearDue = activeProcesses.filter((item) => {
+      const status = computeProcessStatus(item, systemConfig);
+      return status !== "atrasado" && status !== "cancelado" && hasAndamentoComAlerta(item, systemConfig);
+    }).length;
+    const collecting = activeProcesses.filter((item) => {
+      const status = computeProcessStatus(item, systemConfig);
+      return item.critico && status === "atrasado";
+    }).length;
+
     return { buyUrgent, processOverdue, processNearDue, collecting };
-  }, [dataset.productsByHospital, openProcessSummaryByProductCode]);
+  }, [dataset.productsByHospital, openProcessSummaryByProductCode, processItems, systemConfig]);
 
   const seriesByLevel = useMemo(() => {
     const history = kpiHistoricoByHospital[activeHospital] ?? [];
@@ -800,7 +801,8 @@ function AttentionStrip({ counts }: { counts: AttentionCounts }) {
       hint: "Parcelas vencidas",
       icon: "alert",
       color: tokens.colors.red,
-      onPress: () => router.navigate("/processes"),
+      onPress: () =>
+        router.navigate({ pathname: "/processes", params: { attention: "overdue" } }),
     },
     {
       key: "processNearDue",
@@ -808,7 +810,8 @@ function AttentionStrip({ counts }: { counts: AttentionCounts }) {
       hint: "Parcelas em até 7 dias",
       icon: "clock",
       color: tokens.colors.amber,
-      onPress: () => router.navigate("/processes"),
+      onPress: () =>
+        router.navigate({ pathname: "/processes", params: { attention: "near_due" } }),
     },
     {
       key: "collecting",
@@ -816,7 +819,8 @@ function AttentionStrip({ counts }: { counts: AttentionCounts }) {
       hint: "Crítico com atraso",
       icon: "send",
       color: tokens.colors.violet,
-      onPress: () => router.navigate("/processes"),
+      onPress: () =>
+        router.navigate({ pathname: "/processes", params: { attention: "collecting" } }),
     },
   ];
 
