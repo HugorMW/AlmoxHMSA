@@ -737,6 +737,7 @@ export default function ProcessesScreen() {
             item.numero_pedido,
             item.edocs,
             item.edocs_ata_origem,
+            item.observacao,
             ...productHaystack,
             item.fornecedor,
             item.marca,
@@ -1502,6 +1503,11 @@ function ProcessRow({
         <Text style={styles.productMeta} numberOfLines={1}>
           Marca: {item.marca || 'Não informada'}
         </Text>
+        {item.observacao ? (
+          <Text style={styles.productMeta} numberOfLines={2}>
+            Obs.: {normalizeInlineText(item.observacao)}
+          </Text>
+        ) : null}
       </View>
 
       <Pressable
@@ -1803,6 +1809,7 @@ function ProcessFormModal({
   const [edocsAtaOrigem, setEdocsAtaOrigem] = useState(
     initial?.edocs_ata_origem ?? (initial?.tipo_processo === 'ARP' ? (initial?.numero_pedido ?? '') : '')
   );
+  const [observacao, setObservacao] = useState(initial?.observacao ?? '');
   const [marca, setMarca] = useState(initial?.marca ?? '');
   const [tipoProcesso, setTipoProcesso] = useState<ProcessoTipo>(initial?.tipo_processo ?? 'ARP');
   const [fornecedor, setFornecedor] = useState(initial?.fornecedor ?? '');
@@ -1868,6 +1875,7 @@ function ProcessFormModal({
         numero_pedido: isAtaExecutionProcess ? '' : normalizedSecondaryProcess,
         edocs: normalizedPrimaryProcess,
         edocs_ata_origem: isAtaExecutionProcess ? normalizedAtaOrigem : '',
+        observacao: observacao.trim(),
         marca: marca.trim(),
         tipo_processo: tipoProcesso,
         fornecedor: fornecedor.trim(),
@@ -2003,6 +2011,17 @@ function ProcessFormModal({
                 <DarkInput value={marca} onChangeText={setMarca} placeholder="Marca do item" />
               </DarkField>
             </View>
+
+            <DarkField label="Observação">
+              <DarkInput
+                value={observacao}
+                onChangeText={setObservacao}
+                placeholder="Ex: fornecedor acionado, processo prioritário, compra para cobertura imediata..."
+                multiline
+                textAlignVertical="top"
+                style={styles.darkTextarea}
+              />
+            </DarkField>
 
             <View style={styles.modalGrid}>
               <DarkField label="Data de resgate">
@@ -3724,6 +3743,11 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       paddingVertical: 9,
       fontSize: 13,
       outlineStyle: 'none' as any,
+    },
+    darkTextarea: {
+      minHeight: 88,
+      paddingTop: 11,
+      paddingBottom: 11,
     },
     metricGrid: {
       flexDirection: 'row',

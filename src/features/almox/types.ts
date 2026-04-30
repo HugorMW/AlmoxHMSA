@@ -200,6 +200,7 @@ export interface ProcessoAcompanhamento {
   numero_pedido: string;
   edocs: string;
   edocs_ata_origem: string;
+  observacao: string;
   marca: string;
   tipo_processo: ProcessoTipo;
   fornecedor: string;
