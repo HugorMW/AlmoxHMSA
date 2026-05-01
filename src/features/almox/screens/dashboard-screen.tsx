@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useDeferredValue, useMemo, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useAlmoxData } from "@/features/almox/almox-provider";
 import {
@@ -51,14 +51,11 @@ const LEVEL_LABEL: Record<Level, string> = {
 export default function DashboardScreen() {
   const { mode, tokens } = useAppTheme();
   const styles = useDashboardStyles();
-  const searchInputRef = useRef<TextInput>(null);
   const [selectedView, setSelectedView] = useState<SelectedView>("all");
   const [listCollapsed, setListCollapsed] = useState(true);
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState<PageSize>(10);
   const [search, setSearch] = useState("");
-  const [isTableSearchOpen, setTableSearchOpen] = useState(false);
-  const [isColumnsEditorOpen, setColumnsEditorOpen] = useState(false);
   const [tableSort, setTableSort] = useState<ProductTableSortState>({
     column: "days",
     direction: "asc",
@@ -81,6 +78,7 @@ export default function DashboardScreen() {
     dashboardHospital,
     openProcessSummaryByProductCode,
     kpiHistoricoByHospital,
+    productTableAdminConfig,
   } = useAlmoxData();
   const showMaterialLabel = categoryFilter === "todos";
   const levelRanges = getLevelRangeLabels(systemConfig);
@@ -95,18 +93,6 @@ export default function DashboardScreen() {
     : "HMSA";
 
   const dashboard = dataset.dashboardByHospital[activeHospital];
-
-  useEffect(() => {
-    if (!isTableSearchOpen) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 0);
-
-    return () => clearTimeout(timer);
-  }, [isTableSearchOpen]);
 
   const filteredProducts = useMemo(() => {
     const allHospitalProducts =
@@ -131,7 +117,6 @@ export default function DashboardScreen() {
     tableSort,
     openProcessSummaryByProductCode,
   ]);
-  const isSearchExpanded = isTableSearchOpen || search.length > 0;
 
   const listTotalPages = Math.max(
     1,
@@ -142,6 +127,7 @@ export default function DashboardScreen() {
   const showActionColumns = activeHospital === "HMSA";
   const showProcessColumn = activeHospital === "HMSA";
   const showObservationColumn = activeHospital === "HMSA";
+  const dashboardTableColumns = productTableAdminConfig.dashboard;
 
   const attentionCounts = useMemo(() => {
     const hmsaProducts = dataset.productsByHospital.HMSA ?? [];
@@ -410,54 +396,6 @@ export default function DashboardScreen() {
                 style={styles.listPanelMeta}
               >{`${filteredProducts.length} produto(s) em ${activeHospital}`}</Text>
             </View>
-            <View style={styles.listPanelActions}>
-              <View style={styles.tableTitleSearchWrap}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isSearchExpanded ? "Campo de busca aberto" : "Abrir busca"
-                  }
-                  onPress={() => setTableSearchOpen(true)}
-                  style={({ pressed }) => [
-                    styles.tableTitleSearch,
-                    isSearchExpanded ? styles.tableTitleSearchExpanded : null,
-                    pressed ? styles.tableTitleSearchPressed : null,
-                  ]}
-                >
-                  <AppIcon
-                    name="search"
-                    size={16}
-                    color={styles.tableTitleSearchIcon.color as string}
-                  />
-                  {isSearchExpanded ? (
-                    <TextInput
-                      ref={searchInputRef}
-                      value={search}
-                      onChangeText={(value) => {
-                        setSearch(value);
-                        setListPage(1);
-                      }}
-                      placeholder="Buscar produto ou código..."
-                      placeholderTextColor={
-                        styles.tableTitleSearchPlaceholder.color as string
-                      }
-                      style={styles.tableTitleSearchInput}
-                      onBlur={() => {
-                        if (!search.trim()) {
-                          setTableSearchOpen(false);
-                        }
-                      }}
-                    />
-                  ) : null}
-                </Pressable>
-              </View>
-              <ActionButton
-                label={isColumnsEditorOpen ? "Fechar edição" : "Editar colunas"}
-                icon="edit"
-                tone="neutral"
-                onPress={() => setColumnsEditorOpen((current) => !current)}
-              />
-            </View>
           </View>
           {filteredProducts.length === 0 ? (
             <EmptyState
@@ -484,17 +422,24 @@ export default function DashboardScreen() {
                   setTableSort(nextSorting);
                   setListPage(1);
                 }}
+                search={{
+                  value: search,
+                  onChangeText: (value) => {
+                    setSearch(value);
+                    setListPage(1);
+                  },
+                  placeholder: "Buscar produto ou código...",
+                }}
                 editableColumns={{
                   scope: DASHBOARD_PRODUCT_COLUMNS_PREFERENCE_SCOPE,
                   cacheKeyPrefix:
                     DASHBOARD_PRODUCT_COLUMNS_CACHE_KEY_PREFIX,
                   bottomScrollbarId: "dashboard-products-bottom-scrollbar",
                 }}
-                columnsEditor={{
-                  isOpen: isColumnsEditorOpen,
-                  onOpenChange: setColumnsEditorOpen,
-                  hideButton: true,
-                }}
+                enabledColumns={dashboardTableColumns.enabledColumns}
+                defaultVisibleColumns={
+                  dashboardTableColumns.defaultVisibleColumns
+                }
               />
               <PaginationFooter
                 totalItems={filteredProducts.length}
@@ -1464,55 +1409,10 @@ function createDashboardStyles(tokens: AlmoxTheme) {
       gap: 4,
       minWidth: 220,
     },
-    listPanelActions: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      flexWrap: "wrap",
-      justifyContent: "flex-end",
-    },
     listPanelMeta: {
       color: tokens.colors.textMuted,
       fontSize: 12,
       fontWeight: "600",
-    },
-    tableTitleSearchWrap: {
-      minWidth: 44,
-      alignItems: "flex-end",
-    },
-    tableTitleSearch: {
-      minHeight: 40,
-      width: 40,
-      borderRadius: tokens.radii.pill,
-      borderWidth: 1,
-      borderColor: tokens.colors.lineStrong,
-      backgroundColor: tokens.colors.surface,
-      paddingHorizontal: tokens.spacing.sm,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: tokens.spacing.xs,
-      overflow: "hidden",
-    },
-    tableTitleSearchExpanded: {
-      width: 280,
-      justifyContent: "flex-start",
-      backgroundColor: tokens.colors.surfaceRaised,
-    },
-    tableTitleSearchPressed: {
-      opacity: 0.88,
-    },
-    tableTitleSearchIcon: {
-      color: tokens.colors.textMuted,
-    },
-    tableTitleSearchPlaceholder: {
-      color: tokens.colors.textMuted,
-    },
-    tableTitleSearchInput: {
-      flex: 1,
-      color: tokens.colors.text,
-      fontSize: 13,
-      paddingVertical: 0,
     },
     listPanelBody: {
       padding: tokens.spacing.lg,

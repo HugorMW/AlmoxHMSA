@@ -1,14 +1,26 @@
-import React, { useMemo, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { ActionBadge, LevelBadge } from "@/features/almox/components/badges";
+import {
+  ActionBadge,
+  LevelBadge,
+  RuptureBadge,
+  ScoreBadge,
+} from "@/features/almox/components/badges";
 import {
   ActionButton,
   AppIcon,
-  SearchField,
 } from "@/features/almox/components/common";
 import { DataTableShell } from "@/features/almox/components/data-table-shell";
 import { getCategoriaMaterialLabel } from "@/features/almox/data";
+import {
+  DEFAULT_VISIBLE_PRODUCT_COLUMNS,
+  PRODUCT_TABLE_COLUMN_OPTIONS,
+  ProductColumnDefinition,
+  ProductColumnId,
+  ensureRequiredProductColumnIds,
+  normalizeProductColumnIds,
+} from "@/features/almox/product-table-columns";
 import { useThemedStyles } from "@/features/almox/theme-provider";
 import { AlmoxTheme } from "@/features/almox/tokens";
 import {
@@ -27,23 +39,6 @@ const EMPTY_LEGACY_CACHE_KEYS: string[] = [];
 const OBSERVATION_EMPHASIS_REGEX =
   /(Estoque:|Entrada:|VALIDAR USO|Processo:|Parcela:|Cobrança:|Compra:|Remanejamento:|Contingência:|Backup:|Objetivo:|Limite:|Próximo passo:|Status:|Consumo:|sem processo aberto|retirar da lista se obsoleto|E-DOCS\s+[A-Za-z0-9./-]+|(?:ARP|Processo Simplificado|Processo Excepcional|Processo de Dispensa)\s+[A-Za-z0-9./-]+|P\d+|\b(?:HMSA|HEC|HDDS|HABF)\b|\d{2}\/\d{2}\/\d{4}|\+\d+d|>\s*\d+\s+anos|\d+\s+un\.|\d+\s+dias|\d+%|(?:há|daqui a)\s+\d+\s+(?:ano\(s\)|mes\(es\)|dia\(s\))|hoje)/g;
 
-type ProductColumnId =
-  | "product"
-  | "code"
-  | "days"
-  | "level"
-  | "process"
-  | "action"
-  | "hospital"
-  | "observation";
-
-type ProductColumnDefinition = {
-  id: ProductColumnId;
-  label: string;
-  width: number;
-  required?: boolean;
-};
-
 type ProductRenderedColumn = ProductColumnDefinition & {
   preview?: boolean;
 };
@@ -54,54 +49,6 @@ type ProductColumnLayout = {
   visibleIds: ProductColumnId[];
   hiddenIds: ProductColumnId[];
 };
-
-const PRODUCT_TABLE_COLUMN_OPTIONS: ProductColumnDefinition[] = [
-  {
-    id: "product",
-    label: "Produto",
-    width: 300,
-    required: true,
-  },
-  {
-    id: "code",
-    label: "Código",
-    width: 60,
-  },
-  {
-    id: "days",
-    label: "Dias",
-    width: 50,
-  },
-  {
-    id: "level",
-    label: "Nível",
-    width: 110,
-  },
-  {
-    id: "process",
-    label: "Processos",
-    width: 150,
-  },
-  {
-    id: "action",
-    label: "Ação",
-    width: 180,
-  },
-  {
-    id: "hospital",
-    label: "Hospital compatível",
-    width: 220,
-  },
-  {
-    id: "observation",
-    label: "Obs. operacional",
-    width: 360,
-  },
-];
-
-const DEFAULT_VISIBLE_PRODUCT_COLUMNS = PRODUCT_TABLE_COLUMN_OPTIONS.map(
-  (column) => column.id,
-);
 
 const LEVEL_SORT_ORDER: Record<Level, number> = {
   URGENTE: 0,
@@ -186,6 +133,19 @@ function compareProductsForTable(
         compareNumber(left.sufficiency_days, right.sufficiency_days, 0) ||
         compareText(left.product_name, right.product_name);
       break;
+    case "cmm":
+      result =
+        compareNumber(
+          left.avg_monthly_consumption,
+          right.avg_monthly_consumption,
+          0,
+        ) || compareText(left.product_name, right.product_name);
+      break;
+    case "score":
+      result =
+        compareNumber(left.score, right.score, Number.POSITIVE_INFINITY) ||
+        compareText(left.product_name, right.product_name);
+      break;
     case "level":
       result =
         compareNumber(
@@ -194,6 +154,20 @@ function compareProductsForTable(
           0,
         ) || compareText(left.product_name, right.product_name);
       break;
+    case "risk": {
+      const riskOrder = {
+        "RISCO ALTO": 0,
+        "RISCO MÉDIO": 1,
+        ESTÁVEL: 2,
+      } as const;
+      result =
+        compareNumber(
+          left.rupture_risk ? riskOrder[left.rupture_risk] : null,
+          right.rupture_risk ? riskOrder[right.rupture_risk] : null,
+          Number.POSITIVE_INFINITY,
+        ) || compareText(left.product_name, right.product_name);
+      break;
+    }
     case "process": {
       const leftSummary = processSummaryByProductCode[left.product_code];
       const rightSummary = processSummaryByProductCode[right.product_code];
@@ -220,6 +194,22 @@ function compareProductsForTable(
         ) ||
         compareText(left.product_name, right.product_name);
       break;
+    case "quantity":
+      result =
+        compareNumber(
+          left.qty_transfer ?? left.qty_to_buy,
+          right.qty_transfer ?? right.qty_to_buy,
+          Number.POSITIVE_INFINITY,
+        ) || compareText(left.product_name, right.product_name);
+      break;
+    case "postAction":
+      result =
+        compareNumber(
+          left.projected_suf ?? left.nova_suf_receptor,
+          right.projected_suf ?? right.nova_suf_receptor,
+          Number.POSITIVE_INFINITY,
+        ) || compareText(left.product_name, right.product_name);
+      break;
     case "observation":
       result =
         compareText(left.observation_summary, right.observation_summary) ||
@@ -232,102 +222,26 @@ function compareProductsForTable(
   return result * direction;
 }
 
-function normalizeProductColumnIds(value: unknown) {
-  const validIds = new Set<ProductColumnId>(
-    PRODUCT_TABLE_COLUMN_OPTIONS.map((column) => column.id),
-  );
-  const uniqueIds = new Set<ProductColumnId>();
-  const normalizedIds: ProductColumnId[] = [];
-
-  if (!Array.isArray(value)) {
-    return normalizedIds;
-  }
-
-  for (const rawId of value) {
-    if (typeof rawId !== "string") {
-      continue;
-    }
-
-    const columnId = rawId as ProductColumnId;
-    if (!validIds.has(columnId) || uniqueIds.has(columnId)) {
-      continue;
-    }
-
-    uniqueIds.add(columnId);
-    normalizedIds.push(columnId);
-  }
-
-  return normalizedIds;
+function serializeProductColumnIds(columnIds: ProductColumnId[] | undefined) {
+  return normalizeProductColumnIds(columnIds).join("|");
 }
 
-function normalizeProductColumnLayout(value: unknown): ProductColumnLayout {
-  const defaultOrder = PRODUCT_TABLE_COLUMN_OPTIONS.map((column) => column.id);
-  const requiredIds = PRODUCT_TABLE_COLUMN_OPTIONS.filter(
-    (column) => column.required,
-  ).map((column) => column.id);
-
-  if (Array.isArray(value)) {
-    const normalizedVisibleIds = normalizeProductColumnIds(value);
-    const visibleIds = defaultOrder.filter(
-      (columnId) =>
-        requiredIds.includes(columnId) ||
-        normalizedVisibleIds.includes(columnId),
-    );
-    const hiddenIds = defaultOrder.filter(
-      (columnId) => !visibleIds.includes(columnId),
-    );
-    return { visibleIds, hiddenIds };
+function deserializeProductColumnIds(serializedColumnIds: string) {
+  if (!serializedColumnIds.trim()) {
+    return [] as ProductColumnId[];
   }
 
-  const rawValue =
-    typeof value === "object" && value !== null
-      ? (value as Record<string, unknown>)
-      : null;
-  const requestedVisibleIds = normalizeProductColumnIds(rawValue?.visibleIds);
-  const requestedHiddenIds = normalizeProductColumnIds(
-    rawValue?.hiddenIds,
-  ).filter((columnId) => !requestedVisibleIds.includes(columnId));
-
-  const visibleIds = [
-    ...requiredIds.filter(
-      (columnId) => !requestedVisibleIds.includes(columnId),
-    ),
-    ...requestedVisibleIds,
-  ];
-  const hiddenIds = [...requestedHiddenIds];
-
-  for (const columnId of defaultOrder) {
-    if (!visibleIds.includes(columnId) && !hiddenIds.includes(columnId)) {
-      hiddenIds.push(columnId);
-    }
-  }
-
-  return {
-    visibleIds:
-      visibleIds.length > 0 ? visibleIds : DEFAULT_VISIBLE_PRODUCT_COLUMNS,
-    hiddenIds,
-  };
+  return normalizeProductColumnIds(serializedColumnIds.split("|"));
 }
 
-function moveColumnId(
-  list: ProductColumnId[],
-  columnId: ProductColumnId,
-  targetIndex: number,
-) {
-  const nextList = list.filter((item) => item !== columnId);
-  const safeIndex = Math.max(0, Math.min(targetIndex, nextList.length));
-  nextList.splice(safeIndex, 0, columnId);
-  return nextList;
-}
-
-function buildAvailableColumns({
-  showActionColumns,
-  showProcessColumn,
-  showObservationColumn,
+function resolveLegacyEnabledProductColumnIds({
+  showActionColumns = true,
+  showProcessColumn = true,
+  showObservationColumn = true,
 }: {
-  showActionColumns: boolean;
-  showProcessColumn: boolean;
-  showObservationColumn: boolean;
+  showActionColumns?: boolean;
+  showProcessColumn?: boolean;
+  showObservationColumn?: boolean;
 }) {
   return PRODUCT_TABLE_COLUMN_OPTIONS.filter((column) => {
     if (column.id === "process") {
@@ -343,7 +257,137 @@ function buildAvailableColumns({
     }
 
     return true;
-  });
+  }).map((column) => column.id);
+}
+
+function resolveEnabledProductColumnIds({
+  enabledColumns,
+  showActionColumns,
+  showProcessColumn,
+  showObservationColumn,
+}: {
+  enabledColumns?: ProductColumnId[];
+  showActionColumns?: boolean;
+  showProcessColumn?: boolean;
+  showObservationColumn?: boolean;
+}) {
+  const normalizedEnabledIds =
+    enabledColumns && enabledColumns.length > 0
+      ? normalizeProductColumnIds(enabledColumns)
+      : resolveLegacyEnabledProductColumnIds({
+          showActionColumns,
+          showProcessColumn,
+          showObservationColumn,
+        });
+
+  return ensureRequiredProductColumnIds(normalizedEnabledIds);
+}
+
+function resolveDefaultVisibleProductColumnIds({
+  defaultVisibleColumns,
+  enabledColumnIds,
+}: {
+  defaultVisibleColumns?: ProductColumnId[];
+  enabledColumnIds: ProductColumnId[];
+}) {
+  const enabledIdsSet = new Set(enabledColumnIds);
+  const requestedDefaultIds =
+    defaultVisibleColumns && defaultVisibleColumns.length > 0
+      ? normalizeProductColumnIds(defaultVisibleColumns).filter((id) =>
+          enabledIdsSet.has(id),
+        )
+      : DEFAULT_VISIBLE_PRODUCT_COLUMNS.filter((id) => enabledIdsSet.has(id));
+
+  return ensureRequiredProductColumnIds(requestedDefaultIds).filter((id) =>
+    enabledIdsSet.has(id),
+  );
+}
+
+function createProductColumnLayoutNormalizer({
+  enabledColumnIds,
+  defaultVisibleColumnIds,
+}: {
+  enabledColumnIds: ProductColumnId[];
+  defaultVisibleColumnIds: ProductColumnId[];
+}) {
+  const enabledIdsSet = new Set(enabledColumnIds);
+  const requiredIds = PRODUCT_TABLE_COLUMN_OPTIONS.filter(
+    (column) => column.required && enabledIdsSet.has(column.id),
+  ).map((column) => column.id);
+
+  return (value: unknown): ProductColumnLayout => {
+    const defaultOrder = [...enabledColumnIds];
+    const fallbackVisibleIds =
+      defaultVisibleColumnIds.length > 0
+        ? [...defaultVisibleColumnIds]
+        : [...defaultOrder];
+
+    if (Array.isArray(value)) {
+      const normalizedVisibleIds = normalizeProductColumnIds(value).filter((id) =>
+        enabledIdsSet.has(id),
+      );
+      const visibleIds = [
+        ...requiredIds.filter((id) => !normalizedVisibleIds.includes(id)),
+        ...normalizedVisibleIds,
+      ];
+      const hiddenIds = defaultOrder.filter(
+        (columnId) => !visibleIds.includes(columnId),
+      );
+      return {
+        visibleIds: visibleIds.length > 0 ? visibleIds : fallbackVisibleIds,
+        hiddenIds,
+      };
+    }
+
+    const rawValue =
+      typeof value === "object" && value !== null
+        ? (value as Record<string, unknown>)
+        : null;
+    const requestedVisibleIds = normalizeProductColumnIds(
+      rawValue?.visibleIds,
+    ).filter((id) => enabledIdsSet.has(id));
+    const requestedHiddenIds = normalizeProductColumnIds(
+      rawValue?.hiddenIds,
+    ).filter(
+      (columnId) =>
+        enabledIdsSet.has(columnId) && !requestedVisibleIds.includes(columnId),
+    );
+
+    const visibleIds = [
+      ...requiredIds.filter((columnId) => !requestedVisibleIds.includes(columnId)),
+      ...requestedVisibleIds,
+    ];
+    const hiddenIds = [...requestedHiddenIds];
+
+    for (const columnId of defaultOrder) {
+      if (!visibleIds.includes(columnId) && !hiddenIds.includes(columnId)) {
+        hiddenIds.push(columnId);
+      }
+    }
+
+    return {
+      visibleIds: visibleIds.length > 0 ? visibleIds : fallbackVisibleIds,
+      hiddenIds,
+    };
+  };
+}
+
+function moveColumnId(
+  list: ProductColumnId[],
+  columnId: ProductColumnId,
+  targetIndex: number,
+) {
+  const nextList = list.filter((item) => item !== columnId);
+  const safeIndex = Math.max(0, Math.min(targetIndex, nextList.length));
+  nextList.splice(safeIndex, 0, columnId);
+  return nextList;
+}
+
+function buildAvailableColumns(enabledColumnIds: ProductColumnId[]) {
+  const enabledIds = new Set(enabledColumnIds);
+  return PRODUCT_TABLE_COLUMN_OPTIONS.filter((column) =>
+    enabledIds.has(column.id),
+  );
 }
 
 function buildBottomScrollbarId(scope: string, explicitId?: string) {
@@ -362,9 +406,11 @@ function buildBottomScrollbarId(scope: string, explicitId?: string) {
 
 type ProductTableCommonProps = {
   items: Product[];
-  showActionColumns: boolean;
-  showProcessColumn: boolean;
-  showObservationColumn: boolean;
+  showActionColumns?: boolean;
+  showProcessColumn?: boolean;
+  showObservationColumn?: boolean;
+  enabledColumns?: ProductColumnId[];
+  defaultVisibleColumns?: ProductColumnId[];
   showMaterialLabel: boolean;
   levelTooltips: Record<Level, string>;
   actionTooltips: Record<Action, string>;
@@ -378,6 +424,8 @@ type ProductTableCommonProps = {
     onChangeText: (value: string) => void;
     placeholder?: string;
   };
+  columnLabels?: Partial<Record<ProductColumnId, string>>;
+  columnValueSuffixes?: Partial<Record<ProductColumnId, string>>;
 };
 
 type ProductTableEditableColumnsConfig = {
@@ -422,24 +470,118 @@ export function ProductTable({
   );
 }
 
+function TableToolbar({
+  search,
+  editorButtonLabel,
+  onEditorButtonPress,
+}: {
+  search?: ProductTableCommonProps["search"];
+  editorButtonLabel?: string | null;
+  onEditorButtonPress?: (() => void) | null;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const searchInputRef = useRef<TextInput>(null);
+  const [isSearchOpen, setSearchOpen] = useState(false);
+  const isSearchExpanded = isSearchOpen || (search?.value?.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (!isSearchOpen || !search) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isSearchOpen, search]);
+
+  if (!search && !editorButtonLabel) {
+    return null;
+  }
+
+  return (
+    <View style={styles.tableToolbar}>
+      {search ? (
+        <View style={styles.tableTitleSearchWrap}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              isSearchExpanded ? "Campo de busca aberto" : "Abrir busca"
+            }
+            onPress={() => setSearchOpen(true)}
+            style={({ pressed }) => [
+              styles.tableTitleSearch,
+              isSearchExpanded ? styles.tableTitleSearchExpanded : null,
+              pressed ? styles.tableTitleSearchPressed : null,
+            ]}
+          >
+            <AppIcon
+              name="search"
+              size={16}
+              color={styles.tableTitleSearchIcon.color as string}
+            />
+            {isSearchExpanded ? (
+              <TextInput
+                ref={searchInputRef}
+                value={search.value}
+                onChangeText={search.onChangeText}
+                placeholder={search.placeholder ?? "Buscar produto ou código..."}
+                placeholderTextColor={
+                  styles.tableTitleSearchPlaceholder.color as string
+                }
+                style={styles.tableTitleSearchInput}
+                onBlur={() => {
+                  if (!search.value.trim()) {
+                    setSearchOpen(false);
+                  }
+                }}
+              />
+            ) : null}
+          </Pressable>
+        </View>
+      ) : null}
+      {editorButtonLabel && onEditorButtonPress ? (
+        <ActionButton
+          label={editorButtonLabel}
+          icon="edit"
+          tone="neutral"
+          onPress={onEditorButtonPress}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 function SimpleProductTable(
   props: ProductTableCommonProps & {
     bottomScrollbarId?: string;
   },
 ) {
   const styles = useThemedStyles(createStyles);
-  const columns = useMemo(
+  const enabledColumnsKey = serializeProductColumnIds(props.enabledColumns);
+  const enabledColumnIds = useMemo(
     () =>
-      buildAvailableColumns({
+      resolveEnabledProductColumnIds({
+        enabledColumns: deserializeProductColumnIds(enabledColumnsKey),
         showActionColumns: props.showActionColumns,
         showProcessColumn: props.showProcessColumn,
         showObservationColumn: props.showObservationColumn,
       }),
     [
+      enabledColumnsKey,
       props.showActionColumns,
       props.showObservationColumn,
       props.showProcessColumn,
     ],
+  );
+  const columns = useMemo(
+    () =>
+      buildAvailableColumns(enabledColumnIds).map((column) => ({
+        ...column,
+        label: props.columnLabels?.[column.id] ?? column.label,
+      })),
+    [enabledColumnIds, props.columnLabels],
   );
   const tableMinWidth = useMemo(
     () => columns.reduce((sum, column) => sum + column.width, 0),
@@ -448,19 +590,7 @@ function SimpleProductTable(
 
   return (
     <View style={styles.tableOuter}>
-      {props.search ? (
-        <View style={styles.tableToolbar}>
-          <View style={styles.tableToolbarSearch}>
-            <SearchField
-              value={props.search.value}
-              onChangeText={props.search.onChangeText}
-              placeholder={
-                props.search.placeholder ?? "Buscar produto ou código..."
-              }
-            />
-          </View>
-        </View>
-      ) : null}
+      <TableToolbar search={props.search} />
       <DataTableShell
         tableMinWidth={tableMinWidth}
         bottomScrollbarId={props.bottomScrollbarId}
@@ -488,6 +618,7 @@ function SimpleProductTable(
             processSummary={props.processSummaryByProductCode[item.product_code]}
             doadorSeguroDias={props.doadorSeguroDias}
             pisoDoadorAposEmprestimoDias={props.pisoDoadorAposEmprestimoDias}
+            columnValueSuffixes={props.columnValueSuffixes}
           />
         ))}
       />
@@ -508,9 +639,50 @@ function EditableProductTable({
     useState(false);
   const isColumnsEditorOpen =
     columnsEditor?.isOpen ?? internalIsColumnsEditorOpen;
+  const enabledColumnsKey = serializeProductColumnIds(props.enabledColumns);
+  const defaultVisibleColumnsKey = serializeProductColumnIds(
+    props.defaultVisibleColumns,
+  );
   const legacyCacheKeys = useMemo(
     () => editableColumns.legacyCacheKeys ?? EMPTY_LEGACY_CACHE_KEYS,
     [editableColumns.legacyCacheKeys],
+  );
+  const enabledColumnIds = useMemo(
+    () =>
+      resolveEnabledProductColumnIds({
+        enabledColumns: deserializeProductColumnIds(enabledColumnsKey),
+        showActionColumns: props.showActionColumns,
+        showProcessColumn: props.showProcessColumn,
+        showObservationColumn: props.showObservationColumn,
+      }),
+    [
+      enabledColumnsKey,
+      props.showActionColumns,
+      props.showObservationColumn,
+      props.showProcessColumn,
+    ],
+  );
+  const defaultVisibleColumnIds = useMemo(
+    () =>
+      resolveDefaultVisibleProductColumnIds({
+        defaultVisibleColumns: deserializeProductColumnIds(
+          defaultVisibleColumnsKey,
+        ),
+        enabledColumnIds,
+      }),
+    [defaultVisibleColumnsKey, enabledColumnIds],
+  );
+  const enabledColumnIdsKey = enabledColumnIds.join("|");
+  const defaultVisibleColumnIdsKey = defaultVisibleColumnIds.join("|");
+  const normalizeColumnLayout = useMemo(
+    () =>
+      createProductColumnLayoutNormalizer({
+        enabledColumnIds: deserializeProductColumnIds(enabledColumnIdsKey),
+        defaultVisibleColumnIds: deserializeProductColumnIds(
+          defaultVisibleColumnIdsKey,
+        ),
+      }),
+    [defaultVisibleColumnIdsKey, enabledColumnIdsKey],
   );
   const { value: columnLayout, setValue: setColumnLayout } =
     usePersistentUserPreference<ProductColumnLayout>({
@@ -519,21 +691,15 @@ function EditableProductTable({
       cacheTtlMs:
         editableColumns.cacheTtlMs ?? PRODUCT_TABLE_COLUMNS_CACHE_TTL_MS,
       legacyCacheKeys,
-      normalize: normalizeProductColumnLayout,
+      normalize: normalizeColumnLayout,
     });
-
   const availableColumns = useMemo(
     () =>
-      buildAvailableColumns({
-        showActionColumns: props.showActionColumns,
-        showProcessColumn: props.showProcessColumn,
-        showObservationColumn: props.showObservationColumn,
-      }),
-    [
-      props.showActionColumns,
-      props.showObservationColumn,
-      props.showProcessColumn,
-    ],
+      buildAvailableColumns(enabledColumnIds).map((column) => ({
+        ...column,
+        label: props.columnLabels?.[column.id] ?? column.label,
+      })),
+    [enabledColumnIds, props.columnLabels],
   );
   const availableIds = useMemo(
     () => new Set(availableColumns.map((column) => column.id)),
@@ -617,13 +783,13 @@ function EditableProductTable({
       const nextHiddenIds = current.hiddenIds.filter((id) => id !== columnId);
 
       if (targetList === "visible") {
-        return normalizeProductColumnLayout({
+        return normalizeColumnLayout({
           visibleIds: moveColumnId(nextVisibleIds, columnId, targetIndex),
           hiddenIds: nextHiddenIds,
         });
       }
 
-      return normalizeProductColumnLayout({
+      return normalizeColumnLayout({
         visibleIds: nextVisibleIds,
         hiddenIds: moveColumnId(nextHiddenIds, columnId, targetIndex),
       });
@@ -632,35 +798,21 @@ function EditableProductTable({
 
   return (
     <View style={styles.tableOuter}>
-      {props.search || !columnsEditor?.hideButton ? (
-        <View style={styles.tableToolbar}>
-          {props.search ? (
-            <View style={styles.tableToolbarSearch}>
-              <SearchField
-                value={props.search.value}
-                onChangeText={props.search.onChangeText}
-                placeholder={
-                  props.search.placeholder ?? "Buscar produto ou código..."
-                }
-              />
-            </View>
-          ) : (
-            <View style={styles.tableToolbarSpacer} />
-          )}
-          {!columnsEditor?.hideButton ? (
-            <ActionButton
-              label={
-                isColumnsEditorOpen
-                  ? "Fechar edição"
-                  : (editableColumns.editorButtonLabel ?? "Editar colunas")
-              }
-              icon="edit"
-              tone="neutral"
-              onPress={() => setColumnsEditorOpen(!isColumnsEditorOpen)}
-            />
-          ) : null}
-        </View>
-      ) : null}
+      <TableToolbar
+        search={props.search}
+        editorButtonLabel={
+          columnsEditor?.hideButton
+            ? null
+            : isColumnsEditorOpen
+              ? "Fechar edição"
+              : (editableColumns.editorButtonLabel ?? "Editar colunas")
+        }
+        onEditorButtonPress={
+          columnsEditor?.hideButton
+            ? null
+            : () => setColumnsEditorOpen(!isColumnsEditorOpen)
+        }
+      />
       <DataTableShell
         tableMinWidth={tableMinWidth}
         bottomScrollbarId={bottomScrollbarId}
@@ -692,6 +844,7 @@ function EditableProductTable({
             processSummary={props.processSummaryByProductCode[item.product_code]}
             doadorSeguroDias={props.doadorSeguroDias}
             pisoDoadorAposEmprestimoDias={props.pisoDoadorAposEmprestimoDias}
+            columnValueSuffixes={props.columnValueSuffixes}
             firstPreviewColumnId={firstPreviewColumnId}
             webPreviewBlurStyle={webPreviewBlurStyle}
           />
@@ -850,6 +1003,7 @@ function ProductRow({
   processSummary,
   doadorSeguroDias,
   pisoDoadorAposEmprestimoDias,
+  columnValueSuffixes,
   firstPreviewColumnId = null,
   webPreviewBlurStyle = null,
 }: {
@@ -861,6 +1015,7 @@ function ProductRow({
   processSummary?: ProductProcessSummary;
   doadorSeguroDias: number;
   pisoDoadorAposEmprestimoDias: number;
+  columnValueSuffixes?: Partial<Record<ProductColumnId, string>>;
   firstPreviewColumnId?: ProductColumnId | null;
   webPreviewBlurStyle?: object | null;
 }) {
@@ -897,6 +1052,7 @@ function ProductRow({
                 processSummary,
                 doadorSeguroDias,
                 pisoDoadorAposEmprestimoDias,
+                columnValueSuffixes,
                 styles,
               })}
             </View>
@@ -919,6 +1075,7 @@ function renderProductColumnContent({
   processSummary,
   doadorSeguroDias,
   pisoDoadorAposEmprestimoDias,
+  columnValueSuffixes,
   styles,
 }: {
   columnId: ProductColumnId;
@@ -929,8 +1086,12 @@ function renderProductColumnContent({
   processSummary?: ProductProcessSummary;
   doadorSeguroDias: number;
   pisoDoadorAposEmprestimoDias: number;
+  columnValueSuffixes?: Partial<Record<ProductColumnId, string>>;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const withSuffix = (columnId: ProductColumnId, value: string) =>
+    `${value}${columnValueSuffixes?.[columnId] ?? ""}`;
+
   switch (columnId) {
     case "product":
       return (
@@ -951,8 +1112,20 @@ function renderProductColumnContent({
     case "days":
       return (
         <Text style={[styles.tableCell, styles.daysColumnText]}>
-          {formatDecimal(item.sufficiency_days)}
+          {withSuffix("days", formatDecimal(item.sufficiency_days))}
         </Text>
+      );
+    case "cmm":
+      return (
+        <Text style={[styles.tableCell, styles.daysColumnText]}>
+          {formatDecimal(item.avg_monthly_consumption)}
+        </Text>
+      );
+    case "score":
+      return (
+        <View style={styles.tableBadgeCell}>
+          <ScoreBadge score={item.score} classification={item.classification} />
+        </View>
       );
     case "level":
       return (
@@ -960,6 +1133,16 @@ function renderProductColumnContent({
           <HoverInfo text={levelTooltip}>
             <LevelBadge level={item.level} />
           </HoverInfo>
+        </View>
+      );
+    case "risk":
+      return (
+        <View style={styles.tableBadgeCell}>
+          {item.rupture_risk ? (
+            <RuptureBadge risk={item.rupture_risk} />
+          ) : (
+            <Text style={styles.tableCell}>—</Text>
+          )}
         </View>
       );
     case "process":
@@ -1025,6 +1208,24 @@ function renderProductColumnContent({
           </View>
         </HoverInfo>
       );
+    case "quantity":
+      return (
+        <Text style={[styles.tableCell, styles.daysColumnText]}>
+          {item.qty_transfer != null
+            ? formatDecimal(item.qty_transfer, 0)
+            : item.qty_to_buy != null
+              ? formatDecimal(item.qty_to_buy, 0)
+              : "—"}
+        </Text>
+      );
+    case "postAction": {
+      const value = item.projected_suf ?? item.nova_suf_receptor;
+      return (
+        <Text style={[styles.tableCell, styles.daysColumnText]}>
+          {value != null ? `${formatDecimal(value, 0)}d` : "—"}
+        </Text>
+      );
+    }
     case "observation":
       return (
         <ObservationCell
@@ -1278,14 +1479,24 @@ function getColumnStyle(
       return styles.codeColumn;
     case "days":
       return styles.daysColumn;
+    case "cmm":
+      return styles.cmmColumn;
+    case "score":
+      return styles.scoreColumn;
     case "level":
       return styles.levelColumn;
+    case "risk":
+      return styles.riskColumn;
     case "process":
       return styles.processColumn;
     case "action":
       return styles.actionColumn;
     case "hospital":
       return styles.hospitalColumn;
+    case "quantity":
+      return styles.quantityColumn;
+    case "postAction":
+      return styles.postActionColumn;
     case "observation":
       return styles.observationColumn;
     default:
@@ -1300,19 +1511,11 @@ const createStyles = (tokens: AlmoxTheme) =>
     },
     tableToolbar: {
       flexDirection: "row",
-      justifyContent: "space-between",
+      justifyContent: "flex-end",
       alignItems: "center",
       gap: tokens.spacing.sm,
       paddingBottom: tokens.spacing.sm,
       flexWrap: "wrap",
-    },
-    tableToolbarSearch: {
-      flex: 1,
-      minWidth: 220,
-      maxWidth: 360,
-    },
-    tableToolbarSpacer: {
-      flex: 1,
     },
     tableBottomScrollbarShell: {
       paddingTop: tokens.spacing.xxs,
@@ -1440,8 +1643,17 @@ const createStyles = (tokens: AlmoxTheme) =>
     daysColumn: {
       width: 50,
     },
+    cmmColumn: {
+      width: 90,
+    },
+    scoreColumn: {
+      width: 110,
+    },
     levelColumn: {
       width: 110,
+    },
+    riskColumn: {
+      width: 170,
     },
     processColumn: {
       width: 150,
@@ -1451,6 +1663,12 @@ const createStyles = (tokens: AlmoxTheme) =>
     },
     hospitalColumn: {
       width: 220,
+    },
+    quantityColumn: {
+      width: 90,
+    },
+    postActionColumn: {
+      width: 110,
     },
     observationColumn: {
       width: 360,
@@ -1552,5 +1770,43 @@ const createStyles = (tokens: AlmoxTheme) =>
     },
     tooltipTextStrong: {
       fontWeight: "700",
+    },
+    tableTitleSearchWrap: {
+      minWidth: 44,
+      alignItems: "flex-end",
+    },
+    tableTitleSearch: {
+      minHeight: 40,
+      width: 40,
+      borderRadius: tokens.radii.pill,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surface,
+      paddingHorizontal: tokens.spacing.sm,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: tokens.spacing.xs,
+      overflow: "hidden",
+    },
+    tableTitleSearchExpanded: {
+      width: 280,
+      justifyContent: "flex-start",
+      backgroundColor: tokens.colors.surfaceRaised,
+    },
+    tableTitleSearchPressed: {
+      opacity: 0.88,
+    },
+    tableTitleSearchIcon: {
+      color: tokens.colors.textMuted,
+    },
+    tableTitleSearchPlaceholder: {
+      color: tokens.colors.textMuted,
+    },
+    tableTitleSearchInput: {
+      flex: 1,
+      color: tokens.colors.text,
+      fontSize: 13,
+      paddingVertical: 0,
     },
   });

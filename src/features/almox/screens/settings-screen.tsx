@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   ActionButton,
+  AppIcon,
   FieldInput,
   FormField,
   InfoBanner,
@@ -28,6 +29,18 @@ import {
   processoPrazoTipos,
   validarConfiguracaoSistema,
 } from '@/features/almox/configuracao';
+import {
+  PRODUCT_TABLE_SCREEN_OPTIONS,
+  ProductTableAdminConfig,
+  ProductTableScreenKey,
+  normalizarProductTableAdminConfig,
+  productTableAdminConfigIgual,
+  productTableAdminConfigPadrao,
+} from '@/features/almox/product-table-screen-config';
+import {
+  PRODUCT_TABLE_COLUMN_OPTIONS,
+  ProductColumnId,
+} from '@/features/almox/product-table-columns';
 import { AlmoxTheme, levelColors } from '@/features/almox/tokens';
 import { useThemedStyles } from '@/features/almox/theme-provider';
 import { Level } from '@/features/almox/types';
@@ -207,6 +220,19 @@ function coverageChanged(current: ConfiguracaoSistema, next: ConfiguracaoSistema
   return coverageFields.some((field) => current[field.key] !== next[field.key]);
 }
 
+function cloneProductTableAdminConfig(config: ProductTableAdminConfig) {
+  return normalizarProductTableAdminConfig(config);
+}
+
+const PRODUCT_TABLE_SCREEN_ICONS: Record<
+  ProductTableScreenKey,
+  Parameters<typeof AppIcon>[0]['name']
+> = {
+  dashboard: 'dashboard',
+  products: 'products',
+  orders: 'orders',
+};
+
 export default function SettingsScreen() {
   const styles = useThemedStyles(createStyles);
   const confirmAction = useConfirmAction();
@@ -228,18 +254,45 @@ export default function SettingsScreen() {
     systemConfigUpdatedAt,
     refreshSystemConfig,
     saveSystemConfig,
+    productTableAdminConfig,
+    productTableAdminConfigLoading,
+    productTableAdminConfigSaving,
+    productTableAdminConfigError,
+    productTableAdminConfigUpdatedAt,
+    refreshProductTableAdminConfig,
+    saveProductTableAdminConfig,
   } = useAlmoxData();
   const [draft, setDraft] = useState<ConfigDraft>(() => draftFromConfig(systemConfig));
   const [localNotice, setLocalNotice] = useState<string | null>(null);
+  const [columnConfigDraft, setColumnConfigDraft] = useState<ProductTableAdminConfig>(() =>
+    cloneProductTableAdminConfig(productTableAdminConfig)
+  );
+  const [columnConfigNotice, setColumnConfigNotice] = useState<string | null>(null);
+  const [selectedTableScreen, setSelectedTableScreen] = useState<ProductTableScreenKey>('dashboard');
 
   const draftConfig = useMemo(() => normalizarConfiguracaoSistema(draft), [draft]);
   const validationIssues = useMemo(() => validarConfiguracaoSistema(draftConfig), [draftConfig]);
   const isDirty = useMemo(() => !configuracaoSistemaIgual(draftConfig, systemConfig), [draftConfig, systemConfig]);
+  const isColumnConfigDirty = useMemo(
+    () => !productTableAdminConfigIgual(columnConfigDraft, productTableAdminConfig),
+    [columnConfigDraft, productTableAdminConfig]
+  );
   const matchesDefaults = useMemo(
     () => configuracaoSistemaIgual(draftConfig, configuracaoSistemaPadrao),
     [draftConfig]
   );
+  const columnConfigMatchesDefaults = useMemo(
+    () => productTableAdminConfigIgual(columnConfigDraft, productTableAdminConfigPadrao),
+    [columnConfigDraft]
+  );
   const levelRanges = useMemo(() => getLevelRangeLabels(draftConfig), [draftConfig]);
+  const selectedTableScreenOption = useMemo(
+    () => PRODUCT_TABLE_SCREEN_OPTIONS.find((screen) => screen.key === selectedTableScreen) ?? PRODUCT_TABLE_SCREEN_OPTIONS[0],
+    [selectedTableScreen]
+  );
+  const selectedTableScreenConfig = columnConfigDraft[selectedTableScreen];
+  const selectedEnabledCount = selectedTableScreenConfig.enabledColumns.length;
+  const selectedDefaultVisibleCount = selectedTableScreenConfig.defaultVisibleColumns.length;
 
   const formattedSync = dataset.lastSync
     ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dataset.lastSync))
@@ -262,6 +315,19 @@ export default function SettingsScreen() {
     const timeoutId = setTimeout(() => setLocalNotice(null), 4500);
     return () => clearTimeout(timeoutId);
   }, [localNotice]);
+
+  useEffect(() => {
+    setColumnConfigDraft(cloneProductTableAdminConfig(productTableAdminConfig));
+  }, [productTableAdminConfig]);
+
+  useEffect(() => {
+    if (!columnConfigNotice) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => setColumnConfigNotice(null), 4500);
+    return () => clearTimeout(timeoutId);
+  }, [columnConfigNotice]);
 
   function updateDraft(key: ConfiguracaoSistemaKey, value: string) {
     setDraft((current) => ({
@@ -296,6 +362,83 @@ export default function SettingsScreen() {
     setLocalNotice('Padrões carregados no formulário. Revise e salve para aplicar.');
   }
 
+  function handleToggleEnabledColumn(screenKey: ProductTableScreenKey, columnId: ProductColumnId) {
+    setColumnConfigDraft((current) => {
+      const currentConfig = current[screenKey];
+      const columnDefinition = PRODUCT_TABLE_COLUMN_OPTIONS.find((column) => column.id === columnId);
+      const isRequired = columnDefinition?.required === true;
+      const enabled = currentConfig.enabledColumns.includes(columnId);
+
+      if (enabled && isRequired) {
+        return current;
+      }
+
+      const nextEnabledColumns = enabled
+        ? currentConfig.enabledColumns.filter((id) => id !== columnId)
+        : [...currentConfig.enabledColumns, columnId];
+      const nextDefaultVisibleColumns = enabled
+        ? currentConfig.defaultVisibleColumns.filter((id) => id !== columnId)
+        : currentConfig.defaultVisibleColumns;
+
+      return {
+        ...current,
+        [screenKey]: normalizarProductTableAdminConfig({
+          ...current,
+          [screenKey]: {
+            enabledColumns: nextEnabledColumns,
+            defaultVisibleColumns: nextDefaultVisibleColumns,
+          },
+        })[screenKey],
+      };
+    });
+  }
+
+  function handleToggleDefaultVisibleColumn(screenKey: ProductTableScreenKey, columnId: ProductColumnId) {
+    setColumnConfigDraft((current) => {
+      const currentConfig = current[screenKey];
+      if (!currentConfig.enabledColumns.includes(columnId)) {
+        return current;
+      }
+
+      const columnDefinition = PRODUCT_TABLE_COLUMN_OPTIONS.find((column) => column.id === columnId);
+      const isRequired = columnDefinition?.required === true;
+      const visibleByDefault = currentConfig.defaultVisibleColumns.includes(columnId);
+
+      if (visibleByDefault && isRequired) {
+        return current;
+      }
+
+      const nextDefaultVisibleColumns = visibleByDefault
+        ? currentConfig.defaultVisibleColumns.filter((id) => id !== columnId)
+        : [...currentConfig.defaultVisibleColumns, columnId];
+
+      return {
+        ...current,
+        [screenKey]: normalizarProductTableAdminConfig({
+          ...current,
+          [screenKey]: {
+            enabledColumns: currentConfig.enabledColumns,
+            defaultVisibleColumns: nextDefaultVisibleColumns,
+          },
+        })[screenKey],
+      };
+    });
+  }
+
+  function handleRestoreProductTableDefaults() {
+    setColumnConfigDraft(cloneProductTableAdminConfig(productTableAdminConfigPadrao));
+    setColumnConfigNotice('Padrões de colunas carregados. Salve para aplicar nas telas.');
+  }
+
+  async function handleSaveProductTableColumns() {
+    if (productTableAdminConfigSaving) {
+      return;
+    }
+
+    await saveProductTableAdminConfig(columnConfigDraft);
+    setColumnConfigNotice('Disponibilidade de colunas salva. As tabelas já usam a nova regra.');
+  }
+
   return (
     <ScreenScrollView>
       <PageHeader
@@ -309,6 +452,14 @@ export default function SettingsScreen() {
               onPress={() => void refreshSystemConfig()}
               disabled={systemConfigLoading || systemConfigSaving}
               loading={systemConfigLoading}
+            />
+            <ActionButton
+              label={productTableAdminConfigLoading ? 'Carregando colunas...' : 'Recarregar colunas'}
+              icon="refresh"
+              tone="neutral"
+              onPress={() => void refreshProductTableAdminConfig()}
+              disabled={productTableAdminConfigLoading || productTableAdminConfigSaving}
+              loading={productTableAdminConfigLoading}
             />
             <ActionButton
               label={loading ? 'Carregando...' : syncingBase ? 'Sincronizando...' : 'Atualizar estoque'}
@@ -368,6 +519,22 @@ export default function SettingsScreen() {
         <InfoBanner
           title="Configuração"
           description={localNotice}
+          tone="success"
+        />
+      ) : null}
+
+      {productTableAdminConfigError ? (
+        <InfoBanner
+          title="Falha nas colunas das tabelas"
+          description={productTableAdminConfigError}
+          tone="danger"
+        />
+      ) : null}
+
+      {columnConfigNotice ? (
+        <InfoBanner
+          title="Colunas das tabelas"
+          description={columnConfigNotice}
           tone="success"
         />
       ) : null}
@@ -543,6 +710,185 @@ export default function SettingsScreen() {
         />
       </SectionCard>
 
+      <SectionCard>
+        <View style={styles.tableAdminPanel}>
+          <View style={styles.tableAdminHeader}>
+            <View style={styles.tableAdminHeaderText}>
+              <Text style={styles.tableAdminEyebrow}>Configuração global</Text>
+              <Text style={styles.tableAdminTitle}>Colunas por tela</Text>
+              <Text style={styles.tableAdminSubtitle}>
+                Controla quais colunas podem ser usadas e quais começam visíveis. Atualização:{' '}
+                {productTableAdminConfigUpdatedAt
+                  ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(
+                      new Date(productTableAdminConfigUpdatedAt)
+                    )
+                  : productTableAdminConfigLoading
+                    ? 'carregando configuração'
+                    : 'usando padrão'}
+                .
+              </Text>
+            </View>
+
+            <View style={styles.tableAdminHeaderActions}>
+              <Pressable
+                onPress={handleRestoreProductTableDefaults}
+                disabled={productTableAdminConfigSaving || columnConfigMatchesDefaults}
+                style={({ pressed }) => [
+                  styles.tableAdminGhostButton,
+                  (productTableAdminConfigSaving || columnConfigMatchesDefaults) ? styles.tableAdminButtonDisabled : null,
+                  pressed && !(productTableAdminConfigSaving || columnConfigMatchesDefaults)
+                    ? styles.tableAdminButtonPressed
+                    : null,
+                ]}>
+                <Text style={styles.tableAdminGhostButtonText}>Restaurar</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => void handleSaveProductTableColumns()}
+                disabled={!isColumnConfigDirty || productTableAdminConfigSaving}
+                style={({ pressed }) => [
+                  styles.tableAdminPrimaryButton,
+                  (!isColumnConfigDirty || productTableAdminConfigSaving) ? styles.tableAdminButtonDisabled : null,
+                  pressed && !(!isColumnConfigDirty || productTableAdminConfigSaving)
+                    ? styles.tableAdminButtonPressed
+                    : null,
+                ]}>
+                <Text style={styles.tableAdminPrimaryButtonText}>
+                  {productTableAdminConfigSaving ? 'Salvando...' : 'Salvar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.tableAdminTabs}>
+            {PRODUCT_TABLE_SCREEN_OPTIONS.map((screen) => {
+              const active = screen.key === selectedTableScreen;
+              return (
+                <Pressable
+                  key={screen.key}
+                  onPress={() => setSelectedTableScreen(screen.key)}
+                  style={({ pressed }) => [
+                    styles.tableAdminTab,
+                    active ? styles.tableAdminTabActive : null,
+                    pressed ? styles.tableAdminTabPressed : null,
+                  ]}>
+                  <AppIcon
+                    name={PRODUCT_TABLE_SCREEN_ICONS[screen.key]}
+                    size={14}
+                    color={
+                      active
+                        ? (styles.tableAdminTabIconActive.color as string)
+                        : (styles.tableAdminTabIcon.color as string)
+                    }
+                  />
+                  <Text style={[styles.tableAdminTabText, active ? styles.tableAdminTabTextActive : null]}>
+                    {screen.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.tableAdminLegend}>
+            <Text style={styles.tableAdminLegendLabel}>Legenda:</Text>
+            <View style={styles.tableAdminRequiredBadge}>
+              <Text style={styles.tableAdminRequiredBadgeText}>Obrigatória</Text>
+            </View>
+            <View style={styles.tableAdminLegendItem}>
+              <View style={[styles.tableAdminSwitch, styles.tableAdminSwitchOn, styles.tableAdminSwitchLegend]}>
+                <View style={styles.tableAdminSwitchThumb} />
+              </View>
+              <Text style={styles.tableAdminLegendText}>Liberada e disponível no editor do usuário</Text>
+            </View>
+            <View style={styles.tableAdminLegendItem}>
+              <View style={[styles.tableAdminCheckbox, styles.tableAdminCheckboxChecked]}>
+                <AppIcon name="check" size={12} color={styles.tableAdminCheckboxIcon.color as string} />
+              </View>
+              <Text style={styles.tableAdminLegendText}>Padrão visível para usuários novos ou sem preferência</Text>
+            </View>
+          </View>
+
+          <View style={styles.tableAdminScreenHintRow}>
+            <Text style={styles.tableAdminScreenTitle}>{selectedTableScreenOption.label}</Text>
+            <Text style={styles.tableAdminScreenHint}>{selectedTableScreenOption.subtitle}</Text>
+          </View>
+
+          <View style={styles.tableAdminTable}>
+            <View style={styles.tableAdminTableHeader}>
+              <View style={styles.tableAdminColumnCell}>
+                <Text style={styles.tableAdminTableHeaderText}>Coluna</Text>
+              </View>
+              <View style={styles.tableAdminEnabledCell}>
+                <Text style={styles.tableAdminTableHeaderText}>Liberada</Text>
+              </View>
+              <View style={styles.tableAdminDefaultCell}>
+                <Text style={styles.tableAdminTableHeaderText}>Padrão visível</Text>
+              </View>
+            </View>
+
+            {PRODUCT_TABLE_COLUMN_OPTIONS.map((column, index) => {
+              const enabled = selectedTableScreenConfig.enabledColumns.includes(column.id);
+              const visibleByDefault = selectedTableScreenConfig.defaultVisibleColumns.includes(column.id);
+              const isRequired = column.required === true;
+              const rowMuted = !enabled && !isRequired;
+
+              return (
+                <View
+                  key={`${selectedTableScreen}-${column.id}`}
+                  style={[
+                    styles.tableAdminRow,
+                    rowMuted ? styles.tableAdminRowMuted : null,
+                    isRequired ? styles.tableAdminRowRequired : null,
+                  ]}>
+                  <View style={styles.tableAdminColumnCell}>
+                    <Text style={styles.tableAdminColumnIndex}>{String(index + 1).padStart(2, '0')}</Text>
+                    <View style={styles.tableAdminColumnTextWrap}>
+                      <View style={styles.tableAdminColumnTop}>
+                        <Text style={[styles.tableAdminColumnLabel, rowMuted ? styles.tableAdminColumnLabelMuted : null]}>
+                          {column.label}
+                        </Text>
+                        {isRequired ? (
+                          <View style={styles.tableAdminRequiredBadgeInline}>
+                            <Text style={styles.tableAdminRequiredBadgeInlineText}>Obrigatória</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.tableAdminEnabledCell}>
+                    <ColumnPermissionSwitch
+                      value={enabled}
+                      disabled={isRequired}
+                      onPress={() => handleToggleEnabledColumn(selectedTableScreen, column.id)}
+                    />
+                  </View>
+
+                  <View style={styles.tableAdminDefaultCell}>
+                    {!enabled && !isRequired ? (
+                      <Text style={styles.tableAdminUnavailableText}>não liberada</Text>
+                    ) : (
+                      <ColumnVisibilityCheckbox
+                        checked={visibleByDefault}
+                        disabled={!enabled || isRequired}
+                        onPress={() => handleToggleDefaultVisibleColumn(selectedTableScreen, column.id)}
+                      />
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.tableAdminFooter}>
+            <Text style={styles.tableAdminFooterText}>
+              {selectedEnabledCount} liberadas • {selectedDefaultVisibleCount} padrão visível
+            </Text>
+            <Text style={styles.tableAdminFooterText}>Configuração global — afeta todos os usuários</Text>
+          </View>
+        </View>
+      </SectionCard>
+
       {validationIssues.length > 0 ? (
         <InfoBanner
           title="Revise antes de salvar"
@@ -603,6 +949,59 @@ function ConfigNumberField({
         {issue ? issue.message : field.helper}
       </Text>
     </View>
+  );
+}
+
+function ColumnPermissionSwitch({
+  value,
+  disabled,
+  onPress,
+}: {
+  value: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.tableAdminSwitch,
+        value ? styles.tableAdminSwitchOn : null,
+        disabled ? styles.tableAdminSwitchDisabled : null,
+        pressed && !disabled ? styles.tableAdminSwitchPressed : null,
+        { justifyContent: value ? 'flex-end' : 'flex-start' },
+      ]}>
+      <View style={styles.tableAdminSwitchThumb} />
+    </Pressable>
+  );
+}
+
+function ColumnVisibilityCheckbox({
+  checked,
+  disabled,
+  onPress,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.tableAdminCheckbox,
+        checked ? styles.tableAdminCheckboxChecked : null,
+        disabled ? styles.tableAdminCheckboxDisabled : null,
+        pressed && !disabled ? styles.tableAdminCheckboxPressed : null,
+      ]}>
+      {checked ? (
+        <AppIcon name="check" size={12} color={styles.tableAdminCheckboxIcon.color as string} />
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -719,6 +1118,360 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     color: tokens.colors.text,
     fontSize: 13,
     fontWeight: '700',
+  },
+  tableAdminPanel: {
+    borderRadius: tokens.radii.lg,
+    borderWidth: 1,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceMuted,
+    overflow: 'hidden',
+  },
+  tableAdminHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: tokens.spacing.md,
+    padding: tokens.spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: tokens.colors.line,
+  },
+  tableAdminHeaderText: {
+    flex: 1,
+    minWidth: 280,
+    gap: 6,
+  },
+  tableAdminEyebrow: {
+    color: tokens.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.6,
+    fontFamily: tokens.typography.mono,
+  },
+  tableAdminTitle: {
+    color: tokens.colors.text,
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 32,
+  },
+  tableAdminSubtitle: {
+    color: tokens.colors.textMuted,
+    fontSize: 13,
+    lineHeight: 20,
+    maxWidth: 720,
+  },
+  tableAdminHeaderActions: {
+    flexDirection: 'row',
+    gap: tokens.spacing.sm,
+    flexWrap: 'wrap',
+  },
+  tableAdminGhostButton: {
+    minHeight: 40,
+    paddingHorizontal: tokens.spacing.md,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableAdminGhostButtonText: {
+    color: tokens.colors.textSoft,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tableAdminPrimaryButton: {
+    minHeight: 40,
+    paddingHorizontal: tokens.spacing.md,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableAdminPrimaryButtonText: {
+    color: tokens.colors.white,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  tableAdminButtonDisabled: {
+    opacity: 0.5,
+  },
+  tableAdminButtonPressed: {
+    opacity: 0.86,
+  },
+  tableAdminTabs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: tokens.spacing.xs,
+    paddingHorizontal: tokens.spacing.lg,
+    paddingTop: tokens.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: tokens.colors.line,
+  },
+  tableAdminTab: {
+    minHeight: 42,
+    paddingHorizontal: tokens.spacing.sm,
+    paddingBottom: tokens.spacing.sm,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.xs,
+  },
+  tableAdminTabActive: {
+    borderBottomColor: tokens.colors.brand,
+  },
+  tableAdminTabPressed: {
+    opacity: 0.82,
+  },
+  tableAdminTabText: {
+    color: tokens.colors.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tableAdminTabTextActive: {
+    color: tokens.colors.brandStrong,
+  },
+  tableAdminTabIcon: {
+    color: tokens.colors.textMuted,
+  },
+  tableAdminTabIconActive: {
+    color: tokens.colors.brandStrong,
+  },
+  tableAdminLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: tokens.spacing.md,
+    paddingHorizontal: tokens.spacing.lg,
+    paddingVertical: tokens.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: tokens.colors.line,
+    backgroundColor: tokens.colors.surfaceRaised,
+  },
+  tableAdminLegendLabel: {
+    color: tokens.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    fontFamily: tokens.typography.mono,
+  },
+  tableAdminLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.xs,
+    minHeight: 24,
+  },
+  tableAdminLegendText: {
+    color: tokens.colors.textSoft,
+    fontSize: 12,
+    lineHeight: 18,
+    maxWidth: 240,
+  },
+  tableAdminRequiredBadge: {
+    minHeight: 22,
+    paddingHorizontal: tokens.spacing.sm,
+    borderRadius: tokens.radii.pill,
+    backgroundColor: tokens.colors.surfaceActiveSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableAdminRequiredBadgeText: {
+    color: tokens.colors.brandStrong,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontFamily: tokens.typography.mono,
+  },
+  tableAdminScreenHintRow: {
+    gap: 4,
+    paddingHorizontal: tokens.spacing.lg,
+    paddingVertical: tokens.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: tokens.colors.line,
+  },
+  tableAdminScreenTitle: {
+    color: tokens.colors.text,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  tableAdminScreenHint: {
+    color: tokens.colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  tableAdminTable: {
+    backgroundColor: tokens.colors.surfaceMuted,
+  },
+  tableAdminTableHeader: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: tokens.spacing.lg,
+    gap: tokens.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: tokens.colors.lineStrong,
+  },
+  tableAdminTableHeaderText: {
+    color: tokens.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    fontFamily: tokens.typography.mono,
+  },
+  tableAdminRow: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: tokens.spacing.lg,
+    gap: tokens.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: tokens.colors.line,
+  },
+  tableAdminRowMuted: {
+    backgroundColor: tokens.colors.surfaceRaised,
+  },
+  tableAdminRowRequired: {
+    backgroundColor: tokens.colors.surfaceActiveSoft,
+  },
+  tableAdminColumnCell: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing.md,
+  },
+  tableAdminEnabledCell: {
+    width: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableAdminDefaultCell: {
+    width: 150,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableAdminColumnIndex: {
+    width: 22,
+    color: tokens.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: tokens.typography.mono,
+  },
+  tableAdminColumnTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  tableAdminColumnTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: tokens.spacing.xs,
+  },
+  tableAdminColumnLabel: {
+    color: tokens.colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  tableAdminColumnLabelMuted: {
+    color: tokens.colors.textMuted,
+  },
+  tableAdminRequiredBadgeInline: {
+    minHeight: 20,
+    paddingHorizontal: tokens.spacing.xs,
+    borderRadius: tokens.radii.pill,
+    backgroundColor: tokens.colors.surfaceStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableAdminRequiredBadgeInlineText: {
+    color: tokens.colors.brandStrong,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    fontFamily: tokens.typography.mono,
+  },
+  tableAdminUnavailableText: {
+    color: tokens.colors.textMuted,
+    fontSize: 12,
+    fontFamily: tokens.typography.mono,
+  },
+  tableAdminSwitch: {
+    width: 38,
+    height: 22,
+    borderRadius: 999,
+    paddingHorizontal: 2,
+    borderWidth: 1,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tableAdminSwitchLegend: {
+    transform: [{ scale: 0.95 }],
+  },
+  tableAdminSwitchOn: {
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.brand,
+  },
+  tableAdminSwitchDisabled: {
+    opacity: 0.78,
+  },
+  tableAdminSwitchPressed: {
+    opacity: 0.86,
+  },
+  tableAdminSwitchThumb: {
+    width: 16,
+    height: 16,
+    borderRadius: 999,
+    backgroundColor: tokens.colors.white,
+  },
+  tableAdminCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableAdminCheckboxChecked: {
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.brand,
+  },
+  tableAdminCheckboxDisabled: {
+    opacity: 0.78,
+  },
+  tableAdminCheckboxPressed: {
+    opacity: 0.86,
+  },
+  tableAdminCheckboxIcon: {
+    color: tokens.colors.white,
+  },
+  tableAdminFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: tokens.spacing.sm,
+    paddingHorizontal: tokens.spacing.lg,
+    paddingVertical: tokens.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceRaised,
+  },
+  tableAdminFooterText: {
+    color: tokens.colors.textMuted,
+    fontSize: 12,
+    fontFamily: tokens.typography.mono,
   },
   footerActions: {
     flexDirection: 'row',

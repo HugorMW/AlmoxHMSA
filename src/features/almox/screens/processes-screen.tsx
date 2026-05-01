@@ -52,7 +52,7 @@ const PROCESS_TYPES: ProcessoTipo[] = [
   'Processo Excepcional',
   'Processo de Dispensa',
 ];
-const PROCESS_TABLE_MIN_WIDTH = 1160;
+const PROCESS_TABLE_MIN_WIDTH = 1310;
 const ALL_PROCESS_CATEGORIES = '__all__';
 
 type ProcessoAttentionPreset = 'overdue' | 'near_due' | 'collecting';
@@ -243,6 +243,14 @@ function getProcessSecondaryLabel(
   }
 
   return null;
+}
+
+function getProcessQuoteLabel(item: Pick<ProcessoAcompanhamento, 'tipo_processo' | 'id_cotacao'>) {
+  if (item.tipo_processo !== 'Processo Simplificado') {
+    return '—';
+  }
+
+  return item.id_cotacao?.trim() || 'Não informado';
 }
 
 function addCalendarDays(date: Date, days: number) {
@@ -799,6 +807,7 @@ export default function ProcessesScreen() {
             item.numero_pedido,
             item.edocs,
             item.edocs_ata_origem,
+            item.id_cotacao,
             item.observacao,
             ...productHaystack,
             item.fornecedor,
@@ -946,7 +955,7 @@ export default function ProcessesScreen() {
         {error ? (
           <DarkNotice
             title="Falha ao consultar a base"
-            description={`${error} A busca por nº do produto ou Cod. Bionexo depende da última base de estoque carregada.`}
+            description={`${error} A busca por nº do produto ou Cod. Inova depende da última base de estoque carregada.`}
             tone="danger"
           />
         ) : null}
@@ -1031,7 +1040,7 @@ export default function ProcessesScreen() {
             <DarkSearchField
               value={search}
               onChange={setSearch}
-              placeholder="Buscar Processo E-DOCS, ATA/pedido, produto, Bionexo, marca ou fornecedor"
+              placeholder="Buscar Processo E-DOCS, ATA/pedido/ID cotação, produto, Cod. Inova, marca ou fornecedor"
             />
           </View>
           <DarkButton
@@ -1098,7 +1107,7 @@ export default function ProcessesScreen() {
         ) : visibleItems.length === 0 ? (
           <DarkEmptyState
             title="Nenhum processo encontrado"
-            description="Ajuste os filtros ou cadastre um novo processo com nº do produto ou Cod. Bionexo."
+            description="Ajuste os filtros ou cadastre um novo processo com nº do produto ou Cod. Inova."
           />
         ) : (
           <ProcessTable
@@ -1480,7 +1489,7 @@ function ProcessTable({
         contentContainerStyle={[styles.tableScrollContent, { width: tableWidth }]}>
         <View style={[styles.table, { width: tableWidth }]}>
           <View style={styles.tableHeader}>
-            {['Processo / Tipo', 'Produto / Fornecedor', 'Data resgate', 'Parcelas e prazos', 'Situação', 'Ações'].map(
+            {['Processo / Tipo', 'ID cotação', 'Produto / Fornecedor', 'Data resgate', 'Parcelas e prazos', 'Situação', 'Ações'].map(
               (header, index) => (
                 <Text key={header} style={[styles.tableHeadCell, tableColumnStyle(styles, index)]}>
                   {header}
@@ -1562,6 +1571,18 @@ function ProcessRow({
         <Pill label={item.tipo_processo} color={typeColor} />
       </Pressable>
 
+      <Pressable
+        accessibilityRole="button"
+        onPress={onEdit}
+        style={({ pressed }) => [
+          styles.tableCellBlock,
+          styles.quoteColumn,
+          styles.tableCellPressable,
+          pressed ? styles.tableCellPressablePressed : null,
+        ]}>
+        <Text style={styles.dateText}>{getProcessQuoteLabel(item)}</Text>
+      </Pressable>
+
       <View style={[styles.tableCellBlock, styles.productColumn]}>
         <Text style={styles.productName} numberOfLines={2}>
           {primeiroProduto ? normalizeInlineText(primeiroProduto.ds_produto) : 'Sem produto cadastrado'}
@@ -1586,7 +1607,7 @@ function ProcessRow({
         {primeiroProduto ? (
           <Text style={styles.productMeta} numberOfLines={1}>
             Produto {primeiroProduto.cd_produto}
-            {primeiroProduto.cod_bionexo ? ` · Bionexo ${primeiroProduto.cod_bionexo}` : ' · Sem Cod. Bionexo'}
+            {primeiroProduto.cod_bionexo ? ` · Cod. Inova ${primeiroProduto.cod_bionexo}` : ' · Sem Cod. Inova'}
             {item.suficiencia_em_dias != null
               ? ` · Suficiência ${formatLookupNumber(item.suficiencia_em_dias)} dias`
               : ''}
@@ -1651,6 +1672,7 @@ function ProcessRow({
 function tableColumnStyle(styles: ReturnType<typeof createStyles>, index: number) {
   const columns = [
     styles.numberColumn,
+    styles.quoteColumn,
     styles.productColumn,
     styles.dateColumn,
     styles.timelineColumn,
@@ -1852,7 +1874,7 @@ function ProdutosListModal({
                   </View>
                   <Text style={styles.produtoCardMeta}>
                     Produto {produto.cd_produto}
-                    {produto.cod_bionexo ? ` · Bionexo ${produto.cod_bionexo}` : ' · Sem Cod. Bionexo'}
+                    {produto.cod_bionexo ? ` · Cod. Inova ${produto.cod_bionexo}` : ' · Sem Cod. Inova'}
                   </Text>
                   <Text style={styles.produtoCardMeta}>
                     Classificação: {getProcessoCategoriaTabLabel(produto.categoria_material)}
@@ -1904,6 +1926,7 @@ function ProcessFormModal({
   const [edocsAtaOrigem, setEdocsAtaOrigem] = useState(
     initial?.edocs_ata_origem ?? (initial?.tipo_processo === 'ARP' ? (initial?.numero_pedido ?? '') : '')
   );
+  const [idCotacao, setIdCotacao] = useState(initial?.id_cotacao ?? '');
   const [observacao, setObservacao] = useState(initial?.observacao ?? '');
   const [marca, setMarca] = useState(initial?.marca ?? '');
   const [tipoProcesso, setTipoProcesso] = useState<ProcessoTipo>(initial?.tipo_processo ?? 'ARP');
@@ -1928,12 +1951,14 @@ function ProcessFormModal({
   const previewCategoria: ProcessoCategoria =
     produtos[0]?.categoria_material ?? initial?.categoria_material ?? initialCategoria;
   const isAtaExecutionProcess = tipoProcesso === 'ARP';
+  const isSimplifiedProcess = tipoProcesso === 'Processo Simplificado';
   const primaryProcessFieldLabel = 'Processo E-DOCS';
   const secondaryProcessFieldLabel = isAtaExecutionProcess ? 'ATA (E-DOCS original)' : 'Pedido';
   const secondaryProcessPlaceholder = isAtaExecutionProcess ? '2024-AB12C' : '4131/2025';
   const normalizedPrimaryProcess = edocs.trim().toUpperCase();
   const normalizedSecondaryProcess = numeroPedido.trim();
   const normalizedAtaOrigem = edocsAtaOrigem.trim().toUpperCase();
+  const normalizedIdCotacao = idCotacao.trim().toUpperCase();
 
   const canSave =
     normalizedPrimaryProcess.length > 0 &&
@@ -1970,6 +1995,7 @@ function ProcessFormModal({
         numero_pedido: isAtaExecutionProcess ? '' : normalizedSecondaryProcess,
         edocs: normalizedPrimaryProcess,
         edocs_ata_origem: isAtaExecutionProcess ? normalizedAtaOrigem : '',
+        id_cotacao: isSimplifiedProcess ? normalizedIdCotacao : '',
         observacao: observacao.trim(),
         marca: marca.trim(),
         tipo_processo: tipoProcesso,
@@ -2097,6 +2123,16 @@ function ProcessFormModal({
                 />
               </DarkField>
             </View>
+
+            {isSimplifiedProcess ? (
+              <DarkField label="ID COTAÇÃO">
+                <DarkInput
+                  value={idCotacao}
+                  onChangeText={(value) => setIdCotacao(value.toUpperCase())}
+                  placeholder="COT-2025-001"
+                />
+              </DarkField>
+            ) : null}
 
             <View style={styles.modalGrid}>
               <DarkField label="Fornecedor">
@@ -2301,12 +2337,12 @@ function ProdutoPickerForm({
   const productInputValue = productLocked ? resolvedProduct?.cd_produto ?? '' : cdProdutoText;
   const bionexoLockMessage =
     lockedFieldHint === 'bionexo'
-      ? 'Campo bloqueado. Apague o nº do produto para liberar a edição do Cod. Bionexo.'
-      : 'Apague o nº do produto para editar o Cod. Bionexo.';
+      ? 'Campo bloqueado. Apague o nº do produto para liberar a edição do Cod. Inova.'
+      : 'Apague o nº do produto para editar o Cod. Inova.';
   const productLockMessage =
     lockedFieldHint === 'produto'
-      ? 'Campo bloqueado. Apague o Cod. Bionexo para liberar a edição do nº do produto.'
-      : 'Apague o Cod. Bionexo para editar o nº do produto.';
+      ? 'Campo bloqueado. Apague o Cod. Inova para liberar a edição do nº do produto.'
+      : 'Apague o Cod. Inova para editar o nº do produto.';
   const hasLocalLookup = lookup != null;
 
   const manualNovaCategoriaSlug = slugifyProcessoCategoria(manualNovaCategoriaLabel);
@@ -2474,7 +2510,7 @@ function ProdutoPickerForm({
             </Text>
           ) : null}
         </DarkField>
-        <DarkField label="Cod. Bionexo">
+        <DarkField label="Cod. Inova">
           <View style={styles.lockableFieldWrap}>
             <View style={[styles.bionexoInputRow, bionexoLocked ? styles.lockedInputSurface : null]}>
               <View style={[styles.bionexoPrefix, bionexoLocked ? styles.lockedPrefix : null]}>
@@ -2596,7 +2632,7 @@ function ProdutoPickerForm({
           <Text style={styles.lookupName}>{resolvedProduct.ds_produto}</Text>
           <Text style={styles.lookupMeta}>
             Produto {resolvedProduct.cd_produto}
-            {resolvedProduct.cod_bionexo ? ` · Bionexo ${resolvedProduct.cod_bionexo}` : ''}
+            {resolvedProduct.cod_bionexo ? ` · Cod. Inova ${resolvedProduct.cod_bionexo}` : ''}
             {' · '}
             {getCategoriaMaterialLabel(resolvedProduct.categoria_material)} · Estoque atual{' '}
             {formatLookupNumber(resolvedProduct.estoque_atual)} · Suficiência{' '}
@@ -2609,7 +2645,7 @@ function ProdutoPickerForm({
           description={
             searchMode === 'produto'
               ? 'Consultando o número do produto na base do HMSA.'
-              : 'Consultando o Cod. Bionexo na base do HMSA.'
+              : 'Consultando o Cod. Inova na base do HMSA.'
           }
           tone="info"
         />
@@ -2622,7 +2658,7 @@ function ProdutoPickerForm({
       ) : searchMode ? (
         <View style={styles.manualHintWrap}>
           <DarkNotice
-            title={searchMode === 'produto' ? 'Produto não localizado' : 'Cod. Bionexo não localizado'}
+            title={searchMode === 'produto' ? 'Produto não localizado' : 'Cod. Inova não localizado'}
             description={
               lockedMode === 'base'
                 ? 'Confira o código informado na base SISCORE. Este processo já tem produtos da base e não pode misturar manuais.'
@@ -2650,7 +2686,7 @@ function ProdutoPickerForm({
           description={
             lockedMode === 'manual'
               ? 'Os produtos deste processo são manuais. Continue cadastrando manualmente.'
-              : 'Use o número do produto ou o Cod. Bionexo para preencher automaticamente a descrição.'
+              : 'Use o número do produto ou o Cod. Inova para preencher automaticamente a descrição.'
           }
           tone="info"
         />
@@ -3208,6 +3244,9 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     opacity: 0.78,
   },
   numberColumn: {
+    width: 150,
+  },
+  quoteColumn: {
     width: 150,
   },
   productColumn: {
@@ -3977,6 +4016,9 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
     },
     numberColumn: {
       width: 145,
+    },
+    quoteColumn: {
+      width: 150,
     },
     productColumn: {
       flex: 1,

@@ -18,6 +18,11 @@ import {
   normalizarConfiguracaoSistema,
 } from './configuracao';
 import {
+  ProductTableAdminConfig,
+  normalizarProductTableAdminConfig,
+  productTableAdminConfigPadrao,
+} from './product-table-screen-config';
+import {
   BlacklistItem,
   CategoriaMaterial,
   CmmExceptionItem,
@@ -41,6 +46,8 @@ const ALMOX_SESSION_KEY = 'almox:base:session:v3';
 const ALMOX_CACHE_TTL_MS = 5 * 60 * 1000;
 const ALMOX_CONFIG_CACHE_KEY = 'almox:config:v1';
 const ALMOX_CONFIG_CACHE_TTL_MS = 30 * 60 * 1000;
+const ALMOX_PRODUCT_TABLE_CONFIG_CACHE_KEY = 'almox:product-table-config:v1';
+const ALMOX_PRODUCT_TABLE_CONFIG_CACHE_TTL_MS = 30 * 60 * 1000;
 const ALMOX_PROCESS_CACHE_KEY = 'almox:processes:v3';
 const ALMOX_PROCESS_CACHE_TTL_MS = 5 * 60 * 1000;
 const SYNC_STATUS_MAX_WAIT_MS = 10 * 60 * 1000;
@@ -151,6 +158,13 @@ type AlmoxDataContextValue = {
   systemConfigUpdatedAt: string | null;
   refreshSystemConfig: () => Promise<void>;
   saveSystemConfig: (nextConfig: ConfiguracaoSistema) => Promise<void>;
+  productTableAdminConfig: ProductTableAdminConfig;
+  productTableAdminConfigLoading: boolean;
+  productTableAdminConfigSaving: boolean;
+  productTableAdminConfigError: string | null;
+  productTableAdminConfigUpdatedAt: string | null;
+  refreshProductTableAdminConfig: () => Promise<void>;
+  saveProductTableAdminConfig: (nextConfig: ProductTableAdminConfig) => Promise<void>;
   findHmsaProductNameByCode: (cdProduto: string) => string | null;
   findHmsaProductCategoryByCode: (cdProduto: string) => CategoriaMaterial | null;
   findHmsaProductByProductCode: (cdProduto: string) => ProcessoProdutoLookup | null;
@@ -283,6 +297,7 @@ function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanha
     produtos,
     edocs: item.edocs ?? '',
     edocs_ata_origem: (item as { edocs_ata_origem?: string }).edocs_ata_origem ?? '',
+    id_cotacao: String((item as { id_cotacao?: string }).id_cotacao ?? '').trim(),
     observacao: String((item as { observacao?: string }).observacao ?? '').trim(),
     marca: item.marca ?? '',
     fornecedor: item.fornecedor ?? '',
@@ -300,7 +315,7 @@ async function loadProcessItems() {
   const { data, error } = await supabase
     .from('almox_processos_acompanhamento')
     .select(
-      'id, categoria_material, numero_pedido, edocs, edocs_ata_origem, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
+      'id, categoria_material, numero_pedido, edocs, edocs_ata_origem, id_cotacao, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
     )
     .eq('ativo', true)
     .order('critico', { ascending: false })
@@ -640,6 +655,11 @@ type AlmoxConfigCache = {
   updatedAt: string | null;
 };
 
+type AlmoxProductTableConfigCache = {
+  config: ProductTableAdminConfig;
+  updatedAt: string | null;
+};
+
 type AlmoxProcessCache = {
   processItems: ProcessoAcompanhamento[];
 };
@@ -670,6 +690,18 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const [systemConfigError, setSystemConfigError] = useState<string | null>(null);
   const [systemConfigNotice, setSystemConfigNotice] = useState<string | null>(null);
   const [systemConfigUpdatedAt, setSystemConfigUpdatedAt] = useState<string | null>(null);
+  const [productTableAdminConfig, setProductTableAdminConfig] =
+    useState<ProductTableAdminConfig>(productTableAdminConfigPadrao);
+  const [productTableAdminConfigLoading, setProductTableAdminConfigLoading] =
+    useState(true);
+  const [productTableAdminConfigSaving, setProductTableAdminConfigSaving] =
+    useState(false);
+  const [productTableAdminConfigError, setProductTableAdminConfigError] =
+    useState<string | null>(null);
+  const [
+    productTableAdminConfigUpdatedAt,
+    setProductTableAdminConfigUpdatedAt,
+  ] = useState<string | null>(null);
   const [kpiHistoricoByHospital, setKpiHistoricoByHospital] = useState<Record<Hospital, KpiHistoricoPoint[]>>({
     HMSA: [],
     HEC: [],
@@ -925,6 +957,125 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       setSystemConfigSaving(false);
     }
   }, []);
+
+  const refreshProductTableAdminConfig = useCallback(
+    async function refreshProductTableAdminConfig() {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setProductTableAdminConfigLoading(true);
+      setProductTableAdminConfigError(null);
+
+      try {
+        const response = await fetch('/api/product-table-columns', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const data = await parseConfiguracaoResponse(response);
+        const nextConfig = normalizarProductTableAdminConfig(data?.config);
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        startTransition(() => {
+          setProductTableAdminConfig(nextConfig);
+        });
+        setProductTableAdminConfigUpdatedAt(
+          typeof data?.atualizadoEm === 'string' ? data.atualizadoEm : null
+        );
+        writeCachedValue<AlmoxProductTableConfigCache>(
+          ALMOX_PRODUCT_TABLE_CONFIG_CACHE_KEY,
+          {
+            config: nextConfig,
+            updatedAt: typeof data?.atualizadoEm === 'string' ? data.atualizadoEm : null,
+          }
+        );
+      } catch (configError) {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        const scopedError = createScopedError(
+          '/api/product-table-columns [GET]',
+          configError
+        );
+        logScopedError('/api/product-table-columns [GET]', configError);
+        setProductTableAdminConfigError(scopedError.message);
+      } finally {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setProductTableAdminConfigLoading(false);
+      }
+    },
+    []
+  );
+
+  const saveProductTableAdminConfig = useCallback(
+    async function saveProductTableAdminConfig(nextConfig: ProductTableAdminConfig) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setProductTableAdminConfigSaving(true);
+      setProductTableAdminConfigError(null);
+
+      try {
+        const response = await fetch('/api/product-table-columns', {
+          method: 'PUT',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ config: nextConfig }),
+        });
+        const data = await parseConfiguracaoResponse(response);
+        const savedConfig = normalizarProductTableAdminConfig(data?.config);
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        startTransition(() => {
+          setProductTableAdminConfig(savedConfig);
+        });
+        const nextUpdatedAt =
+          typeof data?.atualizadoEm === 'string'
+            ? data.atualizadoEm
+            : new Date().toISOString();
+        setProductTableAdminConfigUpdatedAt(nextUpdatedAt);
+        writeCachedValue<AlmoxProductTableConfigCache>(
+          ALMOX_PRODUCT_TABLE_CONFIG_CACHE_KEY,
+          {
+            config: savedConfig,
+            updatedAt: nextUpdatedAt,
+          }
+        );
+      } catch (configError) {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        const scopedError = createScopedError(
+          '/api/product-table-columns [PUT]',
+          configError
+        );
+        logScopedError('/api/product-table-columns [PUT]', configError);
+        setProductTableAdminConfigError(scopedError.message);
+        throw scopedError;
+      } finally {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setProductTableAdminConfigSaving(false);
+      }
+    },
+    []
+  );
 
   const refreshProcessItems = useCallback(async function refreshProcessItems(options?: { force?: boolean }) {
     const force = options?.force === true;
@@ -1459,6 +1610,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     const numeroPedido = String(input.numero_pedido ?? '').trim();
     const edocs = String(input.edocs ?? '').trim();
     const edocsAtaOrigem = String((input as { edocs_ata_origem?: string }).edocs_ata_origem ?? '').trim();
+    const idCotacao = String((input as { id_cotacao?: string }).id_cotacao ?? '').trim();
     const observacao = String((input as { observacao?: string }).observacao ?? '').trim();
     const totalParcelas = Math.min(Math.max(Number(input.total_parcelas) || 3, 1), PROCESSO_TOTAL_PARCELAS_MAX);
     const parcelasEntregues = normalizarParcelasEntregues(input.parcelas_entregues ?? [], totalParcelas);
@@ -1497,6 +1649,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       numero_pedido: numeroPedido,
       edocs,
       edocs_ata_origem: edocsAtaOrigem,
+      id_cotacao: idCotacao,
       observacao,
       marca: String(input.marca ?? '').trim(),
       tipo_processo: input.tipo_processo,
@@ -1558,7 +1711,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     const { data: processoCompleto, error: fetchError } = await supabase
       .from('almox_processos_acompanhamento')
       .select(
-        'id, categoria_material, numero_pedido, edocs, edocs_ata_origem, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
+        'id, categoria_material, numero_pedido, edocs, edocs_ata_origem, id_cotacao, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
       )
       .eq('id', processoId)
       .single();
@@ -1678,6 +1831,10 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     const sessionLoaded = readSessionFlag(ALMOX_SESSION_KEY);
     const cached = readCachedValue<AlmoxBaseCache>(ALMOX_CACHE_KEY, ALMOX_CACHE_TTL_MS);
     const cachedConfig = readCachedValue<AlmoxConfigCache>(ALMOX_CONFIG_CACHE_KEY, ALMOX_CONFIG_CACHE_TTL_MS);
+    const cachedProductTableConfig = readCachedValue<AlmoxProductTableConfigCache>(
+      ALMOX_PRODUCT_TABLE_CONFIG_CACHE_KEY,
+      ALMOX_PRODUCT_TABLE_CONFIG_CACHE_TTL_MS
+    );
     const cachedProcesses = readCachedValue<AlmoxProcessCache>(ALMOX_PROCESS_CACHE_KEY, ALMOX_PROCESS_CACHE_TTL_MS);
 
     if (sessionLoaded && cached) {
@@ -1729,12 +1886,34 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       void refreshSystemConfig();
     }
 
+    if (cachedProductTableConfig) {
+      startTransition(() => {
+        setProductTableAdminConfig(
+          normalizarProductTableAdminConfig(cachedProductTableConfig.value.config)
+        );
+      });
+      setProductTableAdminConfigUpdatedAt(cachedProductTableConfig.value.updatedAt);
+      setProductTableAdminConfigLoading(false);
+
+      if (!cachedProductTableConfig.isFresh) {
+        void refreshProductTableAdminConfig();
+      }
+    } else {
+      void refreshProductTableAdminConfig();
+    }
+
     void refreshKpiHistorico();
 
     return () => {
       mountedRef.current = false;
     };
-  }, [refresh, refreshProcessItems, refreshSystemConfig, refreshKpiHistorico]);
+  }, [
+    refresh,
+    refreshProcessItems,
+    refreshProductTableAdminConfig,
+    refreshSystemConfig,
+    refreshKpiHistorico,
+  ]);
 
   useEffect(() => {
     if (!pendingSync) {
@@ -1915,6 +2094,13 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         systemConfigUpdatedAt,
         refreshSystemConfig,
         saveSystemConfig,
+        productTableAdminConfig,
+        productTableAdminConfigLoading,
+        productTableAdminConfigSaving,
+        productTableAdminConfigError,
+        productTableAdminConfigUpdatedAt,
+        refreshProductTableAdminConfig,
+        saveProductTableAdminConfig,
         findHmsaProductNameByCode,
         findHmsaProductCategoryByCode,
         findHmsaProductByProductCode,

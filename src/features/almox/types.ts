@@ -200,6 +200,7 @@ export interface ProcessoAcompanhamento {
   numero_pedido: string;
   edocs: string;
   edocs_ata_origem: string;
+  id_cotacao: string;
   observacao: string;
   marca: string;
   tipo_processo: ProcessoTipo;
@@ -240,6 +241,7 @@ export interface ProductProcessSummaryEntry {
   numero_pedido: string;
   edocs: string;
   edocs_ata_origem: string;
+  id_cotacao: string;
   fornecedor: string;
   marca: string;
   tipo_processo: ProcessoTipo;

@@ -397,6 +397,9 @@ function getProcessReference(entry?: ProductProcessSummaryEntry | null) {
       : entry.numero_pedido
         ? `${entry.tipo_processo === 'ARP' ? 'ATA' : 'Pedido'} ${entry.numero_pedido}`
         : null,
+    entry.tipo_processo === 'Processo Simplificado' && entry.id_cotacao
+      ? `Cotação ${entry.id_cotacao}`
+      : null,
   ].filter(Boolean);
   const refLabel = refs.join(' / ');
 

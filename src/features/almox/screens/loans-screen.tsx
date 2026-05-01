@@ -1,9 +1,16 @@
-import React, { useDeferredValue, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { ActionBadge, LevelBadge, RuptureBadge, ScoreBadge } from '@/features/almox/components/badges';
+import { useAlmoxData } from "@/features/almox/almox-provider";
 import {
   ActionButton,
+  AppIcon,
   EmptyState,
   InfoBanner,
   InlineTabs,
@@ -11,36 +18,200 @@ import {
   PageSize,
   PaginationFooter,
   ScreenScrollView,
-  SearchField,
   SectionCard,
   SectionTitle,
-} from '@/features/almox/components/common';
-import { useAlmoxData } from '@/features/almox/almox-provider';
-import { getCategoriaMaterialLabel } from '@/features/almox/data';
-import { AlmoxTheme } from '@/features/almox/tokens';
-import { useThemedStyles } from '@/features/almox/theme-provider';
-import { Product } from '@/features/almox/types';
-import { formatDecimal, matchesQuery, paginate } from '@/features/almox/utils';
+} from "@/features/almox/components/common";
+import {
+  ProductTable,
+  ProductTableSortState,
+  sortProductsForTable,
+} from "@/features/almox/components/product-table";
+import {
+  getActionTooltips,
+  getLevelTooltips,
+} from "@/features/almox/configuracao";
+import { useThemedStyles } from "@/features/almox/theme-provider";
+import { AlmoxTheme } from "@/features/almox/tokens";
+import { ProductColumnId } from "@/features/almox/product-table-columns";
+import { matchesQuery, paginate } from "@/features/almox/utils";
 
-type LoanTab = 'need' | 'lend';
+type LoanTab = "need" | "lend";
+
+const LOANS_NEED_COLUMNS_CACHE_KEY_PREFIX = "almox:loans:need:columns:v1";
+const LOANS_NEED_COLUMNS_PREFERENCE_SCOPE = "loans.need.columns";
+const LOANS_LEND_COLUMNS_CACHE_KEY_PREFIX = "almox:loans:lend:columns:v1";
+const LOANS_LEND_COLUMNS_PREFERENCE_SCOPE = "loans.lend.columns";
+
+const LOANS_NEED_ENABLED_COLUMNS: ProductColumnId[] = [
+  "product",
+  "code",
+  "days",
+  "cmm",
+  "score",
+  "risk",
+  "action",
+  "hospital",
+  "quantity",
+  "postAction",
+];
+
+const LOANS_NEED_DEFAULT_VISIBLE_COLUMNS: ProductColumnId[] = [
+  "product",
+  "days",
+  "score",
+  "risk",
+  "action",
+  "hospital",
+  "quantity",
+  "postAction",
+];
+
+const LOANS_LEND_ENABLED_COLUMNS: ProductColumnId[] = [
+  "product",
+  "code",
+  "days",
+  "cmm",
+  "level",
+  "risk",
+];
+
+const LOANS_LEND_DEFAULT_VISIBLE_COLUMNS: ProductColumnId[] = [
+  "product",
+  "code",
+  "days",
+  "cmm",
+  "level",
+  "risk",
+];
+
+const LOANS_COLUMN_LABELS: Partial<Record<ProductColumnId, string>> = {
+  days: "Suf. atual",
+  quantity: "Qtd. sugerida",
+  postAction: "Suf. pós-ação",
+};
+
+const LOANS_COLUMN_VALUE_SUFFIXES: Partial<Record<ProductColumnId, string>> = {
+  days: "d",
+};
 
 export default function LoansScreen() {
   const styles = useThemedStyles(createStyles);
-  const [activeTab, setActiveTab] = useState<LoanTab>('need');
-  const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<LoanTab>("need");
+  const [search, setSearch] = useState("");
+  const [isSearchOpen, setSearchOpen] = useState(false);
+  const [isColumnsEditorOpen, setColumnsEditorOpen] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
+  const deferredSearch = useDeferredValue(search);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(10);
-  const { dataset, categoryFilter, error, warning, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } = useAlmoxData();
-  const deferredSearch = useDeferredValue(search);
-
-  const needItems = dataset.loansNeeded.filter((item) =>
-    matchesQuery([item.product_name, item.product_code, item.suggested_hospital], deferredSearch)
+  const [needSort, setNeedSort] = useState<ProductTableSortState>({
+    column: "days",
+    direction: "asc",
+  });
+  const [lendSort, setLendSort] = useState<ProductTableSortState>({
+    column: "days",
+    direction: "desc",
+  });
+  const {
+    dataset,
+    categoryFilter,
+    error,
+    warning,
+    loading,
+    refreshing,
+    syncError,
+    syncNotice,
+    syncingBase,
+    syncBase,
+    usingCachedData,
+    systemConfig,
+    openProcessSummaryByProductCode,
+  } = useAlmoxData();
+  const levelTooltips = useMemo(
+    () => getLevelTooltips(systemConfig),
+    [systemConfig],
   );
-  const lendItems = dataset.canLend.filter((item) =>
-    matchesQuery([item.product_name, item.product_code], deferredSearch)
+  const actionTooltips = useMemo(
+    () => getActionTooltips(systemConfig),
+    [systemConfig],
   );
 
-  const activeItems = activeTab === 'need' ? needItems : lendItems;
+  const needItemsBase = dataset.loansNeeded;
+  const lendItemsBase = dataset.canLend;
+  const activeBaseCount =
+    activeTab === "need" ? needItemsBase.length : lendItemsBase.length;
+  const showMaterialLabel = categoryFilter === "todos";
+  const activeSort = activeTab === "need" ? needSort : lendSort;
+  const isSearchExpanded = isSearchOpen || search.trim().length > 0;
+  const tableColumns =
+    activeTab === "need"
+      ? {
+          enabled: LOANS_NEED_ENABLED_COLUMNS,
+          defaults: LOANS_NEED_DEFAULT_VISIBLE_COLUMNS,
+          editable: {
+            scope: LOANS_NEED_COLUMNS_PREFERENCE_SCOPE,
+            cacheKeyPrefix: LOANS_NEED_COLUMNS_CACHE_KEY_PREFIX,
+          },
+          searchPlaceholder: "Buscar produto, código ou hospital...",
+        }
+      : {
+          enabled: LOANS_LEND_ENABLED_COLUMNS,
+          defaults: LOANS_LEND_DEFAULT_VISIBLE_COLUMNS,
+          editable: {
+            scope: LOANS_LEND_COLUMNS_PREFERENCE_SCOPE,
+            cacheKeyPrefix: LOANS_LEND_COLUMNS_CACHE_KEY_PREFIX,
+          },
+          searchPlaceholder: "Buscar produto ou código...",
+        };
+
+  useEffect(() => {
+    if (!isSearchOpen) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isSearchOpen]);
+
+  const needItems = useMemo(() => {
+    const matched = needItemsBase.filter((item) =>
+      matchesQuery(
+        [item.product_name, item.product_code, item.suggested_hospital],
+        deferredSearch,
+      ),
+    );
+    return sortProductsForTable(
+      matched,
+      needSort,
+      openProcessSummaryByProductCode,
+    );
+  }, [
+    deferredSearch,
+    needItemsBase,
+    needSort,
+    openProcessSummaryByProductCode,
+  ]);
+
+  const lendItems = useMemo(() => {
+    const matched = lendItemsBase.filter((item) =>
+      matchesQuery([item.product_name, item.product_code], deferredSearch),
+    );
+    return sortProductsForTable(
+      matched,
+      lendSort,
+      openProcessSummaryByProductCode,
+    );
+  }, [
+    deferredSearch,
+    lendItemsBase,
+    lendSort,
+    openProcessSummaryByProductCode,
+  ]);
+
+  const activeItems = activeTab === "need" ? needItems : lendItems;
   const totalPages = Math.max(1, Math.ceil(activeItems.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const pageItems = paginate(activeItems, safePage, pageSize);
@@ -51,10 +222,10 @@ export default function LoansScreen() {
         subtitle="Painel focado em redistribuição entre unidades e itens com sobra operacional."
         aside={
           <ActionButton
-            label={syncingBase ? 'Sincronizando...' : 'Atualizar estoque'}
+            label={syncingBase ? "Sincronizando..." : "Atualizar estoque"}
             icon="refresh"
             tone="neutral"
-            onPress={() => void syncBase('estoque')}
+            onPress={() => void syncBase("estoque")}
             disabled={refreshing || syncingBase}
           />
         }
@@ -68,7 +239,13 @@ export default function LoansScreen() {
         />
       ) : null}
 
-      {warning ? <InfoBanner title="Atualização parcial da base" description={warning} tone="warning" /> : null}
+      {warning ? (
+        <InfoBanner
+          title="Atualização parcial da base"
+          description={warning}
+          tone="warning"
+        />
+      ) : null}
 
       {syncError ? (
         <InfoBanner
@@ -97,13 +274,19 @@ export default function LoansScreen() {
       <SectionCard>
         <SectionTitle
           title="Cenário de redistribuição"
-          subtitle={`${activeItems.length} item(ns) na visão atual`}
+          subtitle={`${activeBaseCount} item(ns) na visão atual`}
           icon="loans"
         />
         <InlineTabs
           options={[
-            { label: `Pegar emprestado (${needItems.length})`, value: 'need' as const },
-            { label: `Pode emprestar (${lendItems.length})`, value: 'lend' as const },
+            {
+              label: `Pegar emprestado (${needItemsBase.length})`,
+              value: "need" as const,
+            },
+            {
+              label: `Pode emprestar (${lendItemsBase.length})`,
+              value: "lend" as const,
+            },
           ]}
           value={activeTab}
           onChange={(nextTab) => {
@@ -111,33 +294,71 @@ export default function LoansScreen() {
             setPage(1);
           }}
         />
-        <SearchField
-          value={search}
-          onChangeText={(value) => {
-            setSearch(value);
-            setPage(1);
-          }}
-          placeholder="Buscar produto, código ou hospital..."
-        />
-        <View style={activeTab === 'need' ? styles.needBanner : styles.lendBanner}>
+        <View style={activeTab === "need" ? styles.needBanner : styles.lendBanner}>
           <Text style={styles.bannerTitle}>
-            {activeTab === 'need' ? 'Itens que HMSA precisa remanejar' : 'Itens que HMSA pode ceder'}
+            {activeTab === "need"
+              ? "Itens que HMSA precisa remanejar"
+              : "Itens que HMSA pode ceder"}
           </Text>
           <Text style={styles.bannerText}>
             {loading
-              ? 'Carregando a análise de redistribuição a partir do Supabase.'
-              : activeTab === 'need'
-                ? 'Lista ordenada por criticidade e aderência de remanejamento interno.'
-                : 'Estoque local acima da faixa segura, com indicação do risco após eventual empréstimo.'}
+              ? "Carregando a análise de redistribuição a partir do Supabase."
+              : activeTab === "need"
+                ? "Lista unificada com busca, ordenação e colunas configuráveis para captar estoque de outras unidades."
+                : "Lista unificada com busca, ordenação e colunas configuráveis para avaliar estoque que pode ser cedido."}
           </Text>
         </View>
       </SectionCard>
 
       <SectionCard>
         <SectionTitle
-          title={activeTab === 'need' ? 'Sugestões de captação' : 'Potencial de cessão'}
-          subtitle="Tabela adaptada para React Native com leitura horizontal quando necessário."
-          icon={activeTab === 'need' ? 'borrow' : 'lend'}
+          title={activeTab === "need" ? "Sugestões de captação" : "Potencial de cessão"}
+          subtitle={`${activeItems.length} item(ns) encontrados na visão atual`}
+          icon={activeTab === "need" ? "borrow" : "lend"}
+          aside={
+            <View style={styles.tableHeaderActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={isSearchExpanded ? "Campo de busca aberto" : "Abrir busca"}
+                onPress={() => setSearchOpen(true)}
+                style={({ pressed }) => [
+                  styles.inlineSearch,
+                  isSearchExpanded ? styles.inlineSearchExpanded : null,
+                  pressed ? styles.inlineSearchPressed : null,
+                ]}
+              >
+                <AppIcon
+                  name="search"
+                  size={16}
+                  color={styles.inlineSearchIcon.color as string}
+                />
+                {isSearchExpanded ? (
+                  <TextInput
+                    ref={searchInputRef}
+                    value={search}
+                    onChangeText={(value) => {
+                      setSearch(value);
+                      setPage(1);
+                    }}
+                    placeholder={tableColumns.searchPlaceholder}
+                    placeholderTextColor={styles.inlineSearchPlaceholder.color as string}
+                    style={styles.inlineSearchInput}
+                    onBlur={() => {
+                      if (!search.trim()) {
+                        setSearchOpen(false);
+                      }
+                    }}
+                  />
+                ) : null}
+              </Pressable>
+              <ActionButton
+                label={isColumnsEditorOpen ? "Fechar edição" : "Editar colunas"}
+                icon="edit"
+                tone="neutral"
+                onPress={() => setColumnsEditorOpen((current) => !current)}
+              />
+            </View>
+          }
         />
         {activeItems.length === 0 ? (
           <EmptyState
@@ -145,13 +366,36 @@ export default function LoansScreen() {
             description="A base atual não gerou itens para este recorte ou o termo buscado não encontrou correspondências."
           />
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {activeTab === 'need' ? (
-              <NeedTable items={pageItems} showMaterialLabel={categoryFilter === 'todos'} />
-            ) : (
-              <LendTable items={pageItems} showMaterialLabel={categoryFilter === 'todos'} />
-            )}
-          </ScrollView>
+          <ProductTable
+            items={pageItems}
+            enabledColumns={tableColumns.enabled}
+            defaultVisibleColumns={tableColumns.defaults}
+            editableColumns={tableColumns.editable}
+            columnLabels={LOANS_COLUMN_LABELS}
+            columnValueSuffixes={LOANS_COLUMN_VALUE_SUFFIXES}
+            columnsEditor={{
+              isOpen: isColumnsEditorOpen,
+              onOpenChange: setColumnsEditorOpen,
+              hideButton: true,
+            }}
+            showMaterialLabel={showMaterialLabel}
+            levelTooltips={levelTooltips}
+            actionTooltips={actionTooltips}
+            processSummaryByProductCode={openProcessSummaryByProductCode}
+            doadorSeguroDias={systemConfig.doadorSeguroDias}
+            pisoDoadorAposEmprestimoDias={
+              systemConfig.pisoDoadorAposEmprestimoDias
+            }
+            sorting={activeSort}
+            onSortChange={(nextSorting) => {
+              if (activeTab === "need") {
+                setNeedSort(nextSorting);
+              } else {
+                setLendSort(nextSorting);
+              }
+              setPage(1);
+            }}
+          />
         )}
         {activeItems.length > 0 ? (
           <PaginationFooter
@@ -173,178 +417,73 @@ export default function LoansScreen() {
   );
 }
 
-function NeedTable({ items, showMaterialLabel }: { items: Product[]; showMaterialLabel: boolean }) {
-  const styles = useThemedStyles(createStyles);
-  return (
-    <View style={styles.tableWrap}>
-      <View style={styles.tableHeader}>
-        <Text style={[styles.tableHeadCell, styles.productColumn]}>Produto</Text>
-        <Text style={[styles.tableHeadCell, styles.smallColumn]}>Dias</Text>
-        <Text style={[styles.tableHeadCell, styles.smallColumn]}>Score</Text>
-        <Text style={[styles.tableHeadCell, styles.actionColumn]}>Ação</Text>
-        <Text style={[styles.tableHeadCell, styles.hospitalColumn]}>Hospital</Text>
-        <Text style={[styles.tableHeadCell, styles.smallColumn]}>Qtd.</Text>
-        <Text style={[styles.tableHeadCell, styles.smallColumn]}>Pós-ação</Text>
-      </View>
-      {items.map((item) => (
-        <View key={`${item.categoria_material}-${item.product_code}-need`} style={styles.tableRow}>
-          <View style={[styles.productColumn, styles.productCell]}>
-            <Text style={styles.productName} numberOfLines={1}>
-              {item.product_name}
-            </Text>
-            {showMaterialLabel ? <Text style={styles.productMeta}>{getCategoriaMaterialLabel(item.categoria_material)}</Text> : null}
-            {item.rupture_risk ? <RuptureBadge risk={item.rupture_risk} /> : null}
-          </View>
-          <Text style={[styles.tableCell, styles.smallColumn]}>{formatDecimal(item.sufficiency_days)}</Text>
-          <View style={[styles.smallColumn, styles.tableBadgeCell]}>
-            <ScoreBadge score={item.score} classification={item.classification} />
-          </View>
-          <View style={[styles.actionColumn, styles.tableBadgeCell]}>
-            <ActionBadge action={item.action} />
-          </View>
-          <View style={[styles.hospitalColumn, styles.productCell]}>
-            <Text style={styles.tableCell}>
-              {item.suggested_hospital}
-              {item.donor_sufficiency ? ` • ${item.donor_sufficiency.toFixed(0)}d` : ''}
-            </Text>
-            {item.donor_current_stock != null ? (
-              <Text style={styles.productMeta}>Estoque atual: {formatDecimal(item.donor_current_stock, 0)}</Text>
-            ) : null}
-            {item.nova_suf_doador ? (
-              <Text style={styles.productMeta}>Suf. projetada doador: {item.nova_suf_doador.toFixed(0)}d</Text>
-            ) : null}
-          </View>
-          <Text style={[styles.tableCell, styles.smallColumn]}>{item.qty_transfer ?? '—'}</Text>
-          <Text style={[styles.tableCell, styles.smallColumn]}>
-            {item.projected_suf ? `${item.projected_suf.toFixed(0)}d` : '—'}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function LendTable({ items, showMaterialLabel }: { items: Product[]; showMaterialLabel: boolean }) {
-  const styles = useThemedStyles(createStyles);
-  return (
-    <View style={styles.tableWrap}>
-      <View style={styles.tableHeader}>
-        <Text style={[styles.tableHeadCell, styles.productColumn]}>Produto</Text>
-        <Text style={[styles.tableHeadCell, styles.codeColumn]}>Código</Text>
-        <Text style={[styles.tableHeadCell, styles.smallColumn]}>Dias</Text>
-        <Text style={[styles.tableHeadCell, styles.smallColumn]}>CMM</Text>
-        <Text style={[styles.tableHeadCell, styles.smallColumn]}>Nível</Text>
-        <Text style={[styles.tableHeadCell, styles.actionColumn]}>Risco futuro</Text>
-      </View>
-      {items.map((item) => (
-        <View key={`${item.categoria_material}-${item.product_code}-lend`} style={styles.tableRow}>
-          <View style={[styles.productColumn, styles.productCell]}>
-            <Text style={styles.productName} numberOfLines={1}>
-              {item.product_name}
-            </Text>
-            <Text style={styles.productMeta}>
-              Cobertura alta na unidade base
-              {showMaterialLabel ? ` • ${getCategoriaMaterialLabel(item.categoria_material)}` : ''}
-            </Text>
-          </View>
-          <Text style={[styles.tableCell, styles.codeColumn]}>{item.product_code}</Text>
-          <Text style={[styles.tableCell, styles.smallColumn]}>{formatDecimal(item.sufficiency_days)}</Text>
-          <Text style={[styles.tableCell, styles.smallColumn]}>{formatDecimal(item.avg_monthly_consumption)}</Text>
-          <View style={[styles.smallColumn, styles.tableBadgeCell]}>
-            <LevelBadge level={item.level} />
-          </View>
-          <View style={[styles.actionColumn, styles.tableBadgeCell]}>
-            <RuptureBadge risk={item.rupture_risk} />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
-  needBanner: {
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: 'rgba(249, 115, 22, 0.35)',
-    backgroundColor: 'rgba(249, 115, 22, 0.12)',
-    padding: tokens.spacing.md,
-    gap: 6,
-  },
-  lendBanner: {
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    borderColor: 'rgba(20, 184, 166, 0.35)',
-    backgroundColor: 'rgba(20, 184, 166, 0.12)',
-    padding: tokens.spacing.md,
-    gap: 6,
-  },
-  bannerTitle: {
-    color: tokens.colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  bannerText: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  tableWrap: {
-    minWidth: 1040,
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    paddingBottom: tokens.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: tokens.colors.lineStrong,
-  },
-  tableHeadCell: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 72,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: tokens.colors.line,
-  },
-  tableCell: {
-    color: tokens.colors.text,
-    fontSize: 13,
-  },
-  tableBadgeCell: {
-    justifyContent: 'center',
-  },
-  productColumn: {
-    width: 260,
-    paddingRight: tokens.spacing.md,
-  },
-  codeColumn: {
-    width: 120,
-  },
-  smallColumn: {
-    width: 110,
-  },
-  actionColumn: {
-    width: 170,
-  },
-  hospitalColumn: {
-    width: 190,
-  },
-  productCell: {
-    gap: 4,
-    justifyContent: 'center',
-  },
-  productName: {
-    color: tokens.colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  productMeta: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-  },
-});
-
+const createStyles = (tokens: AlmoxTheme) =>
+  StyleSheet.create({
+    needBanner: {
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: "rgba(249, 115, 22, 0.35)",
+      backgroundColor: "rgba(249, 115, 22, 0.12)",
+      padding: tokens.spacing.md,
+      gap: 6,
+    },
+    lendBanner: {
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: "rgba(20, 184, 166, 0.35)",
+      backgroundColor: "rgba(20, 184, 166, 0.12)",
+      padding: tokens.spacing.md,
+      gap: 6,
+    },
+    bannerTitle: {
+      color: tokens.colors.text,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    bannerText: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    tableHeaderActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+    },
+    inlineSearch: {
+      minHeight: 44,
+      width: 44,
+      borderRadius: tokens.radii.pill,
+      borderWidth: 1,
+      borderColor: tokens.colors.lineStrong,
+      backgroundColor: tokens.colors.surface,
+      paddingHorizontal: tokens.spacing.md,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: tokens.spacing.sm,
+      overflow: "hidden",
+    },
+    inlineSearchExpanded: {
+      width: 280,
+      justifyContent: "flex-start",
+    },
+    inlineSearchPressed: {
+      opacity: 0.84,
+    },
+    inlineSearchIcon: {
+      color: tokens.colors.textMuted,
+    },
+    inlineSearchInput: {
+      flex: 1,
+      minWidth: 120,
+      color: tokens.colors.text,
+      fontSize: 14,
+      paddingVertical: 0,
+    },
+    inlineSearchPlaceholder: {
+      color: tokens.colors.textMuted,
+    },
+  });

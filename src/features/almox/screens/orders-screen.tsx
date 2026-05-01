@@ -1,8 +1,7 @@
-import React, { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useDeferredValue, useMemo, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 import { useAlmoxData } from "@/features/almox/almox-provider";
-import { LevelBadge } from "@/features/almox/components/badges";
 import {
   ActionButton,
   EmptyState,
@@ -14,6 +13,15 @@ import {
   SectionCard,
   SectionTitle,
 } from "@/features/almox/components/common";
+import {
+  ProductTable,
+  ProductTableSortState,
+  sortProductsForTable,
+} from "@/features/almox/components/product-table";
+import {
+  getActionTooltips,
+  getLevelTooltips,
+} from "@/features/almox/configuracao";
 import { getCategoriaMaterialLabel } from "@/features/almox/data";
 import {
   createExportTimestamp,
@@ -22,9 +30,19 @@ import {
 import { AlmoxTheme } from "@/features/almox/tokens";
 import { useAppTheme, useThemedStyles } from "@/features/almox/theme-provider";
 import { Level, OrderItem } from "@/features/almox/types";
-import { formatDecimal, paginate } from "@/features/almox/utils";
+import { matchesQuery, paginate } from "@/features/almox/utils";
 
-const levelOrder: Level[] = ["URGENTE", "CRÍTICO", "ALTO", "MÉDIO", "BAIXO", "ESTÁVEL"];
+const levelOrder: Level[] = [
+  "URGENTE",
+  "CRÍTICO",
+  "ALTO",
+  "MÉDIO",
+  "BAIXO",
+  "ESTÁVEL",
+];
+
+const ORDERS_COLUMNS_CACHE_KEY_PREFIX = "almox:orders:columns:v1";
+const ORDERS_COLUMNS_PREFERENCE_SCOPE = "orders.columns";
 
 export default function OrdersScreen() {
   const { tokens } = useAppTheme();
@@ -33,31 +51,63 @@ export default function OrdersScreen() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(10);
-  const { dataset, categoryFilter, error, warning, loading, refreshing, syncError, syncNotice, syncingBase, syncBase, usingCachedData } =
-    useAlmoxData();
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  const [tableSort, setTableSort] = useState<ProductTableSortState>({
+    column: "days",
+    direction: "asc",
+  });
+  const {
+    dataset,
+    categoryFilter,
+    error,
+    warning,
+    loading,
+    refreshing,
+    syncError,
+    syncNotice,
+    syncingBase,
+    syncBase,
+    usingCachedData,
+    systemConfig,
+    openProcessSummaryByProductCode,
+    productTableAdminConfig,
+  } = useAlmoxData();
   const items = dataset.orderItems;
-  const sortedItems = useMemo(
+  const levelTooltips = useMemo(
+    () => getLevelTooltips(systemConfig),
+    [systemConfig],
+  );
+  const actionTooltips = useMemo(
+    () => getActionTooltips(systemConfig),
+    [systemConfig],
+  );
+
+  const grouped = useMemo(
     () =>
-      [...items].sort((left, right) => {
-        return (
-          levelOrder.indexOf(left.level) - levelOrder.indexOf(right.level) ||
-          left.sufficiency_days - right.sufficiency_days ||
-          left.product_name.localeCompare(right.product_name, "pt-BR")
-        );
-      }),
+      levelOrder.reduce<Record<Level, OrderItem[]>>((accumulator, level) => {
+        accumulator[level] = items.filter((item) => item.level === level);
+        return accumulator;
+      }, {} as Record<Level, OrderItem[]>),
     [items],
   );
-  const grouped = levelOrder.reduce<Record<Level, OrderItem[]>>((accumulator, level) => {
-    accumulator[level] = sortedItems.filter((item) => item.level === level);
-    return accumulator;
-  }, {} as Record<Level, OrderItem[]>);
-  const totalPages = Math.max(1, Math.ceil(sortedItems.length / pageSize));
+
+  const filteredItems = useMemo(() => {
+    const matched = items.filter((item) =>
+      matchesQuery([item.product_name, item.product_code], deferredSearch),
+    );
+
+    return sortProductsForTable(
+      matched,
+      tableSort,
+      openProcessSummaryByProductCode,
+    ) as OrderItem[];
+  }, [deferredSearch, items, openProcessSummaryByProductCode, tableSort]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageItems = paginate(sortedItems, safePage, pageSize);
-  const pageGrouped = levelOrder.reduce<Record<Level, OrderItem[]>>((accumulator, level) => {
-    accumulator[level] = pageItems.filter((item) => item.level === level);
-    return accumulator;
-  }, {} as Record<Level, OrderItem[]>);
+  const pageItems = paginate(filteredItems, safePage, pageSize);
+  const ordersTableColumns = productTableAdminConfig.orders;
 
   async function handleExport() {
     setExportError(null);
@@ -67,7 +117,7 @@ export default function OrdersScreen() {
       await exportRowsToExcel({
         fileName: `pedidos_hmsa_${createExportTimestamp()}`,
         sheetName: "Pedidos HMSA",
-        rows: sortedItems.map((item) => ({
+        rows: filteredItems.map((item) => ({
           Nível: item.level,
           Categoria: getCategoriaMaterialLabel(item.categoria_material),
           "Código do produto": item.product_code,
@@ -75,6 +125,8 @@ export default function OrdersScreen() {
           "Dias de suficiência": item.sufficiency_days,
           "Consumo médio mensal": item.avg_monthly_consumption,
           "Quantidade sugerida": item.qty_to_buy,
+          "Observação curta": item.observation_summary ?? "",
+          "Observação detalhada": item.observation_detail ?? "",
         })),
       });
     } catch (caughtError) {
@@ -91,14 +143,15 @@ export default function OrdersScreen() {
   return (
     <ScreenScrollView>
       <PageHeader
-        subtitle="Pré-visualização do pedido automático agrupada por nível de cobertura, usando a base real importada."
+        title="Pedidos"
+        subtitle="Pré-visualização do pedido automático usando a base real importada."
         aside={
           <View style={styles.headerActions}>
             <ActionButton
               label={syncingBase ? "Sincronizando..." : "Atualizar estoque"}
               icon="refresh"
               tone="neutral"
-              onPress={() => void syncBase('estoque')}
+              onPress={() => void syncBase("estoque")}
               disabled={refreshing || syncingBase}
             />
             <ActionButton label="Gerar pedido" icon="cart" disabled />
@@ -107,7 +160,7 @@ export default function OrdersScreen() {
               icon="download"
               tone="success"
               onPress={() => void handleExport()}
-              disabled={exporting || sortedItems.length === 0}
+              disabled={exporting || filteredItems.length === 0}
             />
           </View>
         }
@@ -145,7 +198,13 @@ export default function OrdersScreen() {
         />
       ) : null}
 
-      {warning ? <InfoBanner title="Atualização parcial da base" description={warning} tone="warning" /> : null}
+      {warning ? (
+        <InfoBanner
+          title="Atualização parcial da base"
+          description={warning}
+          tone="warning"
+        />
+      ) : null}
 
       {usingCachedData ? (
         <InfoBanner
@@ -211,7 +270,13 @@ export default function OrdersScreen() {
                   key={level}
                   label={level}
                   value={`${grouped[level].length}`}
-                  color={level === "URGENTE" || level === "CRÍTICO" ? tokens.colors.red : level === "ALTO" ? tokens.colors.orange : tokens.colors.brand}
+                  color={
+                    level === "URGENTE" || level === "CRÍTICO"
+                      ? tokens.colors.red
+                      : level === "ALTO"
+                        ? tokens.colors.orange
+                        : tokens.colors.brand
+                  }
                 />
               ))}
               <SummaryMetric
@@ -222,19 +287,48 @@ export default function OrdersScreen() {
             </View>
           </SectionCard>
 
-          {levelOrder.map((level) =>
-            pageGrouped[level].length > 0 ? (
-              <LevelSection
-                key={level}
-                level={level}
-                items={pageGrouped[level]}
-                showMaterialLabel={categoryFilter === "todos"}
-              />
-            ) : null,
-          )}
+          <SectionCard>
+            <SectionTitle
+              title="Itens do pedido"
+              subtitle={`${filteredItems.length} item(ns) encontrados`}
+              icon="orders"
+            />
+            <ProductTable
+              items={pageItems}
+              showActionColumns
+              showProcessColumn
+              showObservationColumn
+              showMaterialLabel={categoryFilter === "todos"}
+              levelTooltips={levelTooltips}
+              actionTooltips={actionTooltips}
+              processSummaryByProductCode={openProcessSummaryByProductCode}
+              doadorSeguroDias={systemConfig.doadorSeguroDias}
+              pisoDoadorAposEmprestimoDias={
+                systemConfig.pisoDoadorAposEmprestimoDias
+              }
+              sorting={tableSort}
+              onSortChange={setTableSort}
+              search={{
+                value: search,
+                onChangeText: (value) => {
+                  setSearch(value);
+                  setPage(1);
+                },
+                placeholder: "Buscar produto ou código...",
+              }}
+              editableColumns={{
+                scope: ORDERS_COLUMNS_PREFERENCE_SCOPE,
+                cacheKeyPrefix: ORDERS_COLUMNS_CACHE_KEY_PREFIX,
+                bottomScrollbarId: "orders-table-bottom-scrollbar",
+              }}
+              enabledColumns={ordersTableColumns.enabledColumns}
+              defaultVisibleColumns={ordersTableColumns.defaultVisibleColumns}
+            />
+          </SectionCard>
+
           <SectionCard>
             <PaginationFooter
-              totalItems={sortedItems.length}
+              totalItems={filteredItems.length}
               pageItemsCount={pageItems.length}
               page={safePage}
               totalPages={totalPages}
@@ -250,78 +344,6 @@ export default function OrdersScreen() {
         </>
       )}
     </ScreenScrollView>
-  );
-}
-
-function LevelSection({
-  level,
-  items,
-  showMaterialLabel,
-}: {
-  level: Level;
-  items: OrderItem[];
-  showMaterialLabel: boolean;
-}) {
-  const styles = useThemedStyles(createStyles);
-  return (
-    <SectionCard>
-      <SectionTitle
-        title={`Nível ${level}`}
-        subtitle={`${items.length} item(ns) neste nível`}
-        icon="alert"
-      />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={styles.tableWrap}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableHeadCell, styles.productColumn]}>
-              Produto
-            </Text>
-            <Text style={[styles.tableHeadCell, styles.codeColumn]}>
-              Código
-            </Text>
-            <Text style={[styles.tableHeadCell, styles.smallColumn]}>Dias</Text>
-            <Text style={[styles.tableHeadCell, styles.smallColumn]}>CMM</Text>
-            <Text style={[styles.tableHeadCell, styles.smallColumn]}>Qtd.</Text>
-            <Text style={[styles.tableHeadCell, styles.smallColumn]}>
-              Nível
-            </Text>
-          </View>
-          {items.map((item) => (
-            <View
-              key={`${item.categoria_material}-${item.product_code}`}
-              style={styles.tableRow}
-            >
-              <View style={[styles.productColumn, styles.productCell]}>
-                <Text style={styles.productName} numberOfLines={1}>
-                  {item.product_name}
-                </Text>
-                <Text style={styles.productMeta}>
-                  Reposição recomendada conforme nível de cobertura
-                  {showMaterialLabel
-                    ? ` • ${getCategoriaMaterialLabel(item.categoria_material)}`
-                    : ""}
-                </Text>
-              </View>
-              <Text style={[styles.tableCell, styles.codeColumn]}>
-                {item.product_code}
-              </Text>
-              <Text style={[styles.tableCell, styles.smallColumn]}>
-                {formatDecimal(item.sufficiency_days)}
-              </Text>
-              <Text style={[styles.tableCell, styles.smallColumn]}>
-                {formatDecimal(item.avg_monthly_consumption)}
-              </Text>
-              <Text style={[styles.tableCell, styles.smallColumn]}>
-                {item.qty_to_buy}
-              </Text>
-              <View style={[styles.smallColumn, styles.badgeCell]}>
-                <LevelBadge level={item.level} />
-              </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-    </SectionCard>
   );
 }
 
@@ -344,107 +366,52 @@ function SummaryMetric({
   );
 }
 
-const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
-  headerActions: {
-    flexDirection: "row",
-    gap: tokens.spacing.sm,
-    flexWrap: "wrap",
-  },
-  ruleList: {
-    gap: tokens.spacing.sm,
-  },
-  ruleItem: {
-    color: tokens.colors.textMuted,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  emptyText: {
-    color: tokens.colors.textMuted,
-    fontSize: 14,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: tokens.spacing.md,
-  },
-  summaryMetric: {
-    flexGrow: 1,
-    flexBasis: 180,
-    borderRadius: tokens.radii.md,
-    borderWidth: 1,
-    backgroundColor: tokens.colors.surfaceMuted,
-    padding: tokens.spacing.md,
-    gap: 6,
-    shadowColor: tokens.colors.black,
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  summaryDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 999,
-  },
-  summaryValue: {
-    color: tokens.colors.text,
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  summaryLabel: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-  },
-  tableWrap: {
-    minWidth: 940,
-  },
-  tableHeader: {
-    flexDirection: "row",
-    paddingBottom: tokens.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: tokens.colors.lineStrong,
-  },
-  tableHeadCell: {
-    color: tokens.colors.textMuted,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  tableRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 72,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: tokens.colors.line,
-  },
-  productColumn: {
-    width: 280,
-    paddingRight: tokens.spacing.md,
-  },
-  codeColumn: {
-    width: 120,
-  },
-  smallColumn: {
-    width: 110,
-  },
-  productCell: {
-    gap: 4,
-    justifyContent: "center",
-  },
-  productName: {
-    color: tokens.colors.text,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  productMeta: {
-    color: tokens.colors.textMuted,
-    fontSize: 11,
-  },
-  tableCell: {
-    color: tokens.colors.text,
-    fontSize: 13,
-  },
-  badgeCell: {
-    justifyContent: "center",
-  },
-});
-
+const createStyles = (tokens: AlmoxTheme) =>
+  StyleSheet.create({
+    headerActions: {
+      flexDirection: "row",
+      gap: tokens.spacing.sm,
+      flexWrap: "wrap",
+    },
+    ruleList: {
+      gap: tokens.spacing.sm,
+    },
+    ruleItem: {
+      color: tokens.colors.textMuted,
+      fontSize: 13,
+      lineHeight: 20,
+    },
+    summaryRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.md,
+    },
+    summaryMetric: {
+      flexGrow: 1,
+      flexBasis: 180,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      backgroundColor: tokens.colors.surfaceMuted,
+      padding: tokens.spacing.md,
+      gap: 6,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.05,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 2,
+    },
+    summaryDot: {
+      width: 12,
+      height: 12,
+      borderRadius: 999,
+    },
+    summaryValue: {
+      color: tokens.colors.text,
+      fontSize: 20,
+      fontWeight: "800",
+    },
+    summaryLabel: {
+      color: tokens.colors.textMuted,
+      fontSize: 12,
+    },
+  });

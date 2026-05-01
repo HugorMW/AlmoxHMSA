@@ -1,11 +1,5 @@
-import React, {
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useAlmoxData } from "@/features/almox/almox-provider";
 import {
@@ -63,10 +57,7 @@ const PRODUCTS_TABLE_COLUMNS_PREFERENCE_SCOPE = "products.columns";
 
 export default function ProductsScreen() {
   const styles = useThemedStyles(createStyles);
-  const searchInputRef = useRef<TextInput>(null);
   const [search, setSearch] = useState("");
-  const [isTableSearchOpen, setTableSearchOpen] = useState(false);
-  const [isColumnsEditorOpen, setColumnsEditorOpen] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
   const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
@@ -92,6 +83,7 @@ export default function ProductsScreen() {
     systemConfig,
     openProcessSummaryByProductCode,
     dashboardHospital,
+    productTableAdminConfig,
   } = useAlmoxData();
   const levelTooltips = useMemo(
     () => getLevelTooltips(systemConfig),
@@ -125,24 +117,10 @@ export default function ProductsScreen() {
   }, [activeHospital]);
 
   useEffect(() => {
-    if (!isTableSearchOpen) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 0);
-
-    return () => clearTimeout(timer);
-  }, [isTableSearchOpen]);
-
-  useEffect(() => {
     if (activeHospital !== "HMSA" && actionFilter !== "all") {
       setActionFilter("all");
     }
   }, [activeHospital, actionFilter]);
-
-  const isSearchExpanded = isTableSearchOpen || search.length > 0;
 
   const filteredItems = useMemo(() => {
     const items = dataset.productsByHospital[activeHospital] ?? [];
@@ -182,6 +160,7 @@ export default function ProductsScreen() {
   const showActionColumns = activeHospital === "HMSA";
   const showProcessColumn = activeHospital === "HMSA";
   const showObservationColumn = activeHospital === "HMSA";
+  const productsTableColumns = productTableAdminConfig.products;
 
   async function handleExport() {
     setExportError(null);
@@ -457,56 +436,6 @@ export default function ProductsScreen() {
           subtitle={`Página ${safePage} de ${totalPages}`}
           icon="package"
           tooltip="Tabela detalhada da carteira filtrada. Os badges de nível, ação e hospital sugerido também têm explicações ao passar o mouse."
-          aside={
-            <View style={styles.tableTitleActions}>
-              <View style={styles.tableTitleSearchWrap}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isSearchExpanded ? "Campo de busca aberto" : "Abrir busca"
-                  }
-                  onPress={() => setTableSearchOpen(true)}
-                  style={({ pressed }) => [
-                    styles.tableTitleSearch,
-                    isSearchExpanded ? styles.tableTitleSearchExpanded : null,
-                    pressed ? styles.tableTitleSearchPressed : null,
-                  ]}
-                >
-                  <AppIcon
-                    name="search"
-                    size={16}
-                    color={styles.tableTitleSearchIcon.color as string}
-                  />
-                  {isSearchExpanded ? (
-                    <TextInput
-                      ref={searchInputRef}
-                      value={search}
-                      onChangeText={(value) => {
-                        setSearch(value);
-                        setPage(1);
-                      }}
-                      placeholder="Buscar produto ou código..."
-                      placeholderTextColor={
-                        styles.tableTitleSearchPlaceholder.color as string
-                      }
-                      style={styles.tableTitleSearchInput}
-                      onBlur={() => {
-                        if (!search.trim()) {
-                          setTableSearchOpen(false);
-                        }
-                      }}
-                    />
-                  ) : null}
-                </Pressable>
-              </View>
-              <ActionButton
-                label={isColumnsEditorOpen ? "Fechar edição" : "Editar colunas"}
-                icon="edit"
-                tone="neutral"
-                onPress={() => setColumnsEditorOpen((current) => !current)}
-              />
-            </View>
-          }
         />
 
         {pageItems.length === 0 ? (
@@ -533,16 +462,23 @@ export default function ProductsScreen() {
               setHeaderSort(nextSorting);
               setPage(1);
             }}
+            search={{
+              value: search,
+              onChangeText: (value) => {
+                setSearch(value);
+                setPage(1);
+              },
+              placeholder: "Buscar produto ou código...",
+            }}
             editableColumns={{
               scope: PRODUCTS_TABLE_COLUMNS_PREFERENCE_SCOPE,
               cacheKeyPrefix: PRODUCTS_TABLE_COLUMNS_CACHE_KEY_PREFIX,
               bottomScrollbarId: "products-table-bottom-scrollbar",
             }}
-            columnsEditor={{
-              isOpen: isColumnsEditorOpen,
-              onOpenChange: setColumnsEditorOpen,
-              hideButton: true,
-            }}
+            enabledColumns={productsTableColumns.enabledColumns}
+            defaultVisibleColumns={
+              productsTableColumns.defaultVisibleColumns
+            }
           />
         )}
 
@@ -625,50 +561,5 @@ const createStyles = (tokens: AlmoxTheme) =>
       color: tokens.colors.text,
       fontSize: 18,
       fontWeight: "800",
-    },
-    tableTitleSearchWrap: {
-      minWidth: 44,
-      alignItems: "flex-end",
-    },
-    tableTitleActions: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      flexWrap: "wrap",
-      justifyContent: "flex-end",
-    },
-    tableTitleSearch: {
-      minHeight: 40,
-      width: 40,
-      borderRadius: tokens.radii.pill,
-      borderWidth: 1,
-      borderColor: tokens.colors.lineStrong,
-      backgroundColor: tokens.colors.surface,
-      paddingHorizontal: tokens.spacing.sm,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: tokens.spacing.xs,
-      overflow: "hidden",
-    },
-    tableTitleSearchExpanded: {
-      width: 280,
-      justifyContent: "flex-start",
-      backgroundColor: tokens.colors.surfaceRaised,
-    },
-    tableTitleSearchPressed: {
-      opacity: 0.88,
-    },
-    tableTitleSearchIcon: {
-      color: tokens.colors.textMuted,
-    },
-    tableTitleSearchPlaceholder: {
-      color: tokens.colors.textMuted,
-    },
-    tableTitleSearchInput: {
-      flex: 1,
-      color: tokens.colors.text,
-      fontSize: 13,
-      paddingVertical: 0,
     },
   });
