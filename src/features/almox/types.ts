@@ -29,7 +29,14 @@ export interface Product {
   product_name: string;
   hospital: Hospital;
   categoria_material: CategoriaMaterial;
+  estoque_atual?: number;
+  estoque_atual_bruto?: number;
+  estoque_atual_ajustado?: number;
+  estoque_principais_total?: number;
+  estoque_carrinho_parada_total?: number;
   sufficiency_days: number;
+  sufficiency_days_raw?: number;
+  sufficiency_days_adjusted?: number;
   avg_monthly_consumption: number;
   daily_usage: number;
   level: Level;

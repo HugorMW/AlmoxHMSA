@@ -64,6 +64,9 @@ const ESTOQUE_ATUAL_SELECT_COLUMNS = [
   'data_ultima_entrada',
   'consumo_medio',
   'estoque_atual',
+  'estoque_principais_total',
+  'estoque_carrinho_parada_total',
+  'estoque_atual_ajustado',
 ].join(',');
 const MONTHLY_CONSUMPTION_SELECT_COLUMNS = [
   'categoria_material',
@@ -554,6 +557,8 @@ type ProcessoProdutoLookupRow = Pick<
   | 'codigo_produto'
   | 'codigo_produto_referencia'
   | 'estoque_atual'
+  | 'estoque_atual_ajustado'
+  | 'consumo_medio'
   | 'nome_produto'
   | 'nome_produto_referencia'
   | 'suficiencia_em_dias'
@@ -568,8 +573,8 @@ function criarLookupProdutoProcesso(row: ProcessoProdutoLookupRow, codBionexo?: 
     cd_produto: normalizarCodigoProduto(row.codigo_produto),
     ds_produto: String(row.nome_produto_referencia ?? '').trim() || row.nome_produto,
     categoria_material: normalizeCategory(row.categoria_material),
-    estoque_atual: parseNumericRowValue(row.estoque_atual),
-    suficiencia_em_dias: parseNumericRowValue(row.suficiencia_em_dias),
+    estoque_atual: resolveOperationalStockValue(row),
+    suficiencia_em_dias: resolveOperationalSufficiencyValue(row),
   };
 }
 
@@ -640,6 +645,38 @@ function parseNumericRowValue(value: number | string | null | undefined) {
 
   const parsed = Number(String(value).replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hasNumericRowValue(value: number | string | null | undefined) {
+  if (value == null) {
+    return false;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim() !== '';
+  }
+
+  return true;
+}
+
+function resolveOperationalStockValue(row: Pick<EstoqueAtualRow, 'estoque_atual' | 'estoque_atual_ajustado'>) {
+  return hasNumericRowValue(row.estoque_atual_ajustado)
+    ? parseNumericRowValue(row.estoque_atual_ajustado)
+    : parseNumericRowValue(row.estoque_atual);
+}
+
+function resolveOperationalSufficiencyValue(
+  row: Pick<EstoqueAtualRow, 'consumo_medio' | 'estoque_atual_ajustado' | 'suficiencia_em_dias'>
+) {
+  const cmm = parseNumericRowValue(row.consumo_medio);
+
+  if (hasNumericRowValue(row.estoque_atual_ajustado) && cmm > 0) {
+    const adjustedStock = parseNumericRowValue(row.estoque_atual_ajustado);
+    const dailyUsage = Math.max(cmm, 0.01) / 30;
+    return Math.min(Math.max(adjustedStock / dailyUsage, 0), 365);
+  }
+
+  return parseNumericRowValue(row.suficiencia_em_dias);
 }
 
 type AlmoxBaseCache = {
@@ -823,7 +860,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         ds_produto: row.nome_produto,
         categoria_material: normalizeCategory(row.categoria_material),
         cmm,
-        estoque_atual: parseNumericRowValue(row.estoque_atual),
+        estoque_atual: resolveOperationalStockValue(row),
       });
     }
 
@@ -1458,7 +1495,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       const { data, error: lookupError } = await supabase
         .from('almox_estoque_atual')
         .select(
-          'categoria_material,codigo_produto,codigo_produto_referencia,estoque_atual,nome_produto,nome_produto_referencia,suficiencia_em_dias'
+          'categoria_material,codigo_produto,codigo_produto_referencia,estoque_atual,estoque_atual_ajustado,consumo_medio,nome_produto,nome_produto_referencia,suficiencia_em_dias'
         )
         .eq('codigo_unidade', 'HMSASOUL')
         .ilike('codigo_produto_referencia', codigoNormalizado)
@@ -1496,7 +1533,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       const { data, error: lookupError } = await supabase
         .from('almox_estoque_atual')
         .select(
-          'categoria_material,codigo_produto,codigo_produto_referencia,estoque_atual,nome_produto,nome_produto_referencia,suficiencia_em_dias'
+          'categoria_material,codigo_produto,codigo_produto_referencia,estoque_atual,estoque_atual_ajustado,consumo_medio,nome_produto,nome_produto_referencia,suficiencia_em_dias'
         )
         .eq('codigo_unidade', 'HMSASOUL')
         .eq('codigo_produto', codigoNormalizado)

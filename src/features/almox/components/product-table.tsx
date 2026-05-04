@@ -130,8 +130,36 @@ function compareProductsForTable(
       break;
     case "days":
       result =
-        compareNumber(left.sufficiency_days, right.sufficiency_days, 0) ||
+        compareNumber(
+          left.sufficiency_days_raw ?? left.sufficiency_days,
+          right.sufficiency_days_raw ?? right.sufficiency_days,
+          0,
+        ) || compareText(left.product_name, right.product_name);
+      break;
+    case "adjustedDays":
+      result =
+        compareNumber(
+          left.sufficiency_days_adjusted ?? left.sufficiency_days,
+          right.sufficiency_days_adjusted ?? right.sufficiency_days,
+          0,
+        ) ||
         compareText(left.product_name, right.product_name);
+      break;
+    case "rawStock":
+      result =
+        compareNumber(
+          left.estoque_atual_bruto ?? left.estoque_atual,
+          right.estoque_atual_bruto ?? right.estoque_atual,
+          0,
+        ) || compareText(left.product_name, right.product_name);
+      break;
+    case "adjustedStock":
+      result =
+        compareNumber(
+          left.estoque_atual_ajustado ?? left.estoque_atual,
+          right.estoque_atual_ajustado ?? right.estoque_atual,
+          0,
+        ) || compareText(left.product_name, right.product_name);
       break;
     case "cmm":
       result =
@@ -193,14 +221,6 @@ function compareProductsForTable(
           Number.POSITIVE_INFINITY,
         ) ||
         compareText(left.product_name, right.product_name);
-      break;
-    case "quantity":
-      result =
-        compareNumber(
-          left.qty_transfer ?? left.qty_to_buy,
-          right.qty_transfer ?? right.qty_to_buy,
-          Number.POSITIVE_INFINITY,
-        ) || compareText(left.product_name, right.product_name);
       break;
     case "postAction":
       result =
@@ -330,9 +350,20 @@ function createProductColumnLayoutNormalizer({
         ...requiredIds.filter((id) => !normalizedVisibleIds.includes(id)),
         ...normalizedVisibleIds,
       ];
-      const hiddenIds = defaultOrder.filter(
-        (columnId) => !visibleIds.includes(columnId),
-      );
+      const hiddenIds: ProductColumnId[] = [];
+
+      for (const columnId of defaultOrder) {
+        if (visibleIds.includes(columnId)) {
+          continue;
+        }
+
+        if (defaultVisibleColumnIds.includes(columnId)) {
+          visibleIds.push(columnId);
+        } else {
+          hiddenIds.push(columnId);
+        }
+      }
+
       return {
         visibleIds: visibleIds.length > 0 ? visibleIds : fallbackVisibleIds,
         hiddenIds,
@@ -361,7 +392,11 @@ function createProductColumnLayoutNormalizer({
 
     for (const columnId of defaultOrder) {
       if (!visibleIds.includes(columnId) && !hiddenIds.includes(columnId)) {
-        hiddenIds.push(columnId);
+        if (defaultVisibleColumnIds.includes(columnId)) {
+          visibleIds.push(columnId);
+        } else {
+          hiddenIds.push(columnId);
+        }
       }
     }
 
@@ -1112,7 +1147,41 @@ function renderProductColumnContent({
     case "days":
       return (
         <Text style={[styles.tableCell, styles.daysColumnText]}>
-          {withSuffix("days", formatDecimal(item.sufficiency_days))}
+          {withSuffix(
+            "days",
+            formatDecimal(item.sufficiency_days_raw ?? item.sufficiency_days),
+          )}
+        </Text>
+      );
+    case "adjustedDays":
+      return (
+        <Text style={[styles.tableCell, styles.daysColumnText]}>
+          {withSuffix(
+            "adjustedDays",
+            formatDecimal(
+              item.sufficiency_days_adjusted ?? item.sufficiency_days,
+            ),
+          )}
+        </Text>
+      );
+    case "rawStock":
+      return (
+        <Text style={[styles.tableCell, styles.daysColumnText]}>
+          {item.estoque_atual_bruto != null
+            ? formatDecimal(item.estoque_atual_bruto, 0)
+            : item.estoque_atual != null
+              ? formatDecimal(item.estoque_atual, 0)
+              : "—"}
+        </Text>
+      );
+    case "adjustedStock":
+      return (
+        <Text style={[styles.tableCell, styles.daysColumnText]}>
+          {item.estoque_atual_ajustado != null
+            ? formatDecimal(item.estoque_atual_ajustado, 0)
+            : item.estoque_atual != null
+              ? formatDecimal(item.estoque_atual, 0)
+              : "—"}
         </Text>
       );
     case "cmm":
@@ -1207,16 +1276,6 @@ function renderProductColumnContent({
             ) : null}
           </View>
         </HoverInfo>
-      );
-    case "quantity":
-      return (
-        <Text style={[styles.tableCell, styles.daysColumnText]}>
-          {item.qty_transfer != null
-            ? formatDecimal(item.qty_transfer, 0)
-            : item.qty_to_buy != null
-              ? formatDecimal(item.qty_to_buy, 0)
-              : "—"}
-        </Text>
       );
     case "postAction": {
       const value = item.projected_suf ?? item.nova_suf_receptor;
@@ -1479,6 +1538,12 @@ function getColumnStyle(
       return styles.codeColumn;
     case "days":
       return styles.daysColumn;
+    case "adjustedDays":
+      return styles.adjustedDaysColumn;
+    case "rawStock":
+      return styles.rawStockColumn;
+    case "adjustedStock":
+      return styles.adjustedStockColumn;
     case "cmm":
       return styles.cmmColumn;
     case "score":
@@ -1493,8 +1558,6 @@ function getColumnStyle(
       return styles.actionColumn;
     case "hospital":
       return styles.hospitalColumn;
-    case "quantity":
-      return styles.quantityColumn;
     case "postAction":
       return styles.postActionColumn;
     case "observation":
@@ -1643,6 +1706,15 @@ const createStyles = (tokens: AlmoxTheme) =>
     daysColumn: {
       width: 50,
     },
+    adjustedDaysColumn: {
+      width: 90,
+    },
+    rawStockColumn: {
+      width: 90,
+    },
+    adjustedStockColumn: {
+      width: 90,
+    },
     cmmColumn: {
       width: 90,
     },
@@ -1663,9 +1735,6 @@ const createStyles = (tokens: AlmoxTheme) =>
     },
     hospitalColumn: {
       width: 220,
-    },
-    quantityColumn: {
-      width: 90,
     },
     postActionColumn: {
       width: 110,

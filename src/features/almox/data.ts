@@ -39,6 +39,9 @@ export interface EstoqueAtualRow {
   valor_custo_medio?: number | string | null;
   consumo_medio: number | string | null;
   estoque_atual: number | string | null;
+  estoque_principais_total?: number | string | null;
+  estoque_carrinho_parada_total?: number | string | null;
+  estoque_atual_ajustado?: number | string | null;
   criado_em?: string;
 }
 
@@ -54,6 +57,12 @@ interface EnrichedProduct extends Product {
   produto_referencia_id: string | null;
   codigo_produto_referencia: string | null;
   estoque_atual: number;
+  estoque_atual_bruto: number;
+  estoque_atual_ajustado: number;
+  sufficiency_days_raw: number;
+  sufficiency_days_adjusted: number;
+  estoque_principais_total?: number;
+  estoque_carrinho_parada_total?: number;
   data_ultima_entrada: string | null;
 }
 
@@ -100,6 +109,18 @@ function parseNumber(value: number | string | null | undefined) {
 
   const parsed = Number(String(value).replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hasValue(value: number | string | null | undefined) {
+  if (value == null) {
+    return false;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim() !== '';
+  }
+
+  return true;
 }
 
 function normalizeCategoriaMaterial(value: EstoqueAtualRow['categoria_material']): CategoriaMaterial {
@@ -683,11 +704,28 @@ function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema,
         return null;
       }
 
-      const sufficiencyDays = clampSufficiency(parseNumber(row.suficiencia_em_dias));
+      const sufficiencyDaysOriginal = clampSufficiency(parseNumber(row.suficiencia_em_dias));
       const categoriaMaterial = normalizeCategoriaMaterial(row.categoria_material);
-      const estoqueAtualValue = parseNumber(row.estoque_atual);
-      const levelValue = getLevel(sufficiencyDays, estoqueAtualValue, config);
-      const ruptureRiskValue = getRuptureRisk(sufficiencyDays, config);
+      const estoqueAtualBruto = parseNumber(row.estoque_atual);
+      const estoquePrincipaisTotal = hasValue(row.estoque_principais_total)
+        ? parseNumber(row.estoque_principais_total)
+        : undefined;
+      const estoqueCarrinhoParadaTotal = hasValue(row.estoque_carrinho_parada_total)
+        ? parseNumber(row.estoque_carrinho_parada_total)
+        : undefined;
+      const estoqueAtualAjustado = hasValue(row.estoque_atual_ajustado)
+        ? parseNumber(row.estoque_atual_ajustado)
+        : estoqueAtualBruto;
+      const sufficiencyDaysRaw =
+        avgMonthlyConsumption > 0
+          ? clampSufficiency(estoqueAtualBruto / safeDailyUsage(avgMonthlyConsumption))
+          : sufficiencyDaysOriginal;
+      const sufficiencyDaysAdjusted =
+        hasValue(row.estoque_atual_ajustado) && avgMonthlyConsumption > 0
+          ? clampSufficiency(estoqueAtualAjustado / safeDailyUsage(avgMonthlyConsumption))
+          : sufficiencyDaysRaw;
+      const levelValue = getLevel(sufficiencyDaysRaw, estoqueAtualBruto, config);
+      const ruptureRiskValue = getRuptureRisk(sufficiencyDaysAdjusted, config);
 
       const product: EnrichedProduct = {
         hospital,
@@ -696,12 +734,18 @@ function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema,
         product_name: row.nome_produto,
         produto_referencia_id: row.produto_referencia_id,
         codigo_produto_referencia: row.codigo_produto_referencia,
-        sufficiency_days: sufficiencyDays,
+        sufficiency_days: sufficiencyDaysAdjusted,
+        sufficiency_days_raw: sufficiencyDaysRaw,
+        sufficiency_days_adjusted: sufficiencyDaysAdjusted,
         avg_monthly_consumption: avgMonthlyConsumption,
         daily_usage: round(safeDailyUsage(avgMonthlyConsumption), 4),
         level: levelValue,
         rupture_risk: ruptureRiskValue,
-        estoque_atual: estoqueAtualValue,
+        estoque_atual: estoqueAtualAjustado,
+        estoque_atual_bruto: estoqueAtualBruto,
+        estoque_atual_ajustado: estoqueAtualAjustado,
+        estoque_principais_total: estoquePrincipaisTotal,
+        estoque_carrinho_parada_total: estoqueCarrinhoParadaTotal,
         data_ultima_entrada: row.data_ultima_entrada,
       };
 

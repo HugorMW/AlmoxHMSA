@@ -27,6 +27,55 @@ export const COLUNAS_OBRIGATORIAS_ESTOQUE = [
   'eat',
 ];
 
+const HMSA_ESTOQUES_CODES = [
+  '163',
+  '164',
+  '165',
+  '166',
+  '167',
+  '168',
+  '169',
+  '170',
+  '171',
+  '172',
+  '173',
+  '174',
+  '175',
+  '176',
+  '177',
+  '178',
+  '179',
+  '180',
+  '181',
+  '182',
+  '183',
+  '193',
+  '194',
+  '206',
+  '208',
+  '222',
+];
+
+const HMSA_ESTOQUES_CARRINHO_PARADA_CODES = [
+  '169',
+  '171',
+  '172',
+  '173',
+  '174',
+  '175',
+  '176',
+  '178',
+  '179',
+  '180',
+  '206',
+  '208',
+];
+
+const HMSA_ESTOQUES_CARRINHO_PARADA_CODE_SET = new Set(HMSA_ESTOQUES_CARRINHO_PARADA_CODES);
+const HMSA_ESTOQUES_PRINCIPAIS_CODES = HMSA_ESTOQUES_CODES.filter(
+  (codigo) => !HMSA_ESTOQUES_CARRINHO_PARADA_CODE_SET.has(codigo)
+);
+
 export const COLUNAS_OBRIGATORIAS_NOTAS_FISCAIS = [
   'unidade',
   'nm_fornecedor',
@@ -126,6 +175,23 @@ function textoParaNumero(value) {
   const normalized = String(value).trim().replace(/\./g, '').replace(',', '.');
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function somarColunasEstoque(row, codes) {
+  let encontrouColuna = false;
+  let total = 0;
+
+  for (const code of codes) {
+    const key = `e${code}`;
+    if (!Object.prototype.hasOwnProperty.call(row, key)) {
+      continue;
+    }
+
+    encontrouColuna = true;
+    total += textoParaNumero(row[key]) ?? 0;
+  }
+
+  return encontrouColuna ? Number(total.toFixed(4)) : null;
 }
 
 function serialExcelParaData(value) {
@@ -441,6 +507,21 @@ export function normalizarLinhasEstoque(rows, categoriaMaterial) {
     const codigoProdutoReferencia = valorEhNaoLocalizado(codigoProdutoReferenciaBruto)
       ? null
       : codigoProdutoReferenciaBruto;
+    const codigoUnidade = String(row.unidade ?? '').trim();
+    const estoqueAtual = textoParaNumero(row.eat);
+    const isHmsa = codigoUnidade.trim().toUpperCase() === 'HMSASOUL';
+    const estoqueCarrinhoParadaTotal = isHmsa
+      ? somarColunasEstoque(row, HMSA_ESTOQUES_CARRINHO_PARADA_CODES)
+      : null;
+    const estoquePrincipaisTotal = isHmsa
+      ? somarColunasEstoque(row, HMSA_ESTOQUES_PRINCIPAIS_CODES)
+      : null;
+    const estoqueAtualAjustado = isHmsa
+      ? estoquePrincipaisTotal ??
+        (estoqueAtual != null && estoqueCarrinhoParadaTotal != null
+          ? Math.max(estoqueAtual - estoqueCarrinhoParadaTotal, 0)
+          : estoqueAtual)
+      : estoqueAtual;
 
     return {
       categoria_material: categoriaMaterial,
@@ -450,13 +531,16 @@ export function normalizarLinhasEstoque(rows, categoriaMaterial) {
       codigo_produto_referencia: codigoProdutoReferencia,
       nome_produto_referencia: codigoProdutoReferencia ? String(row.ds_pro_fat ?? '').trim() || null : null,
       unidade_medida_referencia: codigoProdutoReferencia ? String(row.ds_pro_fat_unidade ?? '').trim() || null : null,
-      codigo_unidade: String(row.unidade ?? '').trim(),
-      nome_unidade: String(row.unidade ?? '').trim(),
+      codigo_unidade: codigoUnidade,
+      nome_unidade: codigoUnidade,
       suficiencia_em_dias: textoParaNumero(row.suficiencia_em_dias),
       data_ultima_entrada: serialExcelParaData(row.dt_ultima_entrada),
       valor_custo_medio: textoParaNumero(row.valor_custo_medio),
       consumo_medio: textoParaNumero(row.cmm_mv),
-      estoque_atual: textoParaNumero(row.eat),
+      estoque_atual: estoqueAtual,
+      estoque_principais_total: estoquePrincipaisTotal,
+      estoque_carrinho_parada_total: estoqueCarrinhoParadaTotal,
+      estoque_atual_ajustado: estoqueAtualAjustado,
       especie_padrao: codigoProdutoReferencia ? String(row.especie_padrao ?? '').trim() || null : null,
     };
   }).filter(

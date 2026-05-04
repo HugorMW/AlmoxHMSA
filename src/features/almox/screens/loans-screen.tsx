@@ -46,23 +46,27 @@ const LOANS_NEED_ENABLED_COLUMNS: ProductColumnId[] = [
   "product",
   "code",
   "days",
+  "adjustedDays",
+  "rawStock",
+  "adjustedStock",
   "cmm",
   "score",
   "risk",
   "action",
   "hospital",
-  "quantity",
   "postAction",
 ];
 
 const LOANS_NEED_DEFAULT_VISIBLE_COLUMNS: ProductColumnId[] = [
   "product",
   "days",
+  "adjustedDays",
+  "rawStock",
+  "adjustedStock",
   "score",
   "risk",
   "action",
   "hospital",
-  "quantity",
   "postAction",
 ];
 
@@ -70,6 +74,9 @@ const LOANS_LEND_ENABLED_COLUMNS: ProductColumnId[] = [
   "product",
   "code",
   "days",
+  "adjustedDays",
+  "rawStock",
+  "adjustedStock",
   "cmm",
   "level",
   "risk",
@@ -79,6 +86,9 @@ const LOANS_LEND_DEFAULT_VISIBLE_COLUMNS: ProductColumnId[] = [
   "product",
   "code",
   "days",
+  "adjustedDays",
+  "rawStock",
+  "adjustedStock",
   "cmm",
   "level",
   "risk",
@@ -86,12 +96,13 @@ const LOANS_LEND_DEFAULT_VISIBLE_COLUMNS: ProductColumnId[] = [
 
 const LOANS_COLUMN_LABELS: Partial<Record<ProductColumnId, string>> = {
   days: "Suf. atual",
-  quantity: "Qtd. sugerida",
+  adjustedDays: "Suf. ajust.",
   postAction: "Suf. pós-ação",
 };
 
 const LOANS_COLUMN_VALUE_SUFFIXES: Partial<Record<ProductColumnId, string>> = {
   days: "d",
+  adjustedDays: "d",
 };
 
 export default function LoansScreen() {
