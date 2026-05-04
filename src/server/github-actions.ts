@@ -7,7 +7,8 @@ function trimEnv(name: string) {
 
 export function getGitHubActionsConfig() {
   const repository = trimEnv('GITHUB_ACTIONS_REPOSITORY');
-  const token = trimEnv('GITHUB_ACTIONS_TRIGGER_TOKEN');
+  const token =
+    trimEnv('GITHUB_ACTIONS_TRIGGER_TOKEN') || trimEnv('GH_TOKEN') || trimEnv('GITHUB_TOKEN');
   const workflowEstoque =
     trimEnv('GITHUB_ACTIONS_SYNC_WORKFLOW_ESTOQUE') ||
     trimEnv('GITHUB_ACTIONS_SYNC_WORKFLOW') ||
@@ -96,7 +97,7 @@ export async function dispararWorkflowSincronizacaoSiscore({
 
   if (!enabled) {
     throw new Error(
-      'GITHUB_ACTIONS_REPOSITORY e GITHUB_ACTIONS_TRIGGER_TOKEN precisam estar definidos para disparar a sincronizacao externa.'
+      'GITHUB_ACTIONS_REPOSITORY e um token do GitHub (GITHUB_ACTIONS_TRIGGER_TOKEN, GH_TOKEN ou GITHUB_TOKEN) precisam estar definidos para disparar a sincronizacao externa.'
     );
   }
 

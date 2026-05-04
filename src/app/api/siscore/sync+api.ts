@@ -99,6 +99,18 @@ export async function POST(request: Request) {
     }
 
     const githubActions = getGitHubActionsConfig();
+    if (githubActions.repository && !githubActions.enabled) {
+      return Response.json(
+        {
+          error: 'A sincronizacao externa via GitHub Actions nao esta completa neste ambiente.',
+          details: [
+            'Defina um token do GitHub em GITHUB_ACTIONS_TRIGGER_TOKEN, GH_TOKEN ou GITHUB_TOKEN para habilitar o workflow_dispatch no localhost.',
+          ],
+        },
+        { status: 409 }
+      );
+    }
+
     if (githubActions.enabled) {
       const trackingId = crypto.randomUUID();
       const expectedJobs = resolverJobsSincronizacaoSiscore(scope);

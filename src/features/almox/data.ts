@@ -14,7 +14,12 @@ import {
   ProductProcessSummaryEntry,
   ProductProcessSummaryParcel,
 } from './types';
-import { ConfiguracaoSistema, configuracaoSistemaPadrao, getLimiteCompraDias } from './configuracao';
+import {
+  ConfiguracaoSistema,
+  configuracaoSistemaPadrao,
+  getExclusaoCmmMenorQueUmPorCategoria,
+  getLimiteCompraDias,
+} from './configuracao';
 
 export interface EstoqueAtualRow {
   categoria_material?: CategoriaMaterial | string | null;
@@ -698,14 +703,18 @@ function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema,
       }
 
       const productCode = String(row.codigo_produto ?? '').trim();
+      const categoriaMaterial = normalizeCategoriaMaterial(row.categoria_material);
       const avgMonthlyConsumption = parseNumber(row.consumo_medio);
       const isLowConsumptionException = hospital === 'HMSA' && cmmExceptionCodes.has(productCode);
-      if (config.excluirCmmMenorQueUm && avgMonthlyConsumption < 1 && !isLowConsumptionException) {
+      if (
+        getExclusaoCmmMenorQueUmPorCategoria(config, categoriaMaterial) &&
+        avgMonthlyConsumption < 1 &&
+        !isLowConsumptionException
+      ) {
         return null;
       }
 
       const sufficiencyDaysOriginal = clampSufficiency(parseNumber(row.suficiencia_em_dias));
-      const categoriaMaterial = normalizeCategoriaMaterial(row.categoria_material);
       const estoqueAtualBruto = parseNumber(row.estoque_atual);
       const estoquePrincipaisTotal = hasValue(row.estoque_principais_total)
         ? parseNumber(row.estoque_principais_total)

@@ -16,6 +16,8 @@ type ConfiguracaoSistemaBase = {
   alvoTransferenciaCmm: number;
   mesesCompraSugerida: number;
   excluirCmmMenorQueUm: boolean;
+  excluirCmmMenorQueUmHospitalar: boolean;
+  excluirCmmMenorQueUmFarmacologico: boolean;
 };
 
 export const PROCESSO_TOTAL_PARCELAS_MAX = 6;
@@ -28,6 +30,9 @@ export type ProcessoPrazoParcelaKey =
   `processo${ProcessoPrazoCategoriaSlug}${ProcessoPrazoTipoSlug}Parcela${ProcessoPrazoParcelaNumero}DiasUteis`;
 
 export type ConfiguracaoSistema = ConfiguracaoSistemaBase & Record<ProcessoPrazoParcelaKey, number>;
+export type ConfiguracaoExclusaoCmmPorCategoriaKey =
+  | 'excluirCmmMenorQueUmHospitalar'
+  | 'excluirCmmMenorQueUmFarmacologico';
 
 export const processoPrazoCategorias = [
   { categoria: 'material_hospitalar', label: 'Materiais', slug: 'MaterialHospitalar' },
@@ -55,6 +60,11 @@ const processoPrazoPadraoPorParcela: Record<ProcessoPrazoParcelaNumero, number> 
 const categoriaSlugByValue: Record<CategoriaMaterial, ProcessoPrazoCategoriaSlug> = {
   material_hospitalar: 'MaterialHospitalar',
   material_farmacologico: 'MaterialFarmacologico',
+};
+
+const exclusaoCmmPorCategoriaKeyByValue: Record<CategoriaMaterial, ConfiguracaoExclusaoCmmPorCategoriaKey> = {
+  material_hospitalar: 'excluirCmmMenorQueUmHospitalar',
+  material_farmacologico: 'excluirCmmMenorQueUmFarmacologico',
 };
 
 const tipoSlugByValue: Record<ProcessoTipo, ProcessoPrazoTipoSlug> = {
@@ -117,6 +127,8 @@ const configuracaoSistemaBasePadrao: ConfiguracaoSistemaBase = {
   alvoTransferenciaCmm: 0.75,
   mesesCompraSugerida: 2,
   excluirCmmMenorQueUm: false,
+  excluirCmmMenorQueUmHospitalar: false,
+  excluirCmmMenorQueUmFarmacologico: false,
 };
 
 export const configuracaoSistemaPadrao: ConfiguracaoSistema = {
@@ -153,6 +165,8 @@ const configuracaoSistemaBaseLabels: Record<keyof ConfiguracaoSistemaBase, strin
   alvoTransferenciaCmm: 'Quanto o HMSA deve pegar emprestado',
   mesesCompraSugerida: 'Quantidade sugerida para compra',
   excluirCmmMenorQueUm: 'Ocultar itens com consumo mensal menor que 1',
+  excluirCmmMenorQueUmHospitalar: 'Ocultar itens hospitalares com consumo mensal menor que 1',
+  excluirCmmMenorQueUmFarmacologico: 'Ocultar itens farmacológicos com consumo mensal menor que 1',
 };
 
 export const configuracaoSistemaLabels: Record<ConfiguracaoSistemaKey, string> = {
@@ -249,6 +263,18 @@ export function normalizarConfiguracaoSistema(
   base: ConfiguracaoSistema = configuracaoSistemaPadrao
 ): ConfiguracaoSistema {
   const next: Partial<Record<ConfiguracaoSistemaKey, unknown>> = { ...base };
+  const inputHasLegacyLowConsumptionFlag = Object.prototype.hasOwnProperty.call(input, 'excluirCmmMenorQueUm');
+  const inputHasHospitalarLowConsumptionFlag = Object.prototype.hasOwnProperty.call(
+    input,
+    'excluirCmmMenorQueUmHospitalar'
+  );
+  const inputHasFarmacologicoLowConsumptionFlag = Object.prototype.hasOwnProperty.call(
+    input,
+    'excluirCmmMenorQueUmFarmacologico'
+  );
+  const legacyLowConsumptionFlag = inputHasLegacyLowConsumptionFlag
+    ? parseConfigBoolean(input.excluirCmmMenorQueUm, base.excluirCmmMenorQueUm)
+    : base.excluirCmmMenorQueUm;
 
   for (const key of configuracaoSistemaKeys) {
     if (Object.prototype.hasOwnProperty.call(input, key)) {
@@ -258,6 +284,18 @@ export function normalizarConfiguracaoSistema(
           : parseConfigNumber(input[key], base[key]);
     }
   }
+
+  if (!inputHasHospitalarLowConsumptionFlag && inputHasLegacyLowConsumptionFlag) {
+    next.excluirCmmMenorQueUmHospitalar = legacyLowConsumptionFlag;
+  }
+
+  if (!inputHasFarmacologicoLowConsumptionFlag && inputHasLegacyLowConsumptionFlag) {
+    next.excluirCmmMenorQueUmFarmacologico = legacyLowConsumptionFlag;
+  }
+
+  next.excluirCmmMenorQueUm = Boolean(
+    next.excluirCmmMenorQueUmHospitalar || next.excluirCmmMenorQueUmFarmacologico
+  );
 
   return next as ConfiguracaoSistema;
 }
@@ -364,6 +402,17 @@ export function validarConfiguracaoSistema(config: ConfiguracaoSistema): Configu
 
 export function getLimiteCompraDias(config: ConfiguracaoSistema) {
   return config.comprarDias;
+}
+
+export function getExclusaoCmmMenorQueUmKey(categoria: CategoriaMaterial): ConfiguracaoExclusaoCmmPorCategoriaKey {
+  return exclusaoCmmPorCategoriaKeyByValue[categoria];
+}
+
+export function getExclusaoCmmMenorQueUmPorCategoria(
+  config: ConfiguracaoSistema,
+  categoria: CategoriaMaterial
+) {
+  return config[getExclusaoCmmMenorQueUmKey(categoria)];
 }
 
 export function getProcessoParcelasDiasUteis(
