@@ -18,6 +18,7 @@ type ConfiguracaoSistemaBase = {
   excluirCmmMenorQueUm: boolean;
   excluirCmmMenorQueUmHospitalar: boolean;
   excluirCmmMenorQueUmFarmacologico: boolean;
+  usarDiasAjustadosParaClassificacao: boolean;
 };
 
 export const PROCESSO_TOTAL_PARCELAS_MAX = 6;
@@ -129,6 +130,7 @@ const configuracaoSistemaBasePadrao: ConfiguracaoSistemaBase = {
   excluirCmmMenorQueUm: false,
   excluirCmmMenorQueUmHospitalar: false,
   excluirCmmMenorQueUmFarmacologico: false,
+  usarDiasAjustadosParaClassificacao: false,
 };
 
 export const configuracaoSistemaPadrao: ConfiguracaoSistema = {
@@ -167,6 +169,7 @@ const configuracaoSistemaBaseLabels: Record<keyof ConfiguracaoSistemaBase, strin
   excluirCmmMenorQueUm: 'Ocultar itens com consumo mensal menor que 1',
   excluirCmmMenorQueUmHospitalar: 'Ocultar itens hospitalares com consumo mensal menor que 1',
   excluirCmmMenorQueUmFarmacologico: 'Ocultar itens farmacológicos com consumo mensal menor que 1',
+  usarDiasAjustadosParaClassificacao: 'Usar dias ajustado (descontando carrinhos de parada) na classificação',
 };
 
 export const configuracaoSistemaLabels: Record<ConfiguracaoSistemaKey, string> = {

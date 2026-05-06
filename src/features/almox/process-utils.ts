@@ -263,7 +263,6 @@ function createSummaryEntry(
   config: ConfiguracaoSistema
 ): ProductProcessSummaryEntry {
   return {
-    numero_pedido: String((item as { numero_pedido?: string; numero_processo?: string }).numero_pedido ?? (item as { numero_processo?: string }).numero_processo ?? '').trim(),
     edocs: String(item.edocs ?? '').trim(),
     edocs_ata_origem: String((item as { edocs_ata_origem?: string }).edocs_ata_origem ?? '').trim(),
     id_cotacao: String((item as { id_cotacao?: string }).id_cotacao ?? '').trim(),
@@ -365,8 +364,8 @@ export function buildOpenProcessSummaryByProductCode(
         return leftDistance - rightDistance;
       }
 
-      return `${left.numero_pedido}|${left.edocs}|${left.edocs_ata_origem}|${left.id_cotacao}`.localeCompare(
-        `${right.numero_pedido}|${right.edocs}|${right.edocs_ata_origem}|${right.id_cotacao}`,
+      return `${left.edocs}|${left.edocs_ata_origem}|${left.id_cotacao}`.localeCompare(
+        `${right.edocs}|${right.edocs_ata_origem}|${right.id_cotacao}`,
         'pt-BR'
       );
     });

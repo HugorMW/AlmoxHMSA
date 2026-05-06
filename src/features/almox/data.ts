@@ -420,8 +420,8 @@ function getProcessReference(entry?: ProductProcessSummaryEntry | null) {
     entry.edocs ? `Processo E-DOCS ${entry.edocs}` : entry.tipo_processo,
     entry.tipo_processo === 'ARP' && entry.edocs_ata_origem
       ? `ATA (E-DOCS original) ${entry.edocs_ata_origem}`
-      : entry.numero_pedido
-        ? `${entry.tipo_processo === 'ARP' ? 'ATA' : 'Pedido'} ${entry.numero_pedido}`
+      : entry.edocs_ata_origem
+        ? `Processo ${entry.edocs_ata_origem}`
         : null,
     entry.tipo_processo === 'Processo Simplificado' && entry.id_cotacao
       ? `Cotação ${entry.id_cotacao}`
@@ -733,7 +733,13 @@ function buildBaseProducts(rows: EstoqueAtualRow[], config: ConfiguracaoSistema,
         hasValue(row.estoque_atual_ajustado) && avgMonthlyConsumption > 0
           ? clampSufficiency(estoqueAtualAjustado / safeDailyUsage(avgMonthlyConsumption))
           : sufficiencyDaysRaw;
-      const levelValue = getLevel(sufficiencyDaysRaw, estoqueAtualBruto, config);
+      const sufficiencyDaysForLevel = config.usarDiasAjustadosParaClassificacao
+        ? sufficiencyDaysAdjusted
+        : sufficiencyDaysRaw;
+      const estoqueAtualParaLevel = config.usarDiasAjustadosParaClassificacao
+        ? estoqueAtualAjustado
+        : estoqueAtualBruto;
+      const levelValue = getLevel(sufficiencyDaysForLevel, estoqueAtualParaLevel, config);
       const ruptureRiskValue = getRuptureRisk(sufficiencyDaysAdjusted, config);
 
       const product: EnrichedProduct = {

@@ -204,7 +204,6 @@ export interface ProcessoAcompanhamento {
   id?: string;
   categoria_material: ProcessoCategoria;
   produtos: ProcessoProduto[];
-  numero_pedido: string;
   edocs: string;
   edocs_ata_origem: string;
   id_cotacao: string;
@@ -245,7 +244,6 @@ export interface ProductProcessSummaryParcel {
 }
 
 export interface ProductProcessSummaryEntry {
-  numero_pedido: string;
   edocs: string;
   edocs_ata_origem: string;
   id_cotacao: string;

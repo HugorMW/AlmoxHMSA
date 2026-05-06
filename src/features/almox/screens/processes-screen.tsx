@@ -222,31 +222,46 @@ function normalizeInlineText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-function getProcessPrimaryLabel(item: Pick<ProcessoAcompanhamento, 'edocs' | 'numero_pedido'>) {
+function getProcessPrimaryLabel(item: Pick<ProcessoAcompanhamento, 'edocs' | 'edocs_ata_origem' | 'tipo_processo'>) {
   const edocs = item.edocs?.trim();
-  return edocs ? `Processo E-DOCS ${edocs}` : item.numero_pedido;
+  const secondary = item.edocs_ata_origem?.trim();
+  if (edocs) {
+    return `Processo E-DOCS ${edocs}`;
+  }
+
+  if (secondary) {
+    return `Processo ${secondary}`;
+  }
+
+  return item.tipo_processo;
 }
 
 function getProcessSecondaryLabel(
-  item: Pick<ProcessoAcompanhamento, 'edocs' | 'numero_pedido' | 'tipo_processo' | 'edocs_ata_origem'>,
+  item: Pick<ProcessoAcompanhamento, 'edocs' | 'tipo_processo' | 'edocs_ata_origem'>,
 ) {
   const edocs = item.edocs?.trim();
-  const ataOrigem = item.edocs_ata_origem?.trim() || item.numero_pedido.trim();
-  const pedido = item.numero_pedido.trim();
+  const ataOrigem = item.edocs_ata_origem?.trim();
 
   if (item.tipo_processo === 'ARP' && edocs && ataOrigem) {
     return `ATA (E-DOCS original) ${ataOrigem}`;
   }
 
-  if (edocs && pedido) {
-    return `Pedido ${pedido}`;
+  if (item.tipo_processo === 'Processo Simplificado' && edocs && ataOrigem) {
+    return `Processo ${ataOrigem}`;
+  }
+
+  if (edocs && ataOrigem) {
+    return `Processo ${ataOrigem}`;
   }
 
   return null;
 }
 
 function getProcessQuoteLabel(item: Pick<ProcessoAcompanhamento, 'tipo_processo' | 'id_cotacao'>) {
-  if (item.tipo_processo !== 'Processo Simplificado') {
+  if (
+    item.tipo_processo !== 'Processo Simplificado' &&
+    item.tipo_processo !== 'Processo Excepcional'
+  ) {
     return '—';
   }
 
@@ -325,12 +340,12 @@ function convertParcelaDetalheToVisualDraft(detalhe?: ProcessoParcelaDetalhe | n
   };
 }
 
-function getProcessItemKey(item: Pick<ProcessoAcompanhamento, 'id' | 'numero_pedido'>) {
-  return item.id ?? item.numero_pedido;
+function getProcessItemKey(item: Pick<ProcessoAcompanhamento, 'id' | 'edocs' | 'edocs_ata_origem' | 'id_cotacao'>) {
+  return item.id ?? `${item.edocs}|${item.edocs_ata_origem}|${item.id_cotacao}`;
 }
 
 function createVisualParcelasMap(
-  item: Pick<ProcessoAcompanhamento, 'id' | 'numero_pedido' | 'total_parcelas' | 'parcelas_detalhes'>,
+  item: Pick<ProcessoAcompanhamento, 'id' | 'edocs' | 'edocs_ata_origem' | 'id_cotacao' | 'total_parcelas' | 'parcelas_detalhes'>,
   current?: ProcessoParcelasVisualMap
 ) {
   return Object.fromEntries(
@@ -804,7 +819,6 @@ export default function ProcessesScreen() {
 
         return matchesQuery(
           [
-            item.numero_pedido,
             item.edocs,
             item.edocs_ata_origem,
             item.id_cotacao,
@@ -829,7 +843,9 @@ export default function ProcessesScreen() {
         return (
           getProcessListRank(left) - getProcessListRank(right) ||
           String(left.data_resgate ?? '9999-12-31').localeCompare(String(right.data_resgate ?? '9999-12-31')) ||
-          left.numero_pedido.localeCompare(right.numero_pedido, 'pt-BR')
+          left.edocs.localeCompare(right.edocs, 'pt-BR') ||
+          left.edocs_ata_origem.localeCompare(right.edocs_ata_origem, 'pt-BR') ||
+          left.id_cotacao.localeCompare(right.id_cotacao, 'pt-BR')
         );
       });
   }, [attentionPreset, categoryItems, search, sortOption, statusFilter, systemConfig, tipoFilter]);
@@ -1040,7 +1056,7 @@ export default function ProcessesScreen() {
             <DarkSearchField
               value={search}
               onChange={setSearch}
-              placeholder="Buscar Processo E-DOCS, ATA/pedido/ID cotação, produto, Cod. Inova, marca ou fornecedor"
+              placeholder="Buscar Processo E-DOCS, ATA/processo/ID cotação, produto, Cod. Inova, marca ou fornecedor"
             />
           </View>
           <DarkButton
@@ -1436,10 +1452,18 @@ function DarkEmptyState({ title, description }: { title: string; description: st
   );
 }
 
-function DarkField({ label, children }: { label: string; children: React.ReactNode }) {
+function DarkField({
+  label,
+  children,
+  style,
+}: {
+  label: string;
+  children: React.ReactNode;
+  style?: React.ComponentProps<typeof View>['style'];
+}) {
   const { styles } = useProcessScreenSkin();
   return (
-    <View style={styles.darkField}>
+    <View style={[styles.darkField, style]}>
       <Text style={styles.darkFieldLabel}>{label}</Text>
       {children}
     </View>
@@ -1500,7 +1524,7 @@ function ProcessTable({
 
           {items.map((item) => (
             <ProcessRow
-              key={item.id ?? `${item.numero_pedido}-${item.produtos[0]?.cd_produto ?? ''}`}
+              key={item.id ?? `${item.edocs}-${item.edocs_ata_origem}-${item.produtos[0]?.cd_produto ?? ''}`}
               item={item}
               systemConfig={systemConfig}
               onEdit={() => onEdit(item)}
@@ -1919,13 +1943,8 @@ function ProcessFormModal({
   const [showAddProduct, setShowAddProduct] = useState<boolean>(
     !initial || (initial.produtos ?? []).length === 0
   );
-  const [numeroPedido, setNumeroPedido] = useState(
-    initial?.tipo_processo === 'ARP' ? '' : (initial?.numero_pedido ?? '')
-  );
   const [edocs, setEdocs] = useState(initial?.edocs ?? '');
-  const [edocsAtaOrigem, setEdocsAtaOrigem] = useState(
-    initial?.edocs_ata_origem ?? (initial?.tipo_processo === 'ARP' ? (initial?.numero_pedido ?? '') : '')
-  );
+  const [edocsAtaOrigem, setEdocsAtaOrigem] = useState(initial?.edocs_ata_origem ?? '');
   const [idCotacao, setIdCotacao] = useState(initial?.id_cotacao ?? '');
   const [observacao, setObservacao] = useState(initial?.observacao ?? '');
   const [marca, setMarca] = useState(initial?.marca ?? '');
@@ -1935,7 +1954,7 @@ function ProcessFormModal({
     initial?.data_resgate ? formatIsoDateToPtBr(initial.data_resgate) : ''
   );
   const [totalParcelas, setTotalParcelas] = useState(
-    Math.min(initial?.total_parcelas ?? 3, PROCESSO_TOTAL_PARCELAS_MAX)
+    Math.min(initial?.total_parcelas ?? 1, PROCESSO_TOTAL_PARCELAS_MAX)
   );
   const [critico, setCritico] = useState(initial?.critico ?? false);
   const [saving, setSaving] = useState(false);
@@ -1952,11 +1971,10 @@ function ProcessFormModal({
     produtos[0]?.categoria_material ?? initial?.categoria_material ?? initialCategoria;
   const isAtaExecutionProcess = tipoProcesso === 'ARP';
   const isSimplifiedProcess = tipoProcesso === 'Processo Simplificado';
-  const primaryProcessFieldLabel = 'Processo E-DOCS';
-  const secondaryProcessFieldLabel = isAtaExecutionProcess ? 'ATA (E-DOCS original)' : 'Pedido';
-  const secondaryProcessPlaceholder = isAtaExecutionProcess ? '2024-AB12C' : '4131/2025';
+  const isExceptionalProcess = tipoProcesso === 'Processo Excepcional';
+  const showQuoteIdField = isSimplifiedProcess || isExceptionalProcess;
+  const primaryProcessFieldLabel = 'Processo de Execução';
   const normalizedPrimaryProcess = edocs.trim().toUpperCase();
-  const normalizedSecondaryProcess = numeroPedido.trim();
   const normalizedAtaOrigem = edocsAtaOrigem.trim().toUpperCase();
   const normalizedIdCotacao = idCotacao.trim().toUpperCase();
 
@@ -1992,10 +2010,9 @@ function ProcessFormModal({
         id: initial?.id,
         categoria_material: previewCategoria,
         produtos,
-        numero_pedido: isAtaExecutionProcess ? '' : normalizedSecondaryProcess,
         edocs: normalizedPrimaryProcess,
-        edocs_ata_origem: isAtaExecutionProcess ? normalizedAtaOrigem : '',
-        id_cotacao: isSimplifiedProcess ? normalizedIdCotacao : '',
+        edocs_ata_origem: normalizedAtaOrigem,
+        id_cotacao: showQuoteIdField ? normalizedIdCotacao : '',
         observacao: observacao.trim(),
         marca: marca.trim(),
         tipo_processo: tipoProcesso,
@@ -2108,23 +2125,51 @@ function ProcessFormModal({
             )}
 
             <View style={styles.modalGrid}>
-              <DarkField label={primaryProcessFieldLabel}>
-                <DarkInput value={edocs} onChangeText={(value) => setEdocs(value.toUpperCase())} placeholder="2025-BK7DX" />
-              </DarkField>
-              <DarkField label={secondaryProcessFieldLabel}>
-                <DarkInput
-                  value={isAtaExecutionProcess ? edocsAtaOrigem : numeroPedido}
-                  onChangeText={(value) =>
-                    isAtaExecutionProcess
-                      ? setEdocsAtaOrigem(value.toUpperCase())
-                      : setNumeroPedido(value)
-                  }
-                  placeholder={secondaryProcessPlaceholder}
-                />
-              </DarkField>
+              {isAtaExecutionProcess ? (
+                <>
+                  <DarkField label="Processo">
+                    <DarkInput
+                      value={edocsAtaOrigem}
+                      onChangeText={(value) => setEdocsAtaOrigem(value.toUpperCase())}
+                      placeholder="2024-AB12C"
+                    />
+                  </DarkField>
+                  <DarkField label={primaryProcessFieldLabel}>
+                    <DarkInput value={edocs} onChangeText={(value) => setEdocs(value.toUpperCase())} placeholder="2025-BK7DX" />
+                  </DarkField>
+                </>
+              ) : isSimplifiedProcess ? (
+                <>
+                  <DarkField label="Processo">
+                    <DarkInput
+                      value={edocsAtaOrigem}
+                      onChangeText={(value) => setEdocsAtaOrigem(value.toUpperCase())}
+                      placeholder="2025-ASD7RE"
+                    />
+                  </DarkField>
+                  <DarkField label={primaryProcessFieldLabel}>
+                    <DarkInput value={edocs} onChangeText={(value) => setEdocs(value.toUpperCase())} placeholder="2025-BK7DX" />
+                  </DarkField>
+                </>
+              ) : (
+                <>
+                  <DarkField label="Processo">
+                    <DarkInput
+                      value={edocsAtaOrigem}
+                      placeholder="Não usado neste tipo"
+                      editable={false}
+                      selectTextOnFocus={false}
+                      style={styles.lockedInput}
+                    />
+                  </DarkField>
+                  <DarkField label={primaryProcessFieldLabel}>
+                    <DarkInput value={edocs} onChangeText={(value) => setEdocs(value.toUpperCase())} placeholder="2025-BK7DX" />
+                  </DarkField>
+                </>
+              )}
             </View>
 
-            {isSimplifiedProcess ? (
+            {showQuoteIdField ? (
               <DarkField label="ID COTAÇÃO">
                 <DarkInput
                   value={idCotacao}
@@ -2143,7 +2188,7 @@ function ProcessFormModal({
               </DarkField>
             </View>
 
-            <DarkField label="Observação">
+            <DarkField label="Observação" style={styles.observacaoField}>
               <DarkInput
                 value={observacao}
                 onChangeText={setObservacao}
@@ -3859,6 +3904,13 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       minWidth: 220,
       gap: 5,
     },
+    observacaoField: {
+      flex: 0,
+      width: '100%',
+      minHeight: 132,
+      marginBottom: 12,
+      alignSelf: 'stretch',
+    },
     darkFieldLabel: {
       color: processTheme.muted,
       fontSize: 11,
@@ -3879,7 +3931,8 @@ const createStyles = (tokens: AlmoxTheme, processTheme: ProcessTheme) => ({
       outlineStyle: 'none' as any,
     },
     darkTextarea: {
-      minHeight: 88,
+      minHeight: 110,
+      height: 110,
       paddingTop: 11,
       paddingBottom: 11,
     },

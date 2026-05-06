@@ -336,6 +336,13 @@ export default function SettingsScreen() {
     }));
   }
 
+  function updateDraftBoolean(key: ConfiguracaoSistemaKey, value: boolean) {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
   async function handleSave() {
     if (validationIssues.length > 0 || systemConfigSaving) {
       return;
@@ -559,6 +566,14 @@ export default function SettingsScreen() {
             />
           ))}
         </View>
+
+        <BooleanToggleField
+          label="Usar dias ajustado na classificação"
+          description="Quando ligado, as faixas (Crítico, Alto, Médio, Baixo, Estável) consideram o estoque ajustado (descontando carrinhos de parada). Quando desligado, usam o estoque bruto do SISCORE."
+          value={Boolean(draft.usarDiasAjustadosParaClassificacao)}
+          disabled={systemConfigSaving}
+          onChange={(next) => updateDraftBoolean('usarDiasAjustadosParaClassificacao', next)}
+        />
 
         <View style={styles.previewGrid}>
           {levelOrder.map((item) => {
@@ -974,6 +989,41 @@ function ColumnPermissionSwitch({
         { justifyContent: value ? 'flex-end' : 'flex-start' },
       ]}>
       <View style={styles.tableAdminSwitchThumb} />
+    </Pressable>
+  );
+}
+
+function BooleanToggleField({
+  label,
+  description,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  value: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value, disabled }}
+      onPress={() => onChange(!value)}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.booleanToggle,
+        value ? styles.booleanToggleActive : null,
+        disabled ? styles.booleanToggleDisabled : null,
+        pressed && !disabled ? styles.booleanTogglePressed : null,
+      ]}>
+      <View style={styles.booleanToggleText}>
+        <Text style={styles.booleanToggleLabel}>{label}</Text>
+        <Text style={styles.booleanToggleDescription}>{description}</Text>
+      </View>
+      <ColumnPermissionSwitch value={value} disabled={disabled} onPress={() => onChange(!value)} />
     </Pressable>
   );
 }
@@ -1402,6 +1452,42 @@ const createStyles = (tokens: AlmoxTheme) => StyleSheet.create({
     color: tokens.colors.textMuted,
     fontSize: 12,
     fontFamily: tokens.typography.mono,
+  },
+  booleanToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: tokens.spacing.md,
+    padding: tokens.spacing.md,
+    borderRadius: tokens.radii.md,
+    borderWidth: 1,
+    borderColor: tokens.colors.lineStrong,
+    backgroundColor: tokens.colors.surfaceMuted,
+  },
+  booleanToggleActive: {
+    borderColor: tokens.colors.brand,
+    backgroundColor: tokens.colors.surfaceActiveSoft,
+  },
+  booleanTogglePressed: {
+    opacity: 0.88,
+  },
+  booleanToggleDisabled: {
+    opacity: 0.55,
+  },
+  booleanToggleText: {
+    flex: 1,
+    gap: 4,
+    minWidth: 220,
+  },
+  booleanToggleLabel: {
+    color: tokens.colors.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  booleanToggleDescription: {
+    color: tokens.colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
   },
   tableAdminSwitch: {
     width: 38,

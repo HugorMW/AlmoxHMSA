@@ -281,7 +281,7 @@ function normalizarProcessoProduto(produto: ProcessoProduto, fallbackOrdem: numb
 
 function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanhamento {
   const parcelasRaw = Array.isArray(item.parcelas_entregues) ? item.parcelas_entregues : [];
-  const totalParcelas = Math.min(Math.max(Number(item.total_parcelas) || 3, 1), PROCESSO_TOTAL_PARCELAS_MAX);
+  const totalParcelas = Math.min(Math.max(Number(item.total_parcelas) || 1, 1), PROCESSO_TOTAL_PARCELAS_MAX);
   const parcelasEntregues = normalizarParcelasEntregues(parcelasRaw as boolean[], totalParcelas);
   const parcelasDetalhes = normalizarParcelasDetalhes(item.parcelas_detalhes, parcelasEntregues, totalParcelas);
   const produtosRaw = Array.isArray(item.produtos) ? item.produtos : [];
@@ -291,11 +291,6 @@ function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanha
 
   return {
     ...item,
-    numero_pedido: String(
-      (item as { numero_pedido?: string; numero_processo?: string }).numero_pedido ??
-        (item as { numero_processo?: string }).numero_processo ??
-        ''
-    ).trim(),
     total_parcelas: totalParcelas,
     produtos,
     edocs: item.edocs ?? '',
@@ -318,12 +313,12 @@ async function loadProcessItems() {
   const { data, error } = await supabase
     .from('almox_processos_acompanhamento')
     .select(
-      'id, categoria_material, numero_pedido, edocs, edocs_ata_origem, id_cotacao, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
+      'id, categoria_material, edocs, edocs_ata_origem, id_cotacao, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
     )
     .eq('ativo', true)
     .order('critico', { ascending: false })
     .order('data_resgate', { ascending: true, nullsFirst: false })
-    .order('numero_pedido', { ascending: true });
+    .order('edocs', { ascending: true });
 
   if (error) {
     throw createScopedError('almox_processos_acompanhamento', error);
@@ -630,7 +625,9 @@ function ordenarProcessos(items: ProcessoAcompanhamento[]) {
     (left, right) =>
       Number(right.critico) - Number(left.critico) ||
       String(left.data_resgate ?? '9999-12-31').localeCompare(String(right.data_resgate ?? '9999-12-31')) ||
-      left.numero_pedido.localeCompare(right.numero_pedido, 'pt-BR')
+      left.edocs.localeCompare(right.edocs, 'pt-BR') ||
+      left.edocs_ata_origem.localeCompare(right.edocs_ata_origem, 'pt-BR') ||
+      left.id_cotacao.localeCompare(right.id_cotacao, 'pt-BR')
   );
 }
 
@@ -1644,12 +1641,11 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
   async function saveProcessItem(input: ProcessoSaveInput) {
     const supabase = getSupabaseClient();
-    const numeroPedido = String(input.numero_pedido ?? '').trim();
     const edocs = String(input.edocs ?? '').trim();
     const edocsAtaOrigem = String((input as { edocs_ata_origem?: string }).edocs_ata_origem ?? '').trim();
     const idCotacao = String((input as { id_cotacao?: string }).id_cotacao ?? '').trim();
     const observacao = String((input as { observacao?: string }).observacao ?? '').trim();
-    const totalParcelas = Math.min(Math.max(Number(input.total_parcelas) || 3, 1), PROCESSO_TOTAL_PARCELAS_MAX);
+    const totalParcelas = Math.min(Math.max(Number(input.total_parcelas) || 1, 1), PROCESSO_TOTAL_PARCELAS_MAX);
     const parcelasEntregues = normalizarParcelasEntregues(input.parcelas_entregues ?? [], totalParcelas);
     const parcelasDetalhes = normalizarParcelasDetalhes(input.parcelas_detalhes, parcelasEntregues, totalParcelas);
     const produtosNormalizados = (Array.isArray(input.produtos) ? input.produtos : [])
@@ -1657,7 +1653,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       .filter((produto) => produto.cd_produto && produto.ds_produto);
 
     if (!edocs) {
-      throw new Error('Informe o Processo E-DOCS.');
+      throw new Error('Informe o Processo de Execução.');
     }
     if (produtosNormalizados.length === 0) {
       throw new Error('Adicione pelo menos um produto ao processo.');
@@ -1683,7 +1679,6 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
     const payload = {
       categoria_material: categoriaProcesso,
-      numero_pedido: numeroPedido,
       edocs,
       edocs_ata_origem: edocsAtaOrigem,
       id_cotacao: idCotacao,
@@ -1748,7 +1743,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     const { data: processoCompleto, error: fetchError } = await supabase
       .from('almox_processos_acompanhamento')
       .select(
-        'id, categoria_material, numero_pedido, edocs, edocs_ata_origem, id_cotacao, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
+        'id, categoria_material, edocs, edocs_ata_origem, id_cotacao, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
       )
       .eq('id', processoId)
       .single();
