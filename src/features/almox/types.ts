@@ -221,6 +221,8 @@ export interface ProcessoAcompanhamento {
   ativo?: boolean;
   criado_em?: string;
   atualizado_em?: string;
+  criado_por?: string | null;
+  atualizado_por?: string | null;
 }
 
 export interface ProcessoProdutoLookup {
@@ -267,7 +269,7 @@ export interface ProductProcessSummary {
 
 export type ProcessoSaveInput = Omit<
   ProcessoAcompanhamento,
-  'id' | 'ignorado' | 'ativo' | 'criado_em' | 'atualizado_em'
+  'id' | 'ignorado' | 'ativo' | 'criado_em' | 'atualizado_em' | 'criado_por' | 'atualizado_por'
 > & {
   id?: string;
   ignorado?: boolean;

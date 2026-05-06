@@ -1,6 +1,7 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getSupabaseClient } from '@/lib/supabase';
+import { useAuth } from '@/features/auth/auth-provider';
 
 import {
   AlmoxDataset,
@@ -50,6 +51,30 @@ const ALMOX_PRODUCT_TABLE_CONFIG_CACHE_KEY = 'almox:product-table-config:v1';
 const ALMOX_PRODUCT_TABLE_CONFIG_CACHE_TTL_MS = 30 * 60 * 1000;
 const ALMOX_PROCESS_CACHE_KEY = 'almox:processes:v3';
 const ALMOX_PROCESS_CACHE_TTL_MS = 5 * 60 * 1000;
+const PROCESS_SELECT_COLUMNS = [
+  'id',
+  'categoria_material',
+  'edocs',
+  'edocs_ata_origem',
+  'id_cotacao',
+  'observacao',
+  'marca',
+  'tipo_processo',
+  'fornecedor',
+  'data_resgate',
+  'total_parcelas',
+  'parcelas_entregues',
+  'parcelas_detalhes',
+  'critico',
+  'cancelado',
+  'ignorado',
+  'ativo',
+  'criado_em',
+  'atualizado_em',
+  'criado_por',
+  'atualizado_por',
+  'produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)',
+].join(', ');
 const SYNC_STATUS_MAX_WAIT_MS = 10 * 60 * 1000;
 const ESTOQUE_ATUAL_SELECT_COLUMNS = [
   'categoria_material',
@@ -279,6 +304,11 @@ function normalizarProcessoProduto(produto: ProcessoProduto, fallbackOrdem: numb
   };
 }
 
+function normalizarUsuarioAuditoria(value: string | null | undefined) {
+  const usuario = String(value ?? '').trim();
+  return usuario || null;
+}
+
 function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanhamento {
   const parcelasRaw = Array.isArray(item.parcelas_entregues) ? item.parcelas_entregues : [];
   const totalParcelas = Math.min(Math.max(Number(item.total_parcelas) || 1, 1), PROCESSO_TOTAL_PARCELAS_MAX);
@@ -305,6 +335,8 @@ function normalizarProcessoItem(item: ProcessoAcompanhamento): ProcessoAcompanha
     critico: item.critico === true,
     cancelado: item.cancelado === true,
     ignorado: item.ignorado === true,
+    criado_por: normalizarUsuarioAuditoria((item as { criado_por?: string | null }).criado_por),
+    atualizado_por: normalizarUsuarioAuditoria((item as { atualizado_por?: string | null }).atualizado_por),
   };
 }
 
@@ -312,9 +344,7 @@ async function loadProcessItems() {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('almox_processos_acompanhamento')
-    .select(
-      'id, categoria_material, edocs, edocs_ata_origem, id_cotacao, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
-    )
+    .select(PROCESS_SELECT_COLUMNS)
     .eq('ativo', true)
     .order('critico', { ascending: false })
     .order('data_resgate', { ascending: true, nullsFirst: false })
@@ -324,7 +354,7 @@ async function loadProcessItems() {
     throw createScopedError('almox_processos_acompanhamento', error);
   }
 
-  return ((data ?? []) as ProcessoAcompanhamento[]).map(normalizarProcessoItem);
+  return ((data ?? []) as unknown as ProcessoAcompanhamento[]).map(normalizarProcessoItem);
 }
 
 function formatLoadError(error: unknown) {
@@ -699,6 +729,7 @@ type AlmoxProcessCache = {
 };
 
 export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
+  const { session } = useAuth();
   const [rows, setRows] = useState<EstoqueAtualRow[]>([]);
   const [blacklistItems, setBlacklistItems] = useState<BlacklistItem[]>([]);
   const [cmmExceptionItems, setCmmExceptionItems] = useState<CmmExceptionItem[]>([]);
@@ -747,6 +778,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
   const hasLoadedRef = useRef(false);
   const processItemsLoadedRef = useRef(false);
   const kpiHistoricoLoadedRef = useRef(false);
+  const currentProcessUser = normalizarUsuarioAuditoria(session?.usuario);
 
   const openProcessSummaryByProductCode = useMemo(
     () => buildOpenProcessSummaryByProductCode(processItems, systemConfig),
@@ -1676,6 +1708,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     const categoriaProcesso = String(
       input.categoria_material ?? produtosNormalizados[0]?.categoria_material ?? 'material_hospitalar'
     ).trim();
+    const updateAuditPayload = currentProcessUser ? { atualizado_por: currentProcessUser } : {};
 
     const payload = {
       categoria_material: categoriaProcesso,
@@ -1694,14 +1727,16 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       cancelado: input.cancelado === true,
       ignorado: input.ignorado === true,
       ativo: true,
+      ...updateAuditPayload,
     };
+    const insertPayload = currentProcessUser ? { ...payload, criado_por: currentProcessUser } : payload;
 
     const query = input.id
       ? supabase
           .from('almox_processos_acompanhamento')
           .update(payload)
           .eq('id', input.id)
-      : supabase.from('almox_processos_acompanhamento').insert(payload);
+      : supabase.from('almox_processos_acompanhamento').insert(insertPayload);
 
     const { data: processoSalvo, error: saveError } = await query
       .select('id')
@@ -1742,9 +1777,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
     const { data: processoCompleto, error: fetchError } = await supabase
       .from('almox_processos_acompanhamento')
-      .select(
-        'id, categoria_material, edocs, edocs_ata_origem, id_cotacao, observacao, marca, tipo_processo, fornecedor, data_resgate, total_parcelas, parcelas_entregues, parcelas_detalhes, critico, cancelado, ignorado, ativo, criado_em, atualizado_em, produtos:almox_processos_acompanhamento_produtos!processo_id(id, ordem, cod_bionexo, cd_produto, ds_produto, categoria_material, produto_manual)'
-      )
+      .select(PROCESS_SELECT_COLUMNS)
       .eq('id', processoId)
       .single();
 
@@ -1752,7 +1785,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       throw fetchError;
     }
 
-    const nextItem = normalizarProcessoItem(processoCompleto as ProcessoAcompanhamento);
+    const nextItem = normalizarProcessoItem(processoCompleto as unknown as ProcessoAcompanhamento);
     const nextProcessItems = ordenarProcessos([...processItems.filter((item) => item.id !== nextItem.id), nextItem]);
 
     startTransition(() => {
@@ -1777,9 +1810,15 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
     const normalized = normalizarParcelasEntregues(parcelasEntregues, currentItem.total_parcelas);
     const normalizedDetails = normalizarParcelasDetalhes(parcelasDetalhes, normalized, currentItem.total_parcelas);
+    const nextUpdatedAt = new Date().toISOString();
+    const nextUpdatedBy = currentProcessUser ?? currentItem.atualizado_por ?? null;
     const { error: updateError } = await supabase
       .from('almox_processos_acompanhamento')
-      .update({ parcelas_entregues: normalized, parcelas_detalhes: normalizedDetails })
+      .update({
+        parcelas_entregues: normalized,
+        parcelas_detalhes: normalizedDetails,
+        ...(currentProcessUser ? { atualizado_por: currentProcessUser } : {}),
+      })
       .eq('id', id);
 
     if (updateError) {
@@ -1788,7 +1827,15 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
     startTransition(() => {
       const nextProcessItems = processItems.map((item) =>
-        item.id === id ? { ...item, parcelas_entregues: normalized, parcelas_detalhes: normalizedDetails } : item
+        item.id === id
+          ? {
+              ...item,
+              parcelas_entregues: normalized,
+              parcelas_detalhes: normalizedDetails,
+              atualizado_em: nextUpdatedAt,
+              atualizado_por: nextUpdatedBy,
+            }
+          : item
       );
       setProcessItems(nextProcessItems);
       writeCachedValue<AlmoxProcessCache>(ALMOX_PROCESS_CACHE_KEY, {
@@ -1799,16 +1846,26 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
   async function setProcessCanceled(id: string, cancelado: boolean) {
     const supabase = getSupabaseClient();
+    const nextUpdatedAt = new Date().toISOString();
     const { error: updateError } = await supabase
       .from('almox_processos_acompanhamento')
-      .update({ cancelado })
+      .update({ cancelado, ...(currentProcessUser ? { atualizado_por: currentProcessUser } : {}) })
       .eq('id', id);
 
     if (updateError) {
       throw updateError;
     }
 
-    const nextProcessItems = processItems.map((item) => (item.id === id ? { ...item, cancelado } : item));
+    const nextProcessItems = processItems.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            cancelado,
+            atualizado_em: nextUpdatedAt,
+            atualizado_por: currentProcessUser ?? item.atualizado_por ?? null,
+          }
+        : item
+    );
     startTransition(() => {
       setProcessItems(nextProcessItems);
     });
@@ -1819,16 +1876,26 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
 
   async function setProcessIgnored(id: string, ignorado: boolean) {
     const supabase = getSupabaseClient();
+    const nextUpdatedAt = new Date().toISOString();
     const { error: updateError } = await supabase
       .from('almox_processos_acompanhamento')
-      .update({ ignorado })
+      .update({ ignorado, ...(currentProcessUser ? { atualizado_por: currentProcessUser } : {}) })
       .eq('id', id);
 
     if (updateError) {
       throw updateError;
     }
 
-    const nextProcessItems = processItems.map((item) => (item.id === id ? { ...item, ignorado } : item));
+    const nextProcessItems = processItems.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            ignorado,
+            atualizado_em: nextUpdatedAt,
+            atualizado_por: currentProcessUser ?? item.atualizado_por ?? null,
+          }
+        : item
+    );
     startTransition(() => {
       setProcessItems(nextProcessItems);
     });
@@ -1841,7 +1908,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabaseClient();
     const { error: updateError } = await supabase
       .from('almox_processos_acompanhamento')
-      .update({ ativo: false })
+      .update({ ativo: false, ...(currentProcessUser ? { atualizado_por: currentProcessUser } : {}) })
       .eq('id', id);
 
     if (updateError) {
