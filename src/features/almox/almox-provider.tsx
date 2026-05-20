@@ -278,7 +278,13 @@ async function loadCmmExceptionItems() {
   return (data ?? []) as CmmExceptionItem[];
 }
 
-async function loadMonthlyConsumptionRows() {
+function waitForRetry(delayMs: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+async function queryMonthlyConsumptionRows(attempt: number) {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('almox_consumo_mes_atual')
@@ -286,10 +292,20 @@ async function loadMonthlyConsumptionRows() {
     .eq('codigo_unidade', 'HMSASOUL');
 
   if (error) {
-    throw createScopedError('almox_consumo_mes_atual', error);
+    throw createScopedError(`almox_consumo_mes_atual tentativa ${attempt}`, error);
   }
 
   return (data ?? []) as unknown as MonthlyConsumptionRow[];
+}
+
+async function loadMonthlyConsumptionRows() {
+  try {
+    return await queryMonthlyConsumptionRows(1);
+  } catch (firstError) {
+    logScopedError('almox_consumo_mes_atual tentativa 1', firstError);
+    await waitForRetry(750);
+    return queryMonthlyConsumptionRows(2);
+  }
 }
 
 function normalizarProcessoProduto(produto: ProcessoProduto, fallbackOrdem: number): ProcessoProduto {
@@ -1275,6 +1291,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         blacklistResult.status === 'fulfilled'
           ? blacklistResult.value
           : (() => {
+              logScopedError('refresh apoio lista de exclusões manuais', blacklistResult.reason);
               failedSources.push('a lista de exclusões manuais');
               return null;
             })();
@@ -1282,6 +1299,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         cmmExceptionResult.status === 'fulfilled'
           ? cmmExceptionResult.value
           : (() => {
+              logScopedError('refresh apoio lista de exceções de CMM', cmmExceptionResult.reason);
               failedSources.push('a lista de exceções de CMM');
               return null;
             })();
@@ -1289,6 +1307,7 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
         monthlyConsumptionResult.status === 'fulfilled'
           ? monthlyConsumptionResult.value
           : (() => {
+              logScopedError('refresh apoio apuração de consumo do mês', monthlyConsumptionResult.reason);
               failedSources.push('a apuração de consumo do mês');
               return null;
             })();
@@ -1684,8 +1703,8 @@ export function AlmoxDataProvider({ children }: { children: React.ReactNode }) {
       .map((produto, index) => normalizarProcessoProduto(produto, index))
       .filter((produto) => produto.cd_produto && produto.ds_produto);
 
-    if (!edocs) {
-      throw new Error('Informe o Processo de Execução.');
+    if (!edocs && !edocsAtaOrigem && !idCotacao) {
+      throw new Error('Informe pelo menos Processo, Processo de Execução ou ID cotação.');
     }
     if (produtosNormalizados.length === 0) {
       throw new Error('Adicione pelo menos um produto ao processo.');

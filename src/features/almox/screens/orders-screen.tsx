@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { useAlmoxData } from "@/features/almox/almox-provider";
@@ -14,8 +14,10 @@ import {
   SectionTitle,
 } from "@/features/almox/components/common";
 import {
+  isDynamicDaysSortColumn,
   ProductTable,
   ProductTableSortState,
+  resolveProductTableDefaultSort,
   sortProductsForTable,
 } from "@/features/almox/components/product-table";
 import {
@@ -43,6 +45,9 @@ const levelOrder: Level[] = [
 
 const ORDERS_COLUMNS_CACHE_KEY_PREFIX = "almox:orders:columns:v1";
 const ORDERS_COLUMNS_PREFERENCE_SCOPE = "orders.columns";
+const ORDERS_DEFAULT_TABLE_SORT: Partial<ProductTableSortState> = {
+  direction: "asc",
+};
 
 export default function OrdersScreen() {
   const { tokens } = useAppTheme();
@@ -53,10 +58,7 @@ export default function OrdersScreen() {
   const [pageSize, setPageSize] = useState<PageSize>(10);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
-  const [tableSort, setTableSort] = useState<ProductTableSortState>({
-    column: "days",
-    direction: "asc",
-  });
+  const [tableSort, setTableSort] = useState<ProductTableSortState | null>(null);
   const {
     dataset,
     categoryFilter,
@@ -82,6 +84,23 @@ export default function OrdersScreen() {
     () => getActionTooltips(systemConfig),
     [systemConfig],
   );
+  const defaultTableSort = useMemo(
+    () =>
+      resolveProductTableDefaultSort(
+        Boolean(systemConfig.usarDiasAjustadosParaClassificacao),
+        ORDERS_DEFAULT_TABLE_SORT,
+      ),
+    [systemConfig.usarDiasAjustadosParaClassificacao],
+  );
+  const effectiveTableSort = tableSort ?? defaultTableSort;
+
+  useEffect(() => {
+    setTableSort((current) =>
+      current && isDynamicDaysSortColumn(current.column)
+        ? { ...current, column: defaultTableSort.column }
+        : current,
+    );
+  }, [defaultTableSort.column]);
 
   const grouped = useMemo(
     () =>
@@ -99,10 +118,10 @@ export default function OrdersScreen() {
 
     return sortProductsForTable(
       matched,
-      tableSort,
+      effectiveTableSort,
       openProcessSummaryByProductCode,
     ) as OrderItem[];
-  }, [deferredSearch, items, openProcessSummaryByProductCode, tableSort]);
+  }, [deferredSearch, effectiveTableSort, items, openProcessSummaryByProductCode]);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -306,7 +325,7 @@ export default function OrdersScreen() {
               pisoDoadorAposEmprestimoDias={
                 systemConfig.pisoDoadorAposEmprestimoDias
               }
-              sorting={tableSort}
+              sorting={effectiveTableSort}
               onSortChange={setTableSort}
               search={{
                 value: search,

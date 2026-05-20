@@ -22,8 +22,10 @@ import {
   SectionTitle,
 } from "@/features/almox/components/common";
 import {
+  isDynamicDaysSortColumn,
   ProductTable,
   ProductTableSortState,
+  resolveProductTableDefaultSort,
   sortProductsForTable,
 } from "@/features/almox/components/product-table";
 import {
@@ -105,6 +107,14 @@ const LOANS_COLUMN_VALUE_SUFFIXES: Partial<Record<ProductColumnId, string>> = {
   adjustedDays: "d",
 };
 
+const LOANS_NEED_DEFAULT_SORT: Partial<ProductTableSortState> = {
+  direction: "asc",
+};
+
+const LOANS_LEND_DEFAULT_SORT: Partial<ProductTableSortState> = {
+  direction: "desc",
+};
+
 export default function LoansScreen() {
   const styles = useThemedStyles(createStyles);
   const [activeTab, setActiveTab] = useState<LoanTab>("need");
@@ -115,14 +125,8 @@ export default function LoansScreen() {
   const deferredSearch = useDeferredValue(search);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(10);
-  const [needSort, setNeedSort] = useState<ProductTableSortState>({
-    column: "days",
-    direction: "asc",
-  });
-  const [lendSort, setLendSort] = useState<ProductTableSortState>({
-    column: "days",
-    direction: "desc",
-  });
+  const [needSort, setNeedSort] = useState<ProductTableSortState | null>(null);
+  const [lendSort, setLendSort] = useState<ProductTableSortState | null>(null);
   const {
     dataset,
     categoryFilter,
@@ -146,13 +150,31 @@ export default function LoansScreen() {
     () => getActionTooltips(systemConfig),
     [systemConfig],
   );
+  const needDefaultSort = useMemo(
+    () =>
+      resolveProductTableDefaultSort(
+        Boolean(systemConfig.usarDiasAjustadosParaClassificacao),
+        LOANS_NEED_DEFAULT_SORT,
+      ),
+    [systemConfig.usarDiasAjustadosParaClassificacao],
+  );
+  const lendDefaultSort = useMemo(
+    () =>
+      resolveProductTableDefaultSort(
+        Boolean(systemConfig.usarDiasAjustadosParaClassificacao),
+        LOANS_LEND_DEFAULT_SORT,
+      ),
+    [systemConfig.usarDiasAjustadosParaClassificacao],
+  );
 
   const needItemsBase = dataset.loansNeeded;
   const lendItemsBase = dataset.canLend;
   const activeBaseCount =
     activeTab === "need" ? needItemsBase.length : lendItemsBase.length;
   const showMaterialLabel = categoryFilter === "todos";
-  const activeSort = activeTab === "need" ? needSort : lendSort;
+  const effectiveNeedSort = needSort ?? needDefaultSort;
+  const effectiveLendSort = lendSort ?? lendDefaultSort;
+  const activeSort = activeTab === "need" ? effectiveNeedSort : effectiveLendSort;
   const isSearchExpanded = isSearchOpen || search.trim().length > 0;
   const tableColumns =
     activeTab === "need"
@@ -187,6 +209,22 @@ export default function LoansScreen() {
     return () => clearTimeout(timer);
   }, [isSearchOpen]);
 
+  useEffect(() => {
+    setNeedSort((current) =>
+      current && isDynamicDaysSortColumn(current.column)
+        ? { ...current, column: needDefaultSort.column }
+        : current,
+    );
+  }, [needDefaultSort.column]);
+
+  useEffect(() => {
+    setLendSort((current) =>
+      current && isDynamicDaysSortColumn(current.column)
+        ? { ...current, column: lendDefaultSort.column }
+        : current,
+    );
+  }, [lendDefaultSort.column]);
+
   const needItems = useMemo(() => {
     const matched = needItemsBase.filter((item) =>
       matchesQuery(
@@ -196,13 +234,13 @@ export default function LoansScreen() {
     );
     return sortProductsForTable(
       matched,
-      needSort,
+      effectiveNeedSort,
       openProcessSummaryByProductCode,
     );
   }, [
     deferredSearch,
+    effectiveNeedSort,
     needItemsBase,
-    needSort,
     openProcessSummaryByProductCode,
   ]);
 
@@ -212,13 +250,13 @@ export default function LoansScreen() {
     );
     return sortProductsForTable(
       matched,
-      lendSort,
+      effectiveLendSort,
       openProcessSummaryByProductCode,
     );
   }, [
     deferredSearch,
+    effectiveLendSort,
     lendItemsBase,
-    lendSort,
     openProcessSummaryByProductCode,
   ]);
 

@@ -22,6 +22,10 @@ import {
   AppIcon,
 } from '@/features/almox/components/common';
 import { getCategoriaMaterialLabel } from '@/features/almox/data';
+import {
+  createExportTimestamp,
+  exportRowsToExcel,
+} from '@/features/almox/excel';
 import { useAppTheme } from '@/features/almox/theme-provider';
 import { AlmoxTheme, ThemeMode } from '@/features/almox/tokens';
 import {
@@ -179,7 +183,7 @@ type ParcelaVisualDraft = {
 type ProcessoParcelasVisualMap = Record<number, ParcelaVisualDraft>;
 
 type ModalState =
-  | { type: 'new'; categoria: ProcessoCategoria }
+  | { type: 'new'; categoria: ProcessoCategoria; initialProdutos?: ProcessoProduto[] }
   | { type: 'edit'; item: ProcessoEnriquecido }
   | { type: 'parcelas'; item: ProcessoEnriquecido; selectedIndex: number | null; mode: 'single' | 'summary' }
   | { type: 'produtos'; item: ProcessoEnriquecido }
@@ -623,6 +627,42 @@ function normalizeAttentionPreset(value: string | string[] | undefined): Process
   return null;
 }
 
+function getSingleSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function createProcessProductFromRouteParams({
+  productCode,
+  productName,
+  productCategory,
+  lookup,
+}: {
+  productCode: string | undefined;
+  productName: string | undefined;
+  productCategory: string | undefined;
+  lookup: ProcessoProdutoLookup | null;
+}): ProcessoProduto | null {
+  const normalizedProductCode = normalizeProductCode(productCode ?? lookup?.cd_produto ?? '');
+
+  if (!normalizedProductCode) {
+    return null;
+  }
+
+  const fallbackCategory = (productCategory?.trim() || 'material_hospitalar') as ProcessoCategoria;
+
+  return {
+    ordem: 0,
+    cod_bionexo: lookup?.cod_bionexo ?? '',
+    cd_produto: lookup?.cd_produto ?? normalizedProductCode,
+    ds_produto:
+      lookup?.ds_produto ??
+      productName?.trim() ??
+      `Produto ${normalizedProductCode}`,
+    categoria_material: lookup?.categoria_material ?? fallbackCategory,
+    produto_manual: false,
+  };
+}
+
 function useProcessScreenSkin() {
   const { mode, tokens } = useAppTheme();
   return useMemo(() => {
@@ -670,13 +710,183 @@ function getProcessListRank(item: Pick<ProcessoEnriquecido, 'status' | 'critico'
   return 2;
 }
 
+const PROCESS_STATUS_EXPORT_LABELS: Record<ProcessoStatus, string> = {
+  andamento: 'Em andamento',
+  atrasado: 'Atrasado',
+  concluido: 'Concluído',
+  cancelado: 'Cancelado',
+};
+
+function getProcessCategoryExportLabel(categoria: ProcessCategoryFilter) {
+  return categoria === ALL_PROCESS_CATEGORIES
+    ? 'Todos'
+    : getProcessoCategoriaTabLabel(categoria);
+}
+
+function joinProcessProductField(
+  produtos: ProcessoProduto[],
+  selector: (produto: ProcessoProduto) => string | null | undefined,
+) {
+  return produtos
+    .map((produto) => normalizeInlineText(selector(produto) ?? ''))
+    .filter(Boolean)
+    .join('; ');
+}
+
+function buildProcessProductsExportText(produtos: ProcessoProduto[]) {
+  if (produtos.length === 0) {
+    return 'Sem produto cadastrado';
+  }
+
+  return [...produtos]
+    .sort((left, right) => left.ordem - right.ordem)
+    .map((produto) =>
+      [
+        normalizeInlineText(produto.ds_produto || 'Produto sem descrição'),
+        produto.cd_produto ? `Produto ${produto.cd_produto}` : 'Produto sem código',
+        produto.cod_bionexo ? `Cod. Inova ${produto.cod_bionexo}` : 'Sem Cod. Inova',
+        getProcessoCategoriaTabLabel(produto.categoria_material),
+        produto.produto_manual ? 'Manual' : null,
+      ]
+        .filter(Boolean)
+        .join(' | ')
+    )
+    .join('\n');
+}
+
+function getParcelaExportStatus(
+  item: ProcessoEnriquecido,
+  index: number,
+  dueDate: Date | null,
+) {
+  if (index >= item.total_parcelas) {
+    return '';
+  }
+
+  if (item.parcelas_entregues[index] === true) {
+    return 'Entregue';
+  }
+
+  if (item.cancelado) {
+    return 'Cancelada';
+  }
+
+  const today = getTodayAtStartOfDay();
+  if (dueDate && dueDate < today) {
+    return 'Atrasada';
+  }
+
+  if (isParcelaNearDue(dueDate, today, index)) {
+    return 'Vencendo';
+  }
+
+  return 'Pendente';
+}
+
+function buildProcessParcelExportColumns(
+  item: ProcessoEnriquecido,
+  systemConfig: ConfiguracaoSistema,
+) {
+  const columns: Record<string, string | number> = {};
+
+  for (let index = 0; index < PROCESSO_TOTAL_PARCELAS_MAX; index += 1) {
+    const prefix = `P${index + 1}`;
+    const hasParcela = index < item.total_parcelas;
+    const visualState = hasParcela ? getParcelaVisualState(item, index) : null;
+    const dueDate =
+      hasParcela && visualState
+        ? getParcelaAdjustedDueDate(item, index, systemConfig, visualState)
+        : null;
+    const detail = item.parcelas_detalhes?.[index];
+    const dataEntrega = visualState?.dataEntrega ?? detail?.data_entrega ?? null;
+    const empresaNotificadaEm =
+      visualState?.empresaNotificadaEm ?? detail?.empresa_notificada_em ?? null;
+
+    columns[`${prefix} status`] = getParcelaExportStatus(item, index, dueDate);
+    columns[`${prefix} prazo`] = hasParcela ? formatDate(dueDate) : '';
+    columns[`${prefix} entregue em`] =
+      hasParcela && item.parcelas_entregues[index] === true
+        ? dataEntrega
+          ? formatStoredDateLabel(dataEntrega)
+          : 'Não informada'
+        : '';
+    columns[`${prefix} adiamento (dias)`] =
+      hasParcela && visualState?.adiadaDiasUteis
+        ? visualState.adiadaDiasUteis
+        : '';
+    columns[`${prefix} empresa notificada`] = hasParcela
+      ? visualState?.empresaNotificada || detail?.empresa_notificada
+        ? 'Sim'
+        : 'Não'
+      : '';
+    columns[`${prefix} empresa notificada em`] =
+      hasParcela && empresaNotificadaEm ? formatStoredDateLabel(empresaNotificadaEm) : '';
+  }
+
+  return columns;
+}
+
+function buildProcessExportRows(
+  items: ProcessoEnriquecido[],
+  systemConfig: ConfiguracaoSistema,
+) {
+  return items.map((item) => {
+    const produtos = item.produtos ?? [];
+    const firstPendingIndex = getFirstPendingParcelaIndex(item);
+
+    return {
+      Categoria: getProcessoCategoriaTabLabel(item.categoria_material),
+      Processo: getProcessPrimaryLabel(item),
+      'Processo/ATA origem': getProcessSecondaryLabel(item) ?? '',
+      'E-DOCS': item.edocs,
+      'E-DOCS/ATA origem': item.edocs_ata_origem,
+      'ID cotação': getProcessQuoteLabel(item),
+      Tipo: item.tipo_processo,
+      Fornecedor: item.fornecedor,
+      Marca: item.marca,
+      'Data de resgate': formatDate(parseIsoDate(item.data_resgate)),
+      Situação: PROCESS_STATUS_EXPORT_LABELS[item.status],
+      Crítico: item.critico && !item.cancelado ? 'Sim' : 'Não',
+      Cancelado: item.cancelado ? 'Sim' : 'Não',
+      'Total de parcelas': item.total_parcelas,
+      'Parcelas entregues': item.entregues,
+      'Parcela pendente atual':
+        item.status === 'concluido' || item.status === 'cancelado'
+          ? ''
+          : firstPendingIndex + 1,
+      'Menor suficiência HMSA (dias)': item.suficiencia_em_dias ?? '',
+      'Produtos vinculados': buildProcessProductsExportText(produtos),
+      'Códigos dos produtos': joinProcessProductField(
+        produtos,
+        (produto) => produto.cd_produto,
+      ),
+      'Códigos Inova': joinProcessProductField(
+        produtos,
+        (produto) => produto.cod_bionexo,
+      ),
+      Observação: item.observacao,
+      ...buildProcessParcelExportColumns(item, systemConfig),
+    };
+  });
+}
+
 export default function ProcessesScreen() {
   const { processTheme, styles } = useProcessScreenSkin();
-  const params = useLocalSearchParams<{ attention?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    attention?: string | string[];
+    newProcessProductCode?: string | string[];
+    newProcessProductName?: string | string[];
+    newProcessCategory?: string | string[];
+    newProcessRequestId?: string | string[];
+  }>();
   const attentionPreset = useMemo(
     () => normalizeAttentionPreset(params.attention),
     [params.attention]
   );
+  const newProcessProductCode = getSingleSearchParam(params.newProcessProductCode);
+  const newProcessProductName = getSingleSearchParam(params.newProcessProductName);
+  const newProcessCategory = getSingleSearchParam(params.newProcessCategory);
+  const newProcessRequestId = getSingleSearchParam(params.newProcessRequestId);
   const {
     processItems,
     processItemsLoading,
@@ -703,14 +913,17 @@ export default function ProcessesScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger' | 'info'; message: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [parcelasVisualState, setParcelasVisualState] = useState<Record<string, ProcessoParcelasVisualMap>>({});
   const appliedAttentionPresetRef = useRef<ProcessoAttentionPreset | null | '__none__'>('__none__');
+  const appliedNewProcessRouteRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
-    void refreshProcessItems()
+    void refreshProcessItems({ force: true })
       .catch(() => undefined)
       .finally(() => {
         if (active) {
@@ -739,6 +952,54 @@ export default function ProcessesScreen() {
       setShowFilters(true);
     }
   }, [attentionPreset]);
+
+  useEffect(() => {
+    const normalizedProductCode = normalizeProductCode(newProcessProductCode ?? '');
+
+    if (!normalizedProductCode) {
+      return;
+    }
+
+    const routeKey =
+      newProcessRequestId ??
+      `${normalizedProductCode}|${newProcessProductName ?? ''}|${newProcessCategory ?? ''}`;
+
+    if (appliedNewProcessRouteRef.current === routeKey) {
+      return;
+    }
+
+    const lookup = findHmsaProductByProductCode(normalizedProductCode);
+    const initialProduto = createProcessProductFromRouteParams({
+      productCode: normalizedProductCode,
+      productName: newProcessProductName,
+      productCategory: newProcessCategory,
+      lookup,
+    });
+
+    if (!initialProduto) {
+      return;
+    }
+
+    appliedNewProcessRouteRef.current = routeKey;
+    setCategoria(initialProduto.categoria_material);
+    setSearch('');
+    setTipoFilter('todos');
+    setStatusFilter('todos');
+    setSortOption('prioridade');
+    setShowFilters(false);
+    setFeedback(null);
+    setModal({
+      type: 'new',
+      categoria: initialProduto.categoria_material,
+      initialProdutos: [initialProduto],
+    });
+  }, [
+    findHmsaProductByProductCode,
+    newProcessCategory,
+    newProcessProductCode,
+    newProcessProductName,
+    newProcessRequestId,
+  ]);
 
   const enrichedItems = useMemo<ProcessoEnriquecido[]>(
     () =>
@@ -892,6 +1153,29 @@ export default function ProcessesScreen() {
     }
   }
 
+  async function handleExport() {
+    setExportError(null);
+    setExporting(true);
+
+    try {
+      const categoriaLabel = getProcessCategoryExportLabel(categoria);
+
+      await exportRowsToExcel({
+        fileName: `processos_${categoriaLabel}_${createExportTimestamp()}`,
+        sheetName: 'Processos',
+        rows: buildProcessExportRows(visibleItems, systemConfig),
+      });
+    } catch (caughtError) {
+      setExportError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Não foi possível gerar o arquivo Excel.',
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function resetFiltersForCategory(nextCategoria: ProcessCategoryFilter) {
     setCategoria(nextCategoria);
     setSearch('');
@@ -952,6 +1236,14 @@ export default function ProcessesScreen() {
 
           <View style={styles.headerActions}>
             <DarkButton
+              label={exporting ? 'Exportando...' : 'Exportar Excel'}
+              icon="download"
+              tone="accentSoft"
+              loading={exporting}
+              disabled={visibleItems.length === 0}
+              onPress={() => void handleExport()}
+            />
+            <DarkButton
               label="Novo processo"
               icon="plus"
               tone="accent"
@@ -980,6 +1272,14 @@ export default function ProcessesScreen() {
           <DarkNotice
             title="Falha ao carregar processos"
             description={processItemsError}
+            tone="danger"
+          />
+        ) : null}
+
+        {exportError ? (
+          <DarkNotice
+            title="Falha ao exportar Excel"
+            description={exportError}
             tone="danger"
           />
         ) : null}
@@ -1176,8 +1476,14 @@ export default function ProcessesScreen() {
 
       {modal?.type === 'new' || modal?.type === 'edit' ? (
         <ProcessFormModal
+          key={
+            modal.type === 'new'
+              ? `new:${modal.categoria}:${modal.initialProdutos?.map((produto) => produto.cd_produto).join('|') ?? ''}`
+              : `edit:${modal.item.id ?? getProcessItemKey(modal.item)}`
+          }
           initial={modal.type === 'edit' ? modal.item : null}
           initialCategoria={modal.type === 'new' ? modal.categoria : modal.item.categoria_material}
+          initialProdutos={modal.type === 'new' ? modal.initialProdutos : undefined}
           availableCategorias={allCategorias}
           systemConfig={systemConfig}
           lookupProductByCode={findHmsaProductByProductCode}
@@ -1311,6 +1617,9 @@ function DarkButton({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: isDisabled, busy: loading === true }}
       disabled={isDisabled}
       onPress={onPress}
       style={({ pressed }) => [
@@ -1918,6 +2227,7 @@ function ProdutosListModal({
 function ProcessFormModal({
   initial,
   initialCategoria,
+  initialProdutos = [],
   availableCategorias,
   systemConfig,
   lookupProductByCode,
@@ -1929,6 +2239,7 @@ function ProcessFormModal({
 }: {
   initial: ProcessoAcompanhamento | null;
   initialCategoria: ProcessoCategoria;
+  initialProdutos?: ProcessoProduto[];
   availableCategorias: ProcessoCategoria[];
   systemConfig: ConfiguracaoSistema;
   lookupProductByCode: (cdProduto: string) => ProcessoProdutoLookup | null;
@@ -1939,9 +2250,11 @@ function ProcessFormModal({
   onSave: (input: ProcessoSaveInput) => Promise<void>;
 }) {
   const { processTheme, styles } = useProcessScreenSkin();
-  const [produtos, setProdutos] = useState<ProcessoProduto[]>(initial?.produtos ?? []);
+  const [produtos, setProdutos] = useState<ProcessoProduto[]>(
+    initial?.produtos ?? initialProdutos
+  );
   const [showAddProduct, setShowAddProduct] = useState<boolean>(
-    !initial || (initial.produtos ?? []).length === 0
+    (initial?.produtos ?? initialProdutos).length === 0
   );
   const [edocs, setEdocs] = useState(initial?.edocs ?? '');
   const [edocsAtaOrigem, setEdocsAtaOrigem] = useState(initial?.edocs_ata_origem ?? '');
@@ -1973,13 +2286,17 @@ function ProcessFormModal({
   const isSimplifiedProcess = tipoProcesso === 'Processo Simplificado';
   const isExceptionalProcess = tipoProcesso === 'Processo Excepcional';
   const showQuoteIdField = isSimplifiedProcess || isExceptionalProcess;
-  const primaryProcessFieldLabel = 'Processo de Execução';
+  const primaryProcessFieldLabel = 'Processo de Execução (opcional)';
   const normalizedPrimaryProcess = edocs.trim().toUpperCase();
   const normalizedAtaOrigem = edocsAtaOrigem.trim().toUpperCase();
   const normalizedIdCotacao = idCotacao.trim().toUpperCase();
+  const hasProcessReference =
+    normalizedPrimaryProcess.length > 0 ||
+    normalizedAtaOrigem.length > 0 ||
+    (showQuoteIdField && normalizedIdCotacao.length > 0);
 
   const canSave =
-    normalizedPrimaryProcess.length > 0 &&
+    hasProcessReference &&
     !saving &&
     dataResgateValida &&
     produtos.length > 0;

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import {
@@ -63,6 +64,40 @@ export type ProductTableSortState = {
   column: ProductColumnId;
   direction: "asc" | "desc";
 };
+
+export function getDefaultProductTableSort(
+  useAdjustedDaysForClassification: boolean,
+  direction: "asc" | "desc" = "asc",
+): ProductTableSortState {
+  return {
+    column: useAdjustedDaysForClassification ? "adjustedDays" : "days",
+    direction,
+  };
+}
+
+export function isDynamicDaysSortColumn(column: ProductColumnId) {
+  return column === "days" || column === "adjustedDays";
+}
+
+export function resolveProductTableDefaultSort(
+  useAdjustedDaysForClassification: boolean,
+  screenDefaultSort?: Partial<ProductTableSortState> | null,
+): ProductTableSortState {
+  const column = screenDefaultSort?.column;
+  const direction = screenDefaultSort?.direction ?? "asc";
+
+  if (!column || isDynamicDaysSortColumn(column)) {
+    return getDefaultProductTableSort(
+      useAdjustedDaysForClassification,
+      direction,
+    );
+  }
+
+  return {
+    column,
+    direction,
+  };
+}
 
 export function getNextProductTableSort(
   current: ProductTableSortState | null | undefined,
@@ -1217,7 +1252,7 @@ function renderProductColumnContent({
     case "process":
       return (
         <View style={styles.productCell}>
-          <ProcessSummaryCell summary={processSummary} />
+          <ProcessSummaryCell item={item} summary={processSummary} />
         </View>
       );
     case "action":
@@ -1389,49 +1424,93 @@ function splitObservationText(text: string) {
   return segments.length > 0 ? segments : [{ text, emphasized: false }];
 }
 
-function ProcessSummaryCell({ summary }: { summary?: ProductProcessSummary }) {
+function ProcessSummaryCell({
+  item,
+  summary,
+}: {
+  item: Product;
+  summary?: ProductProcessSummary;
+}) {
   const styles = useThemedStyles(createStyles);
+  const router = useRouter();
+  const hasOpenProcess = (summary?.total_open ?? 0) > 0;
+  const canCreateProcess = item.hospital === "HMSA" && !hasOpenProcess;
 
-  if (!summary || summary.total_open === 0) {
-    return <Text style={styles.tableCell}>—</Text>;
+  function openNewProcess() {
+    router.push({
+      pathname: "/processes",
+      params: {
+        newProcessProductCode: item.product_code,
+        newProcessProductName: item.product_name,
+        newProcessCategory: item.categoria_material,
+        newProcessRequestId: `${Date.now()}`,
+      },
+    });
   }
 
   return (
-    <HoverInfo text={buildProcessTooltip(summary)}>
-      <View style={styles.processList}>
-        {summary.entries.map((entry, entryIndex) => {
-          const edocsLabel = entry.edocs
-            ? `E-DOCS ${entry.edocs}`
-            : "E-DOCS não informado";
+    <View style={styles.processCellStack}>
+      {hasOpenProcess && summary ? (
+        <HoverInfo text={buildProcessTooltip(summary)}>
+          <View style={styles.processList}>
+            {summary.entries.map((entry, entryIndex) => {
+              const edocsLabel = entry.edocs
+                ? `E-DOCS ${entry.edocs}`
+                : "E-DOCS não informado";
 
-          return (
-            <View
-              key={`${entry.edocs}-${entryIndex}`}
-              style={styles.processItem}
-            >
-              <Text style={styles.processEdocs} numberOfLines={1}>
-                {edocsLabel}
-              </Text>
-              <View style={styles.processParcelasList}>
-                {entry.parcelas.map((parcela) => (
-                  <Text
-                    key={`${entry.edocs}-${parcela.numero}`}
-                    style={styles.processMeta}
-                    numberOfLines={1}
-                  >
-                    {`P${parcela.numero} ${parcela.data_label}${
-                      parcela.adiamento_dias_uteis
-                        ? ` +${parcela.adiamento_dias_uteis}d`
-                        : ""
-                    }`}
+              return (
+                <View
+                  key={`${entry.edocs}-${entryIndex}`}
+                  style={styles.processItem}
+                >
+                  <Text style={styles.processEdocs} numberOfLines={1}>
+                    {edocsLabel}
                   </Text>
-                ))}
-              </View>
-            </View>
-          );
-        })}
-      </View>
-    </HoverInfo>
+                  <View style={styles.processParcelasList}>
+                    {entry.parcelas.map((parcela) => (
+                      <Text
+                        key={`${entry.edocs}-${parcela.numero}`}
+                        style={styles.processMeta}
+                        numberOfLines={1}
+                      >
+                        {`P${parcela.numero} ${parcela.data_label}${
+                          parcela.adiamento_dias_uteis
+                            ? ` +${parcela.adiamento_dias_uteis}d`
+                            : ""
+                        }`}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </HoverInfo>
+      ) : canCreateProcess ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Cadastrar processo para ${item.product_name}`}
+          onPress={openNewProcess}
+          style={({ pressed }) => [
+            styles.processActionButton,
+            pressed ? styles.processActionButtonPressed : null,
+          ]}
+        >
+          <View style={styles.processActionIcon}>
+            <AppIcon
+              name="plus"
+              size={13}
+              color={styles.processActionButtonText.color as string}
+            />
+          </View>
+          <Text style={styles.processActionButtonText} numberOfLines={1}>
+            Novo processo
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.tableCell}>—</Text>
+      )}
+    </View>
   );
 }
 
@@ -1773,6 +1852,11 @@ const createStyles = (tokens: AlmoxTheme) =>
       color: tokens.colors.textMuted,
       fontSize: 11,
     },
+    processCellStack: {
+      maxWidth: "100%",
+      alignSelf: "flex-start",
+      gap: 8,
+    },
     processList: {
       gap: 8,
     },
@@ -1792,6 +1876,45 @@ const createStyles = (tokens: AlmoxTheme) =>
       color: tokens.colors.textMuted,
       fontSize: 11,
       lineHeight: 16,
+    },
+    processActionButton: {
+      minHeight: 38,
+      maxWidth: "100%",
+      alignSelf: "flex-start",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      borderRadius: tokens.radii.md,
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+      backgroundColor: tokens.colors.surface,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      shadowColor: tokens.colors.black,
+      shadowOpacity: 0.12,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 3,
+    },
+    processActionButtonPressed: {
+      opacity: 0.86,
+      transform: [{ translateY: 1 }],
+    },
+    processActionIcon: {
+      width: 20,
+      height: 20,
+      borderRadius: 7,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: tokens.colors.line,
+      backgroundColor: tokens.colors.surfaceStrong,
+    },
+    processActionButtonText: {
+      color: tokens.colors.textMuted,
+      fontSize: 11,
+      fontWeight: "800",
     },
     observationSummary: {
       color: tokens.colors.text,

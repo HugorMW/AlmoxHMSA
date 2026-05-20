@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import React, { useDeferredValue, useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useAlmoxData } from "@/features/almox/almox-provider";
@@ -14,8 +14,10 @@ import {
   ScreenScrollView,
 } from "@/features/almox/components/common";
 import {
+  isDynamicDaysSortColumn,
   ProductTable,
   ProductTableSortState,
+  resolveProductTableDefaultSort,
   sortProductsForTable,
 } from "@/features/almox/components/product-table";
 import {
@@ -48,6 +50,10 @@ const LEVEL_LABEL: Record<Level, string> = {
   ESTÁVEL: "Estável",
 };
 
+const DASHBOARD_DEFAULT_TABLE_SORT: Partial<ProductTableSortState> = {
+  direction: "asc",
+};
+
 export default function DashboardScreen() {
   const { mode, tokens } = useAppTheme();
   const styles = useDashboardStyles();
@@ -56,10 +62,7 @@ export default function DashboardScreen() {
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState<PageSize>(10);
   const [search, setSearch] = useState("");
-  const [tableSort, setTableSort] = useState<ProductTableSortState>({
-    column: "days",
-    direction: "asc",
-  });
+  const [tableSort, setTableSort] = useState<ProductTableSortState | null>(null);
   const {
     dataset,
     categoryFilter,
@@ -87,12 +90,29 @@ export default function DashboardScreen() {
     () => getActionTooltips(systemConfig),
     [systemConfig],
   );
+  const defaultTableSort = useMemo(
+    () =>
+      resolveProductTableDefaultSort(
+        Boolean(systemConfig.usarDiasAjustadosParaClassificacao),
+        DASHBOARD_DEFAULT_TABLE_SORT,
+      ),
+    [systemConfig.usarDiasAjustadosParaClassificacao],
+  );
   const deferredSearch = useDeferredValue(search);
   const activeHospital = dataset.hospitals.includes(dashboardHospital)
     ? dashboardHospital
     : "HMSA";
 
   const dashboard = dataset.dashboardByHospital[activeHospital];
+  const effectiveTableSort = tableSort ?? defaultTableSort;
+
+  useEffect(() => {
+    setTableSort((current) =>
+      current && isDynamicDaysSortColumn(current.column)
+        ? { ...current, column: defaultTableSort.column }
+        : current,
+    );
+  }, [defaultTableSort.column]);
 
   const filteredProducts = useMemo(() => {
     const allHospitalProducts =
@@ -106,7 +126,7 @@ export default function DashboardScreen() {
     );
     return sortProductsForTable(
       matched,
-      tableSort,
+      effectiveTableSort,
       openProcessSummaryByProductCode,
     );
   }, [
@@ -114,7 +134,7 @@ export default function DashboardScreen() {
     activeHospital,
     selectedView,
     deferredSearch,
-    tableSort,
+    effectiveTableSort,
     openProcessSummaryByProductCode,
   ]);
 
@@ -417,7 +437,7 @@ export default function DashboardScreen() {
                 pisoDoadorAposEmprestimoDias={
                   systemConfig.pisoDoadorAposEmprestimoDias
                 }
-                sorting={tableSort}
+                sorting={effectiveTableSort}
                 onSortChange={(nextSorting) => {
                   setTableSort(nextSorting);
                   setListPage(1);

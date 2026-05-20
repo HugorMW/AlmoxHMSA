@@ -17,8 +17,10 @@ import {
   SectionTitle,
 } from "@/features/almox/components/common";
 import {
+  isDynamicDaysSortColumn,
   ProductTable,
   ProductTableSortState,
+  resolveProductTableDefaultSort,
   sortProductsForTable,
 } from "@/features/almox/components/product-table";
 import {
@@ -54,6 +56,9 @@ type LevelFilter =
 
 const PRODUCTS_TABLE_COLUMNS_CACHE_KEY_PREFIX = "almox:products:columns:v1";
 const PRODUCTS_TABLE_COLUMNS_PREFERENCE_SCOPE = "products.columns";
+const PRODUCTS_DEFAULT_TABLE_SORT: Partial<ProductTableSortState> = {
+  direction: "asc",
+};
 
 export default function ProductsScreen() {
   const styles = useThemedStyles(createStyles);
@@ -107,14 +112,30 @@ export default function ProductsScreen() {
       : categoryFilter === "material_farmacologico"
         ? "Farmacológico"
         : "Todos";
+  const defaultTableSort = useMemo<ProductTableSortState>(
+    () =>
+      resolveProductTableDefaultSort(
+        Boolean(systemConfig.usarDiasAjustadosParaClassificacao),
+        PRODUCTS_DEFAULT_TABLE_SORT,
+      ),
+    [systemConfig.usarDiasAjustadosParaClassificacao],
+  );
   const effectiveSort = useMemo<ProductTableSortState>(
-    () => headerSort ?? { column: "days", direction: "asc" },
-    [headerSort],
+    () => headerSort ?? defaultTableSort,
+    [defaultTableSort, headerSort],
   );
 
   useEffect(() => {
     setPage(1);
   }, [activeHospital]);
+
+  useEffect(() => {
+    setHeaderSort((current) =>
+      current && isDynamicDaysSortColumn(current.column)
+        ? { ...current, column: defaultTableSort.column }
+        : current,
+    );
+  }, [defaultTableSort.column]);
 
   useEffect(() => {
     if (activeHospital !== "HMSA" && actionFilter !== "all") {

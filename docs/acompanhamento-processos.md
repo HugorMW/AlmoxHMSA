@@ -131,5 +131,5 @@ Status do processo sera calculado no app:
 - Auditoria de alteracoes por usuario.
 - Permissoes por classificacao, seguindo a futura regra da tela de permissoes.
 - Historico detalhado de cada parcela.
-- Exportacao Excel da lista filtrada.
+- [x] Exportacao Excel da lista filtrada.
 - Notificacoes para parcelas proximas do vencimento.
